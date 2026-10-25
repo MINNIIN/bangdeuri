@@ -1,17 +1,28 @@
 import type { Sprite } from './sprite'
 
+export const ITEM_CATS = [
+  { id: 'furniture', name: '가구' },
+  { id: 'appliance', name: '가전' },
+  { id: 'deco', name: '소품' },
+  { id: 'food', name: '먹을거' },
+  { id: 'troll', name: '킹받는거' },
+] as const
+export type ItemCat = (typeof ITEM_CATS)[number]['id']
+
 export interface ItemDef {
   id: string
+  cat: ItemCat
   name: string
   /** 한마디 입력칸 예시 문구 */
   hint: string
   sprite: Sprite
 }
 
-/** 친구가 놓고 갈 수 있는 아이템 18종 */
+/** 친구가 놓고 갈 수 있는 아이템. 진짜 살림이 되는 가구·가전부터 장난용 킹받는 물건까지 */
 export const ITEMS: ItemDef[] = [
   {
     id: 'ramen',
+    cat: 'food',
     name: '라면 냄비',
     hint: '맨날 라면만 먹는 너에게',
     sprite: {
@@ -34,6 +45,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'coffee',
+    cat: 'food',
     name: '아아',
     hint: '얼죽아 인정',
     sprite: {
@@ -56,6 +68,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'plant',
+    cat: 'deco',
     name: '몬스테라',
     hint: '식물처럼 쑥쑥 자라라',
     sprite: {
@@ -79,6 +92,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'teddy',
+    cat: 'deco',
     name: '곰인형',
     hint: '안고 자라고 놓고 감',
     sprite: {
@@ -101,6 +115,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'cake',
+    cat: 'food',
     name: '딸기 케이크',
     hint: '생일 아니어도 축하해',
     sprite: {
@@ -122,6 +137,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'balloon',
+    cat: 'deco',
     name: '하트 풍선',
     hint: '사랑한다 친구야',
     sprite: {
@@ -147,6 +163,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'dumbbell',
+    cat: 'deco',
     name: '덤벨',
     hint: '오운완 하자',
     sprite: {
@@ -163,6 +180,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'laptop',
+    cat: 'appliance',
     name: '노트북',
     hint: '과제 화이팅',
     sprite: {
@@ -182,6 +200,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'console',
+    cat: 'appliance',
     name: '게임기',
     hint: '한 판만 더?',
     sprite: {
@@ -205,6 +224,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'books',
+    cat: 'deco',
     name: '책 더미',
     hint: '책 좀 읽어 (나도)',
     sprite: {
@@ -224,6 +244,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'cat',
+    cat: 'deco',
     name: '치즈냥',
     hint: '고양이 키우고 싶다며',
     sprite: {
@@ -246,6 +267,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'gift',
+    cat: 'deco',
     name: '선물 상자',
     hint: '열어보면 내 마음',
     sprite: {
@@ -267,6 +289,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'trophy',
+    cat: 'deco',
     name: '트로피',
     hint: '올해의 친구상',
     sprite: {
@@ -288,6 +311,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'mic',
+    cat: 'deco',
     name: '노래방 마이크',
     hint: '코노 가자',
     sprite: {
@@ -308,6 +332,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'poop',
+    cat: 'troll',
     name: '똥',
     hint: '그냥 놓고 감 ㅋ',
     sprite: {
@@ -328,6 +353,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'lamp',
+    cat: 'furniture',
     name: '스탠드 조명',
     hint: '네 방 너무 어두워',
     sprite: {
@@ -357,6 +383,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'phone',
+    cat: 'appliance',
     name: '폴더폰',
     hint: '답장 좀 빨리 해',
     sprite: {
@@ -379,6 +406,7 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'disco',
+    cat: 'deco',
     name: '디스코볼',
     hint: '파티는 네 방에서',
     sprite: {
@@ -395,6 +423,566 @@ export const ITEMS: ItemDef[] = [
         '.kgwgwgwgk..',
         '..kwgwgwk...',
         '...kkkkk....',
+      ],
+    },
+  },
+  // ─── 가구 ───
+  {
+    id: 'bed',
+    cat: 'furniture',
+    name: '침대',
+    hint: '푹 자고 일어나',
+    sprite: {
+      palette: { f: '#c9935b', F: '#a87445', s: '#fff6ee', b: '#8fb0ff', B: '#6a8cff' },
+      rows: [
+        '..' + 'k'.repeat(20) + '..',
+        '..k' + 'f'.repeat(18) + 'k..',
+        '..kf' + 'k'.repeat(16) + 'fk..',
+        '..kf' + 'kwwwwwwkkwwwwwwk' + 'fk..',
+        '..kf' + 'kwwwwwwkkwwwwwwk' + 'fk..',
+        'k'.repeat(24),
+        'k' + 's'.repeat(22) + 'k',
+        'k' + 'b'.repeat(22) + 'k',
+        'k' + 'bbbbbbBbbbbbbbbbBbbbbb' + 'k',
+        'k' + 'b'.repeat(22) + 'k',
+        'k' + 'B'.repeat(22) + 'k',
+        'k' + 'f'.repeat(22) + 'k',
+        'k' + 'F'.repeat(22) + 'k',
+        'kkkk' + '.'.repeat(16) + 'kkkk',
+        'kFFk' + '.'.repeat(16) + 'kFFk',
+        'kkkk' + '.'.repeat(16) + 'kkkk',
+      ],
+    },
+  },
+  {
+    id: 'sofa',
+    cat: 'furniture',
+    name: '소파',
+    hint: '여기서 같이 넷플 보자',
+    sprite: {
+      palette: { c: '#ff9b85', C: '#e0735f', L: '#ffc2b5', l: '#6b4a33' },
+      rows: [
+        '...' + 'k'.repeat(16) + '...',
+        '..k' + 'c'.repeat(16) + 'k..',
+        '..k' + 'c'.repeat(16) + 'k..',
+        '..k' + 'c'.repeat(16) + 'k..',
+        'kkkk' + 'c'.repeat(14) + 'kkkk',
+        'kcck' + 'c'.repeat(14) + 'kcck',
+        'kcck' + 'k'.repeat(14) + 'kcck',
+        'kcck' + 'LLLLLLkkLLLLLL' + 'kcck',
+        'kcck' + 'LLLLLLkkLLLLLL' + 'kcck',
+        'kCCk' + 'C'.repeat(14) + 'kCCk',
+        'k'.repeat(22),
+        '.kl' + '.'.repeat(16) + 'lk.',
+        '.kk' + '.'.repeat(16) + 'kk.',
+      ],
+    },
+  },
+  {
+    id: 'desk',
+    cat: 'furniture',
+    name: '책상',
+    hint: '공부 좀 하자 (진짜로)',
+    sprite: {
+      palette: { f: '#dcaa72', F: '#a87445', h: '#ffcc3d' },
+      rows: [
+        'k'.repeat(20),
+        'k' + 'f'.repeat(18) + 'k',
+        'k'.repeat(20),
+        'kFk' + '.'.repeat(10) + 'kfffffk',
+        'kFk' + '.'.repeat(10) + 'kffhffk',
+        'kFk' + '.'.repeat(10) + 'kfffffk',
+        'kFk' + '.'.repeat(10) + 'kkkkkkk',
+        'kFk' + '.'.repeat(10) + 'kffhffk',
+        'kFk' + '.'.repeat(10) + 'kfffffk',
+        'kFk' + '.'.repeat(10) + 'kkkkkkk',
+        'kFk' + '.'.repeat(14) + 'kFk',
+        'kFk' + '.'.repeat(14) + 'kFk',
+        'kkk' + '.'.repeat(14) + 'kkk',
+      ],
+    },
+  },
+  {
+    id: 'chair',
+    cat: 'furniture',
+    name: '의자',
+    hint: '앉아서 쉬어',
+    sprite: {
+      palette: { f: '#dcaa72', F: '#a87445' },
+      rows: [
+        '.kkkkkkkk.',
+        '.kffffffk.',
+        '.kfFFFFfk.',
+        '.kffffffk.',
+        '.kfFFFFfk.',
+        '.kffffffk.',
+        '.kkkkkkkk.',
+        '.kFk..kFk.',
+        '.kFk..kFk.',
+        'kkkkkkkkkk',
+        'kffffffffk',
+        'kkkkkkkkkk',
+        '.kFk..kFk.',
+        '.kFk..kFk.',
+        '.kFk..kFk.',
+        '.kkk..kkk.',
+      ],
+    },
+  },
+  {
+    id: 'wardrobe',
+    cat: 'furniture',
+    name: '옷장',
+    hint: '옷 좀 정리해',
+    sprite: {
+      palette: { f: '#e8c08e', F: '#a87445', h: '#ffcc3d' },
+      rows: [
+        'k'.repeat(16),
+        'k' + 'F'.repeat(14) + 'k',
+        'k'.repeat(16),
+        ...Array.from({ length: 17 }, (_, i) =>
+          i === 8 ? 'k' + 'fffffh' + 'kk' + 'hfffff' + 'k' : 'k' + 'ffffff' + 'kk' + 'ffffff' + 'k',
+        ),
+        'k'.repeat(16),
+        'k' + 'ffffffhhffffff' + 'k',
+        'k'.repeat(16),
+        'kFk' + '.'.repeat(10) + 'kFk',
+        'kkk' + '.'.repeat(10) + 'kkk',
+      ],
+    },
+  },
+  {
+    id: 'bookshelf',
+    cat: 'furniture',
+    name: '책장',
+    hint: '지식 충전 완료',
+    sprite: {
+      palette: { f: '#c9935b', F: '#a87445', i: '#6b4a33', a: '#ff7a6b', b: '#6bc5ff', c: '#ffd25e', d: '#9d8cff' },
+      rows: [
+        'k'.repeat(16),
+        'k' + 'i'.repeat(14) + 'k',
+        'k' + 'aabiccdddibbai' + 'k',
+        'k' + 'aabiccdddibbai' + 'k',
+        'k' + 'aabiccdddibbai' + 'k',
+        'k' + 'f'.repeat(14) + 'k',
+        'k' + 'i'.repeat(14) + 'k',
+        'k' + 'iddbbaiiccaadi' + 'k',
+        'k' + 'iddbbaiiccaadi' + 'k',
+        'k' + 'iddbbaiiccaadi' + 'k',
+        'k' + 'f'.repeat(14) + 'k',
+        'k' + 'i'.repeat(14) + 'k',
+        'k' + 'cciaabbddiccbi' + 'k',
+        'k' + 'cciaabbddiccbi' + 'k',
+        'k' + 'cciaabbddiccbi' + 'k',
+        'k' + 'f'.repeat(14) + 'k',
+        'k'.repeat(16),
+        'kFk' + '.'.repeat(10) + 'kFk',
+        'kkk' + '.'.repeat(10) + 'kkk',
+      ],
+    },
+  },
+  {
+    id: 'beanbag',
+    cat: 'furniture',
+    name: '빈백',
+    hint: '한번 앉으면 못 일어남',
+    sprite: {
+      palette: { y: '#ffcf4a', Y: '#e0a520', L: '#ffe58f' },
+      rows: [
+        '....kkkkkk....',
+        '..kkyyyyyykk..',
+        '.kyyyyyyyyyyk.',
+        '.kyyLyyyyyyyk.',
+        'kyyLLyyyyyyyyk',
+        'kyyyyyyyyyyyyk',
+        'kyyyyyyyyyyyYk',
+        'kYyyyyyyyyyYYk',
+        '.kYYYYYYYYYYk.',
+        '..kkkkkkkkkk..',
+      ],
+    },
+  },
+  {
+    id: 'lowtable',
+    cat: 'furniture',
+    name: '좌식 테이블',
+    hint: '여기서 치킨 먹자',
+    sprite: {
+      palette: { f: '#dcaa72', F: '#a87445' },
+      rows: [
+        'k'.repeat(18),
+        'k' + 'f'.repeat(16) + 'k',
+        'k' + 'F'.repeat(16) + 'k',
+        'k'.repeat(18),
+        '.kFk' + '.'.repeat(10) + 'kFk.',
+        '.kFk' + '.'.repeat(10) + 'kFk.',
+        '.kkk' + '.'.repeat(10) + 'kkk.',
+      ],
+    },
+  },
+  // ─── 가전 ───
+  {
+    id: 'tv',
+    cat: 'appliance',
+    name: 'TV',
+    hint: '드라마 정주행 각',
+    sprite: {
+      palette: { d: '#3a3a4a', s: '#7ad7ff', S: '#4aa6e0', r: '#ff5c8a' },
+      rows: [
+        'k'.repeat(20),
+        'k' + 'd'.repeat(18) + 'k',
+        'kd' + 'k'.repeat(16) + 'dk',
+        'kdk' + 'swwsssssssssSS' + 'kdk',
+        'kdk' + 'swssssssssssSS' + 'kdk',
+        'kdk' + 'ssssssssssssSS' + 'kdk',
+        'kdk' + 'sssssssssssSSS' + 'kdk',
+        'kdk' + 'ssssssssssSSSS' + 'kdk',
+        'kdk' + 'sssssssssSSSSS' + 'kdk',
+        'kd' + 'k'.repeat(16) + 'dk',
+        'k' + 'd'.repeat(15) + 'r' + 'dd' + 'k',
+        'k'.repeat(20),
+        '.'.repeat(8) + 'kddk' + '.'.repeat(8),
+        '.'.repeat(5) + 'k'.repeat(10) + '.'.repeat(5),
+        '.'.repeat(5) + 'k' + 'd'.repeat(8) + 'k' + '.'.repeat(5),
+        '.'.repeat(5) + 'k'.repeat(10) + '.'.repeat(5),
+      ],
+    },
+  },
+  {
+    id: 'fridge',
+    cat: 'appliance',
+    name: '냉장고',
+    hint: '냉장고 채워 놓고 감',
+    sprite: {
+      palette: { m: '#c4f0e2', M: '#8fd6c0', h: '#9a9ab4', p: '#ff8fb8', y: '#ffd94a' },
+      rows: [
+        '.' + 'k'.repeat(12) + '.',
+        'k' + 'm'.repeat(12) + 'k',
+        'k' + 'm'.repeat(12) + 'k',
+        ...Array.from({ length: 6 }, () => 'k' + 'mmmmmmmmmmhm' + 'k'),
+        'k' + 'M'.repeat(12) + 'k',
+        'k'.repeat(14),
+        'k' + 'm'.repeat(12) + 'k',
+        'k' + 'mmmmmmmmmmhm' + 'k',
+        'k' + 'mmmmmmmmmmhm' + 'k',
+        'k' + 'mpmmymmmmmhm' + 'k',
+        ...Array.from({ length: 10 }, () => 'k' + 'mmmmmmmmmmhm' + 'k'),
+        'k' + 'M'.repeat(12) + 'k',
+        'k'.repeat(14),
+        '.kk' + '.'.repeat(8) + 'kk.',
+      ],
+    },
+  },
+  {
+    id: 'washer',
+    cat: 'appliance',
+    name: '세탁기',
+    hint: '빨래는 미루지 마',
+    sprite: {
+      palette: { w: '#f4f4fa', g: '#c9c9d6', b: '#8fd0ff', B: '#5aa8e0', r: '#ff5c8a', y: '#ffd94a' },
+      rows: [
+        'k'.repeat(16),
+        'k' + 'g'.repeat(14) + 'k',
+        'k' + 'gkkggggggrgygg' + 'k',
+        'k' + 'g'.repeat(14) + 'k',
+        'k'.repeat(16),
+        'k' + 'wwwwkkkkkkwwww' + 'k',
+        'k' + 'wwwkbbbbbbkwww' + 'k',
+        'k' + 'wwkbbwbbbbbkww' + 'k',
+        'k' + 'wwkbwbbbbbBkww' + 'k',
+        'k' + 'wwkbbbbbbbBkww' + 'k',
+        'k' + 'wwkbbbbbbBBkww' + 'k',
+        'k' + 'wwwkbbbBBBkwww' + 'k',
+        'k' + 'wwwwkkkkkkwwww' + 'k',
+        'k' + 'w'.repeat(14) + 'k',
+        'k' + 'g'.repeat(14) + 'k',
+        'k'.repeat(16),
+        '.kk' + '.'.repeat(10) + 'kk.',
+      ],
+    },
+  },
+  {
+    id: 'aircon',
+    cat: 'appliance',
+    name: '에어컨',
+    hint: '여름엔 이거면 돼',
+    sprite: {
+      palette: { w: '#f4f4fa', g: '#c9c9d6', b: '#8fd0ff' },
+      rows: [
+        '.' + 'k'.repeat(8) + '.',
+        'k' + 'w'.repeat(8) + 'k',
+        'k' + 'wkkkkkkw' + 'k',
+        'k' + 'wkggggkw' + 'k',
+        'k' + 'wkkkkkkw' + 'k',
+        'k' + 'wkggggkw' + 'k',
+        'k' + 'wkkkkkkw' + 'k',
+        'k' + 'wkggggkw' + 'k',
+        'k' + 'wkkkkkkw' + 'k',
+        'k' + 'w'.repeat(8) + 'k',
+        'k' + 'wwbbbbww' + 'k',
+        'k' + 'wwbbbbww' + 'k',
+        ...Array.from({ length: 10 }, (_, i) => (i === 4 ? 'k' + 'wwwwwwgw' + 'k' : 'k' + 'w'.repeat(8) + 'k')),
+        'k' + 'g'.repeat(8) + 'k',
+        'k'.repeat(10),
+      ],
+    },
+  },
+  {
+    id: 'fan',
+    cat: 'appliance',
+    name: '선풍기',
+    hint: '더위 먹지 마',
+    sprite: {
+      palette: { b: '#8fd0ff', B: '#5aa8e0', g: '#c9c9d6', r: '#ff5c8a' },
+      rows: [
+        '...kkkkkk...',
+        '..kgbbbbgk..',
+        '.kgbbBbbbbgk',
+        'kgbBBbbbbbgk',
+        'kgbbbkkbbbgk',
+        'kgbbbkkbBbgk',
+        'kgbbbbbBBbgk',
+        '.kgbbbbBbgk.',
+        '..kgbbbbgk..',
+        '...kkkkkk...',
+        '.....kk.....',
+        '.....kk.....',
+        '.....kk.....',
+        '.....kk.....',
+        '.....kk.....',
+        '.....kk.....',
+        '.....kk.....',
+        '...kkkkkk...',
+        '..kwwwrwwk..',
+        '..kkkkkkkk..',
+      ],
+    },
+  },
+  {
+    id: 'microwave',
+    cat: 'appliance',
+    name: '전자레인지',
+    hint: '편의점 도시락 데워 먹어',
+    sprite: {
+      palette: { w: '#f4f4fa', d: '#3a3a4a', y: '#ffd94a', g: '#c9c9d6' },
+      rows: [
+        'k'.repeat(16),
+        'k' + 'w'.repeat(14) + 'k',
+        'k' + 'wkkkkkkkkwgwgw' + 'k',
+        'k' + 'wkdddddykwwwww' + 'k',
+        'k' + 'wkddddyykwgwgw' + 'k',
+        'k' + 'wkdddddykwwwww' + 'k',
+        'k' + 'wkkkkkkkkwgwgw' + 'k',
+        'k' + 'w'.repeat(14) + 'k',
+        'k'.repeat(16),
+        '.kk' + '.'.repeat(10) + 'kk.',
+      ],
+    },
+  },
+  // ─── 소품 ───
+  {
+    id: 'fishbowl',
+    cat: 'deco',
+    name: '어항',
+    hint: '금붕어 밥 잘 줘',
+    sprite: {
+      palette: { b: '#8fd0ff', B: '#5aa8e0', o: '#ff8a3d' },
+      rows: [
+        '..kkkkkkkk..',
+        '...kwwwwk...',
+        '..kwbbbbbk..',
+        '.kwbbbbbbbk.',
+        'kwbbboobbbbk',
+        'kbbbooobbbBk',
+        'kbbbbooobBBk',
+        'kbbbbbbbbBBk',
+        '.kbbbbbbBBk.',
+        '..kkkkkkkk..',
+      ],
+    },
+  },
+  {
+    id: 'cactus',
+    cat: 'deco',
+    name: '선인장',
+    hint: '물 안 줘도 돼서 너 같음',
+    sprite: {
+      palette: { g: '#59c26b', G: '#2f8a47', f: '#ff8fb8', p: '#e07a4f', P: '#b3573a' },
+      rows: [
+        '....kk....',
+        '...kffk...',
+        '...kggk...',
+        '.k.kgGk.k.',
+        'kgkkgGkkgk',
+        'kgggggGggk',
+        '.kkkgGkkk.',
+        '...kgGk...',
+        '...kgGk...',
+        '.kkkkkkkk.',
+        '.kppppppk.',
+        '..kpPPpk..',
+        '..kkkkkk..',
+      ],
+    },
+  },
+  {
+    id: 'cushion',
+    cat: 'deco',
+    name: '하트 쿠션',
+    hint: '안고 울어도 돼',
+    sprite: {
+      palette: { p: '#ff8fb8', P: '#e66a98', L: '#ffc2da' },
+      rows: [
+        '.kkkk..kkkk.',
+        'kLLppkkppppk',
+        'kLppppppppPk',
+        'kppppppppPPk',
+        '.kppppppPPk.',
+        '..kpppppPk..',
+        '...kpppPk...',
+        '....kpPk....',
+        '.....kk.....',
+      ],
+    },
+  },
+  {
+    id: 'alarm',
+    cat: 'deco',
+    name: '자명종',
+    hint: '제발 일어나',
+    sprite: {
+      palette: { r: '#ff5c7a' },
+      rows: [
+        '.kk......kk.',
+        'krrkkkkkkrrk',
+        '.kkrrrrrrkk.',
+        '.krwwwwwwrk.',
+        'krwwwkwwwwrk',
+        'krwwwkwwwwrk',
+        'krwwwkkkwwrk',
+        'krwwwwwwwwrk',
+        '.krwwwwwwrk.',
+        '..krrrrrrk..',
+        '.kk......kk.',
+      ],
+    },
+  },
+  // ─── 먹을거 ───
+  {
+    id: 'chicken',
+    cat: 'food',
+    name: '치킨',
+    hint: '오늘은 치킨이닭',
+    sprite: {
+      palette: { r: '#e8384f', c: '#d98a3a', C: '#b06a25' },
+      rows: [
+        '...kk...kk....',
+        '..kcck.kcck...',
+        '.kccCkkccCk...',
+        'k'.repeat(14),
+        'k' + 'rrwwrrwwrrww' + 'k',
+        'k' + 'rrwwrrwwrrww' + 'k',
+        'k' + 'rrwwrrwwrrww' + 'k',
+        'k' + 'rrwwrrwwrrww' + 'k',
+        'k'.repeat(14),
+      ],
+    },
+  },
+  {
+    id: 'tteokbokki',
+    cat: 'food',
+    name: '떡볶이',
+    hint: '매운 거 땡길 때',
+    sprite: {
+      palette: { r: '#e8452f', c: '#fff0dc', f: '#f2c27a' },
+      rows: [
+        '...kkkkkkkk...',
+        '..krcrrcfrrk..',
+        '.k' + 'rcccrfrcrr' + 'k.',
+        'k' + 'wrrcrrccrrrw' + 'k',
+        'k' + 'wwrrrrrrrrww' + 'k',
+        '.k' + 'w'.repeat(10) + 'k.',
+        '..kkkkkkkkkk..',
+      ],
+    },
+  },
+  // ─── 킹받는거 ───
+  {
+    id: 'socks',
+    cat: 'troll',
+    name: '양말 한 짝',
+    hint: '나머지 한 짝은 찾아봐',
+    sprite: {
+      palette: { v: '#a8d870', r: '#ff5c7a', d: '#c9b89a' },
+      rows: [
+        '..v...v...',
+        '.v...v....',
+        '..kkkk....',
+        '..kwwk....',
+        '..krrk....',
+        '..kwwk....',
+        '..kwwkkkk.',
+        '..kwdwwdwk',
+        '..kkkkkkk.',
+      ],
+    },
+  },
+  {
+    id: 'trashbag',
+    cat: 'troll',
+    name: '쓰레기봉투',
+    hint: '나가는 길에 버려 줘',
+    sprite: {
+      palette: { g: '#5c5c78', G: '#44445e', y: '#ffd94a' },
+      rows: [
+        '.....k..k.....',
+        '......kk......',
+        '.....kyyk.....',
+        '....kggggk....',
+        '...kgggggGk...',
+        '..kgwggggGGk..',
+        '.kggwgggggGGk.',
+        'kgggggggggGGGk',
+        'kgggggggggGGGk',
+        'kggggggggGGGGk',
+        '.kgggggggGGGk.',
+        '..kkkkkkkkkk..',
+      ],
+    },
+  },
+  {
+    id: 'roach',
+    cat: 'troll',
+    name: '바선생',
+    hint: '놀라지 마 (진짜 아님)',
+    sprite: {
+      palette: { b: '#6b3e26', B: '#4a2a18' },
+      rows: [
+        '.k......k...',
+        '..k....k....',
+        '...kkkkk....',
+        'k.kbBbBbk.k.',
+        '.kkbBbBbkk..',
+        'k.kbBbBbk.k.',
+        '...kkkkk....',
+      ],
+    },
+  },
+  {
+    id: 'rock',
+    cat: 'troll',
+    name: '돌멩이',
+    hint: '선물이야 (돌)',
+    sprite: {
+      palette: { g: '#a0a0b4', G: '#7a7a90', L: '#c9c9d6' },
+      rows: [
+        '...kkkkk....',
+        '..kLLgggk...',
+        '.kLgggggGkk.',
+        'kgggggggGGGk',
+        'kggggggGGGGk',
+        'kGgggGGGGGGk',
+        '.kkkkkkkkkk.',
       ],
     },
   },

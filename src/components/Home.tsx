@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AppContext } from '../App'
 import { characterById } from '../art/characters'
+import { defaultDecor } from '../art/decor'
 import { ITEMS } from '../art/items'
 import { themeById } from '../art/themes'
 import { backend } from '../lib/backend'
@@ -29,6 +30,8 @@ const DEMO_DROPS = [
   demo('coffee', 0.55, 0.82),
   demo('lamp', 0.08, 0.86),
 ]
+
+const DEMO_DECOR = defaultDecor('pink')
 
 const DEMO_NOTES = [
   { who: '지윤', item: 'ramen', text: '맨날 라면만 먹는 너에게' },
@@ -67,7 +70,7 @@ export function Home({ ctx }: { ctx: AppContext }) {
           <span>내친구의 미니룸</span>
           <span className="counter">TODAY 12 | TOTAL 128</span>
         </div>
-        <RoomScene theme="pink" character="bob" drops={DEMO_DROPS} className="room" />
+        <RoomScene decor={DEMO_DECOR} character="bob" drops={DEMO_DROPS} className="room" walkable />
         <ul className="demo-notes">
           {DEMO_NOTES.map((n) => (
             <li key={n.who}>

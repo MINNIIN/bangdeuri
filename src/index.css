@@ -929,3 +929,236 @@ button {
   border-radius: 8px;
   font-size: 11px;
 }
+
+/* ─── 미니미 걷기 ─── */
+
+.minime.is-walking .minime-body {
+  animation: walk 0.32s steps(2) infinite;
+}
+
+@keyframes walk {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+/* ─── 아이템 카테고리 ─── */
+
+.cat-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 2px 10px;
+  scrollbar-width: none;
+}
+
+.chip {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.chip.is-on {
+  background: var(--ink);
+  color: #fff;
+}
+
+/* ─── 꾸미기 툴 ─── */
+
+.decor-editor .btn-ghost:disabled {
+  opacity: 0.3;
+}
+
+.decor-preview .room {
+  max-height: 34dvh;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.tab {
+  padding: 10px 0;
+  background: none;
+  border: 0;
+  border-right: 2px solid var(--ink);
+  font-weight: 700;
+}
+
+.tab:last-child {
+  border-right: 0;
+}
+
+.tab.is-on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.wall-pick {
+  display: flex;
+  gap: 6px;
+}
+
+.seg {
+  flex: 1;
+  padding: 7px 0;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.seg.is-on {
+  background: #fff1e6;
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.panel-label {
+  margin: 4px 0 0;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.panel-tip {
+  margin: 0;
+  font-size: 12px;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+}
+
+.swatch-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.swatch-card:disabled {
+  opacity: 0.4;
+}
+
+.swatch-card.is-on {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+
+.mini {
+  width: 100%;
+  height: 40px;
+  border: 1px solid rgba(43, 34, 51, 0.25);
+  border-radius: 6px;
+}
+
+.sticker-icon {
+  width: 100%;
+  height: 40px;
+}
+
+.colors {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.color {
+  aspect-ratio: 1;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+}
+
+.color.is-on {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+
+.flat-wall {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  touch-action: none;
+  user-select: none;
+}
+
+.flat-wall.paint {
+  cursor: crosshair;
+}
+
+.flat-wall .grid rect {
+  fill: rgba(43, 34, 51, 0.12);
+  pointer-events: none;
+}
+
+.placed-sticker {
+  cursor: grab;
+}
+
+.sticker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.pens {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+
+.pen {
+  aspect-ratio: 1;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+
+.pen.is-on {
+  box-shadow: 0 0 0 3px var(--accent);
+  transform: scale(1.08);
+}
+
+.pen.eraser {
+  background: #fff;
+  font-size: 15px;
+}
+
+/* 저장 버튼 줄이 팔레트·장식 목록을 가리지 않게 */
+.decor-editor {
+  padding-bottom: 12px;
+}
+
+.decor-editor .actions.sticky {
+  bottom: 0;
+  margin: 0 -16px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--bg);
+  border-top: 2px solid var(--ink);
+}

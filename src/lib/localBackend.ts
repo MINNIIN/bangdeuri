@@ -1,3 +1,4 @@
+import { defaultDecor, normalizeDecor } from '../art/decor'
 import type { Backend } from './backend'
 import { kstDate, MAX_DROPS } from './rules'
 import type { Drop, Room } from './types'
@@ -21,7 +22,8 @@ const randomId = (len: number) =>
 const publicRoom = (room: StoredRoom): Room => {
   const copy: Partial<StoredRoom> = { ...room }
   delete copy.secret
-  return copy as Room
+  // 꾸미기가 생기기 전에 만든 방도 테마 기본값으로 보여준다
+  return { ...(copy as Room), decor: normalizeDecor(room.decor, room.theme) }
 }
 
 export function createLocalBackend(storage: Storage = localStorage): Backend {
@@ -50,6 +52,7 @@ export function createLocalBackend(storage: Storage = localStorage): Backend {
         todayVisits: 0,
         todayDate: kstDate(),
         createdAt: new Date().toISOString(),
+        decor: defaultDecor(input.theme),
       }
       write(db)
       return { id, secret }
@@ -81,6 +84,13 @@ export function createLocalBackend(storage: Storage = localStorage): Backend {
       const room = db.rooms[roomId]
       if (room?.secret !== secret) throw new Error('forbidden')
       room.motto = motto
+      write(db)
+    },
+    async updateDecor(roomId, secret, decor) {
+      const db = read()
+      const room = db.rooms[roomId]
+      if (room?.secret !== secret) throw new Error('forbidden')
+      room.decor = normalizeDecor(decor, room.theme)
       write(db)
     },
     async visit(roomId) {

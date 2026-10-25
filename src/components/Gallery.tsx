@@ -1,5 +1,6 @@
 import { CHARACTERS } from '../art/characters'
 import { ITEMS } from '../art/items'
+import { defaultDecor } from '../art/decor'
 import { THEMES } from '../art/themes'
 import { SpriteIcon } from './PixelSprite'
 import { RoomScene } from './RoomScene'
@@ -36,7 +37,7 @@ export function Gallery() {
       </div>
       {THEMES.map((t) => (
         <section key={t.id} className="window">
-          <RoomScene theme={t.id} character={CHARACTERS[THEMES.indexOf(t)].id} drops={drops} className="room" />
+          <RoomScene decor={defaultDecor(t.id)} character={CHARACTERS[THEMES.indexOf(t)].id} drops={drops} className="room" />
         </section>
       ))}
     </main>

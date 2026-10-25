@@ -15,8 +15,13 @@ create table if not exists public.rooms (
   today_visits  int  not null default 0,
   today_date    date not null default ((now() at time zone 'Asia/Seoul')::date),
   owner_secret  text not null,
-  created_at    timestamptz not null default now()
+  created_at    timestamptz not null default now(),
+  -- 방 주인이 꾸민 벽·바닥 (벽지·색·도트 그림·벽 장식). null이면 테마 기본값
+  decor         jsonb
 );
+
+-- 이미 만든 테이블에도 꾸미기 칸을 붙인다
+alter table public.rooms add column if not exists decor jsonb;
 
 create table if not exists public.drops (
   id          uuid primary key default gen_random_uuid(),
@@ -39,7 +44,7 @@ alter table public.drops enable row level security;
 revoke all on public.rooms from anon, authenticated;
 revoke all on public.drops from anon, authenticated;
 
-grant select (id, name, character, theme, motto, total_visits, today_visits, today_date, created_at)
+grant select (id, name, character, theme, motto, total_visits, today_visits, today_date, created_at, decor)
   on public.rooms to anon, authenticated;
 grant select on public.drops to anon, authenticated;
 
@@ -83,7 +88,7 @@ begin
   if not exists (select 1 from rooms where id = p_room) then
     raise exception 'room_not_found';
   end if;
-  if (select count(*) from drops where room_id = p_room) >= 40 then
+  if (select count(*) from drops where room_id = p_room) >= 60 then
     raise exception 'room_full';
   end if;
   insert into drops (room_id, item, u, v, nickname, message)
@@ -117,6 +122,22 @@ begin
   end if;
 end $$;
 
+create or replace function public.update_decor(p_room text, p_secret text, p_decor jsonb)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  -- 벽 그림 두 장(각 1120칸) + 장식 정도면 넉넉한 크기. 화면에서 다시 검사하고 쓴다
+  if jsonb_typeof(p_decor) <> 'object' or octet_length(p_decor::text) > 16000 then
+    raise exception 'invalid_decor';
+  end if;
+  update rooms set decor = p_decor
+  where id = p_room and owner_secret = p_secret;
+  if not found then
+    raise exception 'forbidden';
+  end if;
+end $$;
+
 create or replace function public.visit_room(p_room text)
 returns json
 language plpgsql security definer set search_path = public
@@ -141,10 +162,12 @@ revoke execute on function public.create_room(text, text, text, text) from publi
 revoke execute on function public.add_drop(text, text, real, real, text, text) from public;
 revoke execute on function public.delete_drop(text, text, uuid) from public;
 revoke execute on function public.update_room(text, text, text) from public;
+revoke execute on function public.update_decor(text, text, jsonb) from public;
 revoke execute on function public.visit_room(text) from public;
 
 grant execute on function public.create_room(text, text, text, text) to anon, authenticated;
 grant execute on function public.add_drop(text, text, real, real, text, text) to anon, authenticated;
 grant execute on function public.delete_drop(text, text, uuid) to anon, authenticated;
 grant execute on function public.update_room(text, text, text) to anon, authenticated;
+grant execute on function public.update_decor(text, text, jsonb) to anon, authenticated;
 grant execute on function public.visit_room(text) to anon, authenticated;

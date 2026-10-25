@@ -1,3 +1,4 @@
+import { normalizeDecor } from '../art/decor'
 import type { Backend } from './backend'
 import type { CharacterId, Drop, Room, ThemeId } from './types'
 
@@ -11,6 +12,7 @@ interface RoomRow {
   today_visits: number
   today_date: string
   created_at: string
+  decor: unknown
 }
 
 interface DropRow {
@@ -24,7 +26,7 @@ interface DropRow {
   created_at: string
 }
 
-const ROOM_COLUMNS = 'id,name,character,theme,motto,total_visits,today_visits,today_date,created_at'
+const ROOM_COLUMNS = 'id,name,character,theme,motto,total_visits,today_visits,today_date,created_at,decor'
 
 export const toRoom = (r: RoomRow): Room => ({
   id: r.id,
@@ -36,6 +38,7 @@ export const toRoom = (r: RoomRow): Room => ({
   todayVisits: r.today_visits,
   todayDate: r.today_date,
   createdAt: r.created_at,
+  decor: normalizeDecor(r.decor, r.theme),
 })
 
 export const toDrop = (r: DropRow): Drop => ({
@@ -102,6 +105,9 @@ export function createSupabaseBackend(baseUrl: string, key: string): Backend {
     },
     async updateMotto(roomId, secret, motto) {
       await rpc('update_room', { p_room: roomId, p_secret: secret, p_motto: motto })
+    },
+    async updateDecor(roomId, secret, decor) {
+      await rpc('update_decor', { p_room: roomId, p_secret: secret, p_decor: decor })
     },
     visit: (roomId) => rpc('visit_room', { p_room: roomId }),
   }

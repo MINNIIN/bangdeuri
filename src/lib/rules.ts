@@ -4,7 +4,7 @@ export const NAME_MAX = 8
 export const MOTTO_MAX = 30
 export const NICK_MAX = 8
 export const MESSAGE_MAX = 40
-export const MAX_DROPS = 40
+export const MAX_DROPS = 60
 
 /** 서버가 던지는 에러 코드 → 화면 문구 */
 export const ERROR_TEXT: Record<string, string> = {

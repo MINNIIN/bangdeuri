@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppContext } from '../App'
-import { ITEMS, itemById } from '../art/items'
+import type { Decor } from '../art/decor'
+import { ITEM_CATS, type ItemCat, ITEMS, itemById } from '../art/items'
 import { backend } from '../lib/backend'
 import { roomUrl } from '../lib/links'
 import {
@@ -17,11 +18,12 @@ import {
 import { renderStoryImage } from '../lib/shareImage'
 import { firstVisitThisSession, store } from '../lib/storage'
 import type { Drop, Room } from '../lib/types'
+import { DecorEditor } from './DecorEditor'
 import { SpriteIcon } from './PixelSprite'
 import { type Ghost, RoomScene } from './RoomScene'
 import { Sheet } from './Sheet'
 
-type Mode = 'view' | 'pick' | 'place' | 'write'
+type Mode = 'view' | 'pick' | 'place' | 'write' | 'decorate'
 
 const PAGE_SIZE = 5
 
@@ -43,6 +45,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading')
   const [mode, setMode] = useState<Mode>('view')
   const [item, setItem] = useState<string | null>(null)
+  const [cat, setCat] = useState<ItemCat | 'all'>('all')
   const [ghost, setGhost] = useState<Ghost | null>(null)
   const [nickname, setNickname] = useState('')
   const [message, setMessage] = useState('')
@@ -200,6 +203,21 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
     }
   }
 
+  const saveDecor = async (decor: Decor) => {
+    if (!secret || busy) return
+    setBusy(true)
+    try {
+      await backend.updateDecor(room.id, secret, decor)
+      setRoom({ ...room, decor })
+      setMode('view')
+      ctx.toast('방을 새로 꾸몄어요!')
+    } catch (e) {
+      ctx.toast(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const shareStory = async () => {
     if (!svgRef.current || busy) return
     setBusy(true)
@@ -283,6 +301,21 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
     </>
   )
 
+  if (mode === 'decorate') {
+    return (
+      <DecorEditor
+        initial={room.decor}
+        character={room.character}
+        drops={drops}
+        busy={busy}
+        onSave={saveDecor}
+        onCancel={() => setMode('view')}
+      />
+    )
+  }
+
+  const shownItems = cat === 'all' ? ITEMS : ITEMS.filter((it) => it.cat === cat)
+
   return (
     <main className="screen room-screen">
       <nav className="topbar">
@@ -342,7 +375,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
         <div className="room-wrap">
           <RoomScene
             svgRef={svgRef}
-            theme={room.theme}
+            decor={room.decor}
             character={room.character}
             drops={drops}
             ghost={ghost}
@@ -350,6 +383,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
             freshId={freshId}
             bubble={placing ? null : bubble}
             rotatable
+            walkable
             onFloorTap={mode === 'place' && item ? (p) => setGhost({ item, ...p }) : undefined}
             onDropTap={placing ? undefined : (d) => select(selected?.id === d.id ? null : d)}
             onBackgroundTap={() => select(null)}
@@ -381,11 +415,15 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
         </div>
       ) : isOwner ? (
         <div className="actions">
-          {drops.length === 0 && (
-            <p className="owner-tip">
-              아직 텅 빈 방이에요. 스토리에 올리고 링크 스티커를 붙이면 친구들이 채워 줘요
-            </p>
-          )}
+          <button
+            className="btn btn-big"
+            onClick={() => {
+              select(null)
+              setMode('decorate')
+            }}
+          >
+            🎨 방 꾸미기 (벽지 · 그림 · 장식 · 바닥)
+          </button>
           <button className="btn btn-primary" onClick={shareStory} disabled={busy}>
             {busy ? '이미지 만드는 중…' : '스토리 이미지 저장하기'}
           </button>
@@ -474,8 +512,21 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
 
       {/* 아이템 고르기 */}
       <Sheet open={mode === 'pick'} onClose={cancelDrop} title="뭘 놓고 갈까?">
+        <div className="cat-tabs" role="tablist">
+          {[{ id: 'all' as const, name: '전체' }, ...ITEM_CATS].map((c) => (
+            <button
+              key={c.id}
+              role="tab"
+              aria-selected={cat === c.id}
+              className={`chip ${cat === c.id ? 'is-on' : ''}`}
+              onClick={() => setCat(c.id)}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
         <div className="item-grid">
-          {ITEMS.map((it) => (
+          {shownItems.map((it) => (
             <button key={it.id} className={`item-cell ${item === it.id ? 'is-on' : ''}`} onClick={() => choose(it.id)}>
               <SpriteIcon sprite={it.sprite} size={44} />
               <span>{it.name}</span>

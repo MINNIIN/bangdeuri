@@ -1,5 +1,6 @@
 import { createLocalBackend } from './localBackend'
 import { createSupabaseBackend } from './supabase'
+import type { Decor } from '../art/decor'
 import type { Drop, NewDrop, NewRoom, Room } from './types'
 
 export interface Backend {
@@ -11,6 +12,7 @@ export interface Backend {
   addDrop(roomId: string, drop: NewDrop): Promise<Drop>
   deleteDrop(roomId: string, secret: string, dropId: string): Promise<void>
   updateMotto(roomId: string, secret: string, motto: string): Promise<void>
+  updateDecor(roomId: string, secret: string, decor: Decor): Promise<void>
   visit(roomId: string): Promise<{ today: number; total: number }>
 }
 

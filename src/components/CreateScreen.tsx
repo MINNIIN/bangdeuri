@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { AppContext } from '../App'
 import { CHARACTERS } from '../art/characters'
+import { defaultDecor } from '../art/decor'
 import { THEMES } from '../art/themes'
 import { backend } from '../lib/backend'
 import { charLength, clip, errorText, MOTTO_MAX, NAME_MAX } from '../lib/rules'
@@ -52,7 +53,7 @@ export function CreateScreen({ ctx }: { ctx: AppContext }) {
           <span>{name.trim() || '나'}의 미니룸</span>
           <span className="counter">TODAY 0 | TOTAL 0</span>
         </div>
-        <RoomScene theme={theme} character={character} drops={[]} className="room" />
+        <RoomScene decor={defaultDecor(theme)} character={character} drops={[]} className="room" />
       </section>
 
       {step === 0 && (
@@ -83,7 +84,7 @@ export function CreateScreen({ ctx }: { ctx: AppContext }) {
               className={`choice ${theme === t.id ? 'is-on' : ''}`}
               onClick={() => setTheme(t.id)}
             >
-              <RoomScene theme={t.id} character={character} drops={[]} className="choice-room" />
+              <RoomScene decor={defaultDecor(t.id)} character={character} drops={[]} className="choice-room" />
               <b>{t.name}</b>
               <span className="muted">{t.desc}</span>
             </button>
