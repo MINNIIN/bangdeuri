@@ -59,6 +59,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   const [page, setPage] = useState(0)
   // 방 주인이 "친구에게 어떻게 보이는지" 확인하면서 직접 놓아 볼 수 있는 모드
   const [guestView, setGuestView] = useState(false)
+  const [confirmRemoveRoom, setConfirmRemoveRoom] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
   const roomRef = useRef<HTMLElement>(null)
 
@@ -200,6 +201,20 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
       setEditingMotto(null)
     } catch (e) {
       ctx.toast(errorText(e))
+    }
+  }
+
+  const removeRoom = async () => {
+    if (!secret || busy) return
+    setBusy(true)
+    try {
+      await backend.deleteRoom(room.id, secret)
+      store.removeMine(room.id)
+      ctx.go({ kind: 'home' })
+      ctx.toast('방을 삭제했어요')
+    } catch (e) {
+      ctx.toast(errorText(e))
+      setBusy(false)
     }
   }
 
@@ -444,6 +459,25 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
           >
             친구 입장으로 보기 (직접 아이템 놓아 보기)
           </button>
+          <div className="danger-zone">
+            {confirmRemoveRoom ? (
+              <>
+                <p>방을 지우면 친구들이 놓고 간 아이템과 방명록도 모두 사라지고 되돌릴 수 없어요.</p>
+                <div className="row">
+                  <button className="btn btn-small" onClick={() => setConfirmRemoveRoom(false)}>
+                    그냥 둘래
+                  </button>
+                  <button className="btn btn-small btn-danger" onClick={removeRoom} disabled={busy}>
+                    {busy ? '지우는 중…' : '정말 삭제하기'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button className="link danger" onClick={() => setConfirmRemoveRoom(true)}>
+                방 삭제하기
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="actions">

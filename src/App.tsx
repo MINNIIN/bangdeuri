@@ -3,7 +3,6 @@ import { CreateScreen } from './components/CreateScreen'
 import { Gallery } from './components/Gallery'
 import { Home } from './components/Home'
 import { RoomScreen } from './components/RoomScreen'
-import { backend } from './lib/backend'
 import { roomIdFrom, roomUrl } from './lib/links'
 
 type Route = { kind: 'home' } | { kind: 'create' } | { kind: 'room'; id: string }
@@ -62,11 +61,6 @@ export default function App() {
       {route.kind === 'create' && <CreateScreen ctx={ctx} />}
       {route.kind === 'room' && <RoomScreen key={route.id} ctx={ctx} roomId={route.id} />}
 
-      {backend.local && (
-        <p className="local-badge" title="Supabase 키를 넣으면 친구들과 실제로 공유할 수 있어요">
-          로컬 모드 · 이 브라우저에만 저장돼요
-        </p>
-      )}
       <div className={`toast ${toastText ? 'is-on' : ''}`} role="status" aria-live="polite">
         {toastText}
       </div>

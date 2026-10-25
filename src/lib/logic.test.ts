@@ -167,6 +167,20 @@ describe('로컬 모드 저장소', () => {
     await expect(be.addDrop(id, drop)).rejects.toThrow('room_full')
   })
 
+  it('방 삭제는 방 주인만, 지우면 아이템도 같이 사라진다', async () => {
+    const be = createLocalBackend(memoryStorage())
+    const { id, secret } = await be.createRoom(newRoom)
+    const other = await be.createRoom({ ...newRoom, name: '다른방' })
+    await be.addDrop(id, drop)
+    await be.addDrop(other.id, drop)
+
+    await expect(be.deleteRoom(id, 'wrong')).rejects.toThrow('forbidden')
+    await be.deleteRoom(id, secret)
+    expect(await be.getRoom(id)).toBeNull()
+    expect(await be.listDrops(id)).toHaveLength(0)
+    expect(await be.listDrops(other.id)).toHaveLength(1)
+  })
+
   it('방문자 수', async () => {
     const be = createLocalBackend(memoryStorage())
     const { id } = await be.createRoom(newRoom)

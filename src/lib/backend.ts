@@ -13,6 +13,8 @@ export interface Backend {
   deleteDrop(roomId: string, secret: string, dropId: string): Promise<void>
   updateMotto(roomId: string, secret: string, motto: string): Promise<void>
   updateDecor(roomId: string, secret: string, decor: Decor): Promise<void>
+  /** 방과 그 방에 놓인 아이템·방명록을 모두 지운다 (방 주인만) */
+  deleteRoom(roomId: string, secret: string): Promise<void>
   visit(roomId: string): Promise<{ today: number; total: number }>
 }
 

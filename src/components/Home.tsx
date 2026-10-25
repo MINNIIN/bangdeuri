@@ -125,7 +125,7 @@ export function Home({ ctx }: { ctx: AppContext }) {
           <b>2</b>스토리에 링크 올리기
         </li>
         <li>
-          <b>3</b>친구들이 채워주는 방 구경하기
+          <b>3</b>친구들이 꾸며주는 방 구경하기
         </li>
       </ol>
     </main>

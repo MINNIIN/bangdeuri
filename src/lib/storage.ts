@@ -39,6 +39,11 @@ export const store = {
     s.mine = [{ id, secret }, ...s.mine.filter((m) => m.id !== id)]
     save(s)
   },
+  removeMine(id: string) {
+    const s = load()
+    s.mine = s.mine.filter((m) => m.id !== id)
+    save(s)
+  },
   hasDropped(roomId: string) {
     return load().dropped.includes(roomId)
   },

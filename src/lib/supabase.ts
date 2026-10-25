@@ -106,6 +106,9 @@ export function createSupabaseBackend(baseUrl: string, key: string): Backend {
     async updateMotto(roomId, secret, motto) {
       await rpc('update_room', { p_room: roomId, p_secret: secret, p_motto: motto })
     },
+    async deleteRoom(roomId, secret) {
+      await rpc('delete_room', { p_room: roomId, p_secret: secret })
+    },
     async updateDecor(roomId, secret, decor) {
       await rpc('update_decor', { p_room: roomId, p_secret: secret, p_decor: decor })
     },

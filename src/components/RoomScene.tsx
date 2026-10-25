@@ -107,11 +107,15 @@ export function RoomScene({
   const [facing, setFacing] = useState<1 | -1>(1)
   const [walking, setWalking] = useState(false)
   const walkRaf = useRef(0)
+  // 이동하려고 누른 자리에 잠깐 뜨는 표시 (게임의 이동 클릭 효과처럼)
+  const [marker, setMarker] = useState<(UV & { key: number }) | null>(null)
+  const markerTimer = useRef(0)
 
   useEffect(
     () => () => {
       cancelAnimationFrame(raf.current)
       cancelAnimationFrame(walkRaf.current)
+      window.clearTimeout(markerTimer.current)
     },
     [],
   )
@@ -139,6 +143,9 @@ export function RoomScene({
     cancelAnimationFrame(walkRaf.current)
     const from = meRef.current
     const to = { u: clampWalk(target.u), v: clampWalk(target.v) }
+    window.clearTimeout(markerTimer.current)
+    setMarker({ ...to, key: performance.now() })
+    markerTimer.current = window.setTimeout(() => setMarker(null), 650)
     const dist = Math.hypot(to.u - from.u, to.v - from.v)
     if (dist < 0.01) return
     const a = project(from, thetaRef.current)
@@ -363,6 +370,8 @@ export function RoomScene({
           shapeRendering="geometricPrecision"
         />
 
+        {marker && <WalkMarker key={marker.key} at={project(marker, theta)} />}
+
         {things.map((t) => (
           <g key={t.key}>{t.node}</g>
         ))}
@@ -374,6 +383,17 @@ export function RoomScene({
         </div>
       )}
     </div>
+  )
+}
+
+/** 바닥에 눕힌 링 두 개가 오므라들며 사라진다 */
+function WalkMarker({ at }: { at: { x: number; y: number } }) {
+  return (
+    <g className="walk-marker" transform={`translate(${at.x} ${at.y})`} shapeRendering="geometricPrecision">
+      <ellipse className="walk-ring" rx={12} ry={6} fill="none" stroke="#ff7f2a" strokeWidth={1.6} />
+      <ellipse className="walk-ring late" rx={12} ry={6} fill="none" stroke="#fff3b0" strokeWidth={1.2} />
+      <ellipse className="walk-dot" rx={2.4} ry={1.2} fill="#ff7f2a" />
+    </g>
   )
 }
 

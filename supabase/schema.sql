@@ -122,6 +122,18 @@ begin
   end if;
 end $$;
 
+create or replace function public.delete_room(p_room text, p_secret text)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  -- drops는 on delete cascade로 같이 지워진다
+  delete from rooms where id = p_room and owner_secret = p_secret;
+  if not found then
+    raise exception 'forbidden';
+  end if;
+end $$;
+
 create or replace function public.update_decor(p_room text, p_secret text, p_decor jsonb)
 returns void
 language plpgsql security definer set search_path = public
@@ -162,6 +174,7 @@ revoke execute on function public.create_room(text, text, text, text) from publi
 revoke execute on function public.add_drop(text, text, real, real, text, text) from public;
 revoke execute on function public.delete_drop(text, text, uuid) from public;
 revoke execute on function public.update_room(text, text, text) from public;
+revoke execute on function public.delete_room(text, text) from public;
 revoke execute on function public.update_decor(text, text, jsonb) from public;
 revoke execute on function public.visit_room(text) from public;
 
@@ -169,5 +182,6 @@ grant execute on function public.create_room(text, text, text, text) to anon, au
 grant execute on function public.add_drop(text, text, real, real, text, text) to anon, authenticated;
 grant execute on function public.delete_drop(text, text, uuid) to anon, authenticated;
 grant execute on function public.update_room(text, text, text) to anon, authenticated;
+grant execute on function public.delete_room(text, text) to anon, authenticated;
 grant execute on function public.update_decor(text, text, jsonb) to anon, authenticated;
 grant execute on function public.visit_room(text) to anon, authenticated;

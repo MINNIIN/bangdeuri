@@ -258,6 +258,27 @@ button {
   font-size: 13px;
 }
 
+.danger-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 2px dashed #e0d6e6;
+  text-align: center;
+}
+
+.danger-zone p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.danger-zone .row {
+  width: 100%;
+}
+
 .center-link {
   align-self: center;
   padding: 6px;
@@ -896,13 +917,6 @@ button {
   transform: translate(-50%, 0);
 }
 
-.local-badge {
-  margin: 24px 0 0;
-  font-size: 11px;
-  color: var(--muted);
-  text-align: center;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1163,4 +1177,50 @@ button {
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   background: var(--bg);
   border-top: 2px solid var(--ink);
+}
+
+/* ─── 이동 클릭 표시 ─── */
+
+.walk-marker {
+  pointer-events: none;
+}
+
+.walk-ring,
+.walk-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.walk-ring {
+  animation: walk-ring 0.5s ease-out forwards;
+}
+
+.walk-ring.late {
+  animation-delay: 0.08s;
+  opacity: 0;
+}
+
+.walk-dot {
+  animation: walk-dot 0.6s ease-out forwards;
+}
+
+@keyframes walk-ring {
+  0% {
+    transform: scale(1.5);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}
+
+@keyframes walk-dot {
+  0%,
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }

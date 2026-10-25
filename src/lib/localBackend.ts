@@ -86,6 +86,13 @@ export function createLocalBackend(storage: Storage = localStorage): Backend {
       room.motto = motto
       write(db)
     },
+    async deleteRoom(roomId, secret) {
+      const db = read()
+      if (db.rooms[roomId]?.secret !== secret) throw new Error('forbidden')
+      delete db.rooms[roomId]
+      db.drops = db.drops.filter((d) => d.roomId !== roomId)
+      write(db)
+    },
     async updateDecor(roomId, secret, decor) {
       const db = read()
       const room = db.rooms[roomId]
