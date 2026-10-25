@@ -7,6 +7,8 @@ import {
   emptyArt,
   MAX_STICKERS,
   normalizeDecor,
+  paintCell,
+  paintLine,
   setArtCell,
   shade,
   STICKERS,
@@ -91,6 +93,27 @@ describe('꾸미기 데이터', () => {
       { x: ART_COLS - 1, y: 1, w: 1, color: '#2b2233' },
     ])
     expect(setArtCell(art, 0, 0, '.')[0]).toBe('.')
+  })
+
+  it('빠르게 그은 대각선도 빈틈 없이 이어진다', () => {
+    const art = paintLine(emptyArt(), 2, 3, 20, 12, 'c')
+    const cells: [number, number][] = []
+    for (let i = 0; i < ART_LEN; i++) if (art[i] === 'c') cells.push([i % ART_COLS, Math.floor(i / ART_COLS)])
+    // 시작·끝 칸이 칠해지고, 가로로 한 칸도 건너뛰지 않는다
+    expect(cells).toContainEqual([2, 3])
+    expect(cells).toContainEqual([20, 12])
+    for (let col = 2; col <= 20; col++) expect(cells.some(([c]) => c === col)).toBe(true)
+    // 이웃한 칸끼리 대각선까지 포함해 붙어 있다
+    const sorted = [...cells].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    for (let i = 1; i < sorted.length; i++) {
+      expect(Math.abs(sorted[i][0] - sorted[i - 1][0])).toBeLessThanOrEqual(1)
+      expect(Math.abs(sorted[i][1] - sorted[i - 1][1])).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('굵게는 2×2칸, 벽 밖은 무시', () => {
+    const art = paintCell(emptyArt(), ART_COLS - 1, 0, 'a', 2)
+    expect([...art].filter((c) => c === 'a')).toHaveLength(2)
   })
 
   it('색 밝기 조절', () => {

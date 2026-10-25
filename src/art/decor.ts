@@ -63,10 +63,10 @@ export const MAX_STICKERS = 5
 
 // ─── 벽 그림 (도트) ───
 
-/** 벽 그림은 4칸짜리 도트 40×28 격자. 글자 하나가 한 칸: '.' 빈칸, 'a'~'l' 색 */
-export const ART_PX = 4
+/** 벽 그림은 2.5칸짜리 도트 64×46 격자. 글자 하나가 한 칸: '.' 빈칸, 'a'~'l' 색 */
+export const ART_PX = 2.5
 export const ART_COLS = WALL_W / ART_PX
-export const ART_ROWS = 28
+export const ART_ROWS = WALL_H / ART_PX
 export const ART_LEN = ART_COLS * ART_ROWS
 export const DRAW_COLORS: Record<string, string> = {
   a: '#2b2233',
@@ -89,6 +89,42 @@ export function setArtCell(art: string, col: number, row: number, ch: string) {
   const i = row * ART_COLS + col
   if (art[i] === ch) return art
   return art.slice(0, i) + ch + art.slice(i + 1)
+}
+
+/** 붓 굵기만큼 칸을 칠한다 (size 1 = 1칸, 2 = 2×2칸) */
+export function paintCell(art: string, col: number, row: number, ch: string, size = 1) {
+  let next = art
+  for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) next = setArtCell(next, col + dx, row + dy, ch)
+  return next
+}
+
+/**
+ * 두 칸 사이를 빈틈 없이 잇는다 (브레젠험 직선).
+ * 빠르게 그으면 포인터 이벤트가 띄엄띄엄 와서, 받은 점만 칠하면 대각선이 점선이 된다
+ */
+export function paintLine(art: string, c0: number, r0: number, c1: number, r1: number, ch: string, size = 1) {
+  let next = art
+  const dc = Math.abs(c1 - c0)
+  const dr = -Math.abs(r1 - r0)
+  const sc = c0 < c1 ? 1 : -1
+  const sr = r0 < r1 ? 1 : -1
+  let err = dc + dr
+  let c = c0
+  let r = r0
+  for (;;) {
+    next = paintCell(next, c, r, ch, size)
+    if (c === c1 && r === r1) break
+    const e2 = 2 * err
+    if (e2 >= dr) {
+      err += dr
+      c += sc
+    }
+    if (e2 <= dc) {
+      err += dc
+      r += sr
+    }
+  }
+  return next
 }
 
 /** 같은 색이 가로로 이어진 칸을 묶는다 (SVG rect 수 줄이기) */

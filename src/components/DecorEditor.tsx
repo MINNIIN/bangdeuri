@@ -7,9 +7,9 @@ import {
   DRAW_COLORS,
   emptyArt,
   FLOOR_COLORS,
+  paintLine,
   FLOOR_PATTERNS,
   MAX_STICKERS,
-  setArtCell,
   stickerById,
   STICKERS,
   type StickerId,
@@ -24,6 +24,7 @@ import { RoomScene } from './RoomScene'
 import { FloorSurface, Sticker, WallSurface } from './Surfaces'
 
 type Tab = 'wallpaper' | 'draw' | 'stickers' | 'floor'
+type Cell = { col: number; row: number }
 type WallTarget = 0 | 1
 
 const TABS: { id: Tab; name: string }[] = [
@@ -51,6 +52,7 @@ export function DecorEditor({ initial, character, drops, busy, onSave, onCancel 
   const [target, setTarget] = useState<WallTarget>(0)
   const [bothWalls, setBothWalls] = useState(true)
   const [pen, setPen] = useState('a')
+  const [brush, setBrush] = useState(1)
   const [selectedSticker, setSelectedSticker] = useState<number | null>(null)
   const undo = useRef<Decor[]>([])
   const [, force] = useState(0)
@@ -163,7 +165,9 @@ export function DecorEditor({ initial, character, drops, busy, onSave, onCancel 
             wall={wall}
             pen={pen}
             onStart={remember}
-            onPaint={(col, row) => updateWalls((w) => ({ ...w, art: setArtCell(w.art, col, row, pen) }))}
+            onPaint={(from, to) =>
+              updateWalls((w) => ({ ...w, art: paintLine(w.art, from.col, from.row, to.col, to.row, pen, brush) }))
+            }
           />
           <div className="pens">
             {Object.entries(DRAW_COLORS).map(([ch, color]) => (
@@ -176,8 +180,16 @@ export function DecorEditor({ initial, character, drops, busy, onSave, onCancel 
               />
             ))}
             <button className={`pen eraser ${pen === ERASER ? 'is-on' : ''}`} onClick={() => setPen(ERASER)} aria-label="지우개">
-              ⌫
+              <EraserIcon />
             </button>
+          </div>
+          <div className="wall-pick">
+            <Seg on={brush === 1} onClick={() => setBrush(1)}>
+              가늘게
+            </Seg>
+            <Seg on={brush === 2} onClick={() => setBrush(2)}>
+              굵게
+            </Seg>
           </div>
           <button
             className="link"
@@ -289,6 +301,19 @@ export function DecorEditor({ initial, character, drops, busy, onSave, onCancel 
   )
 }
 
+/** 지우개 아이콘 (비스듬히 놓인 분홍·흰 지우개) */
+function EraserIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
+      <g transform="rotate(-40 12 12)">
+        <rect x={3} y={8} width={18} height={9} rx={2} fill="#fff" stroke="#2b2233" strokeWidth={1.8} />
+        <rect x={3} y={8} width={7} height={9} rx={2} fill="#ff8fb8" stroke="#2b2233" strokeWidth={1.8} />
+      </g>
+      <path d="M5 21h14" stroke="#2b2233" strokeWidth={1.8} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function Seg({ on, onClick, children }: { on: boolean; onClick: () => void; children: string }) {
   return (
     <button className={`seg ${on ? 'is-on' : ''}`} onClick={onClick} aria-pressed={on}>
@@ -341,16 +366,24 @@ function PaintWall({
   wall: WallDecor
   pen: string
   onStart: () => void
-  onPaint: (col: number, row: number) => void
+  onPaint: (from: Cell, to: Cell) => void
 }) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
-  const drawing = useRef(false)
+  // 직전에 칠한 칸. 다음 칸까지 선으로 이어 칠한다
+  const last = useRef<Cell | null>(null)
 
-  const paintAt = (e: PointerEvent<SVGSVGElement>) => {
+  const cellAt = (e: PointerEvent<SVGSVGElement>): Cell | null => {
     const ctm = e.currentTarget.getScreenCTM()
-    if (!ctm) return
+    if (!ctm) return null
     const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
-    onPaint(Math.floor(p.x / ART_PX), Math.floor(p.y / ART_PX))
+    return { col: Math.floor(p.x / ART_PX), row: Math.floor(p.y / ART_PX) }
+  }
+
+  const paintTo = (e: PointerEvent<SVGSVGElement>) => {
+    const cell = cellAt(e)
+    if (!cell) return
+    onPaint(last.current ?? cell, cell)
+    last.current = cell
   }
 
   return (
@@ -358,23 +391,23 @@ function PaintWall({
       className={`flat-wall paint ${pen === ERASER ? 'is-erasing' : ''}`}
       viewBox={`0 0 ${WALL_W} ${WALL_H}`}
       onPointerDown={(e) => {
-        drawing.current = true
         e.currentTarget.setPointerCapture(e.pointerId)
         onStart()
-        paintAt(e)
+        last.current = null
+        paintTo(e)
       }}
-      onPointerMove={(e) => drawing.current && paintAt(e)}
-      onPointerUp={() => (drawing.current = false)}
-      onPointerCancel={() => (drawing.current = false)}
+      onPointerMove={(e) => last.current && paintTo(e)}
+      onPointerUp={() => (last.current = null)}
+      onPointerCancel={() => (last.current = null)}
       shapeRendering="crispEdges"
     >
       <WallSurface id={id} wall={wall} />
       <g className="grid" aria-hidden>
         {Array.from({ length: ART_COLS + 1 }, (_, i) => (
-          <rect key={`c${i}`} x={i * ART_PX} width={0.25} height={ART_ROWS * ART_PX} />
+          <rect key={`c${i}`} x={i * ART_PX} width={0.15} height={ART_ROWS * ART_PX} />
         ))}
         {Array.from({ length: ART_ROWS + 1 }, (_, i) => (
-          <rect key={`r${i}`} y={i * ART_PX} width={WALL_W} height={0.25} />
+          <rect key={`r${i}`} y={i * ART_PX} width={WALL_W} height={0.15} />
         ))}
       </g>
     </svg>

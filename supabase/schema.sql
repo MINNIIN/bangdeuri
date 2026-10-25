@@ -127,7 +127,7 @@ returns void
 language plpgsql security definer set search_path = public
 as $$
 begin
-  -- 벽 그림 두 장(각 1120칸) + 장식 정도면 넉넉한 크기. 화면에서 다시 검사하고 쓴다
+  -- 벽 그림 두 장(각 64×46 = 2944칸) + 장식 정도면 넉넉한 크기. 화면에서 다시 검사하고 쓴다
   if jsonb_typeof(p_decor) <> 'object' or octet_length(p_decor::text) > 16000 then
     raise exception 'invalid_decor';
   end if;
