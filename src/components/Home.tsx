@@ -54,7 +54,7 @@ export function Home({ ctx }: { ctx: AppContext }) {
     <main className="screen home">
       <header className="home-head">
         <p className="eyebrow">친구들이 채워주는 미니룸</p>
-        <h1 className="logo">방문록</h1>
+        <h1 className="logo">방들이</h1>
         <p className="lead">
           빈 방 링크를 스토리에 올리면
           <br />

@@ -6,7 +6,7 @@ import type { Drop, Room } from './types'
  * Supabase 키가 없을 때 쓰는 가짜 DB. 같은 브라우저 localStorage에 저장한다.
  * 링크를 다른 기기로 보내면 안 열리지만, 혼자서 전체 흐름을 테스트할 수 있다.
  */
-const DB_KEY = 'bangmunrok:localdb'
+const DB_KEY = 'bangdeuri:localdb'
 
 type StoredRoom = Room & { secret: string }
 

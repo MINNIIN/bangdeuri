@@ -1,5 +1,5 @@
 /** 이 브라우저에만 남는 정보: 내가 만든 방의 비밀 키, 아이템을 놓고 온 방 */
-const KEY = 'bangmunrok:v1'
+const KEY = 'bangdeuri:v1'
 
 interface Saved {
   mine: { id: string; secret: string }[]
@@ -52,7 +52,7 @@ export const store = {
 /** 같은 탭에서 새로고침할 때마다 방문자 수가 오르지 않게 */
 export function firstVisitThisSession(roomId: string) {
   try {
-    const k = `bangmunrok:visited:${roomId}`
+    const k = `bangdeuri:visited:${roomId}`
     if (sessionStorage.getItem(k)) return false
     sessionStorage.setItem(k, '1')
   } catch {

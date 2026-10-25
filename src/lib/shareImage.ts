@@ -121,8 +121,8 @@ export async function renderStoryImage(svg: SVGSVGElement, room: Room, dropCount
   // 위 문구
   ctx.fillStyle = INK
   ctx.font = `700 64px ${G11}`
-  ctx.fillText('내 방에 뭐 하나', W / 2, 130)
-  ctx.fillText('놓고 가 줘', W / 2, 210)
+  ctx.fillText('내 방들이 와 줘', W / 2, 130)
+  ctx.fillText('뭐 하나 놓고 가', W / 2, 210)
 
   // 링크 스티커 자리 안내
   const ay = py + ph + 90
@@ -132,7 +132,7 @@ export async function renderStoryImage(svg: SVGSVGElement, room: Room, dropCount
   ctx.fillText('↓ 링크 눌러서 들어와 ↓', W / 2, ay + 76)
 
   ctx.font = `700 48px ${G11}`
-  ctx.fillText('방문록', W / 2, Math.min(H - 90, ay + 280))
+  ctx.fillText('방들이', W / 2, Math.min(H - 90, ay + 280))
 
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob'))), 'image/png'),

@@ -205,9 +205,9 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
     setBusy(true)
     try {
       const blob = await renderStoryImage(svgRef.current, room, drops.length)
-      const file = new File([blob], `bangmunrok-${room.id}.png`, { type: 'image/png' })
+      const file = new File([blob], `bangdeuri-${room.id}.png`, { type: 'image/png' })
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: '방문록' })
+        await navigator.share({ files: [file], title: '방들이' })
       } else {
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -225,10 +225,10 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   }
 
   const shareLink = async () => {
-    const text = `${room.name}의 방에 뭐 하나 놓고 가 줘`
+    const text = `${room.name}의 방들이에 와 줘! 뭐 하나 놓고 가`
     try {
       if (navigator.share) {
-        await navigator.share({ title: '방문록', text, url: link })
+        await navigator.share({ title: '방들이', text, url: link })
       } else {
         await navigator.clipboard.writeText(link)
         ctx.toast('링크를 복사했어요')
@@ -289,7 +289,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
         <button className="btn-ghost" onClick={() => ctx.go({ kind: 'home' })} aria-label="처음으로">
           ←
         </button>
-        <span className="topbar-title">방문록</span>
+        <span className="topbar-title">방들이</span>
         <span className="topbar-spacer" />
       </nav>
 

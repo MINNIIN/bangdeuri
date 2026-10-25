@@ -1,4 +1,4 @@
--- 방문록 Supabase 스키마
+-- 방들이 Supabase 스키마
 -- Supabase 대시보드 > SQL Editor 에 통째로 붙여넣고 Run. 여러 번 실행해도 안전하다.
 
 create extension if not exists pgcrypto;
