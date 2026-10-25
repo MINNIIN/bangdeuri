@@ -59,9 +59,9 @@ export function Home({ ctx }: { ctx: AppContext }) {
         <p className="eyebrow">친구들이 채워주는 미니룸</p>
         <h1 className="logo">방들이</h1>
         <p className="lead">
-          빈 방 링크를 스토리에 올리면
+          내 방 링크를 공유하면
           <br />
-          친구들이 아이템을 하나씩 놓고 가요
+          친구들이 방들이 선물을 놓고 가요
         </p>
       </header>
 
