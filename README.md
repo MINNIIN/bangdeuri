@@ -37,12 +37,12 @@ supabase/       schema.sql (테이블 · 권한 · RPC 함수)
 
 ```bash
 npm install
-npm run dev      # http://localhost:5175
+npm run dev      # 비어 있는 포트로 뜸 (기본 5173, 쓰고 있으면 5174, 5175 …)
 npm test
 npm run build
 ```
 
-개발 서버에서 `http://localhost:5175/?gallery` 를 열면 미니미·아이템·방을 한눈에 볼 수 있습니다.
+개발 서버 주소 뒤에 `/?gallery` 를 붙여 열면 (예: `http://localhost:5173/?gallery`) 미니미·아이템·방을 한눈에 볼 수 있습니다.
 
 ## Supabase 연결 (친구들과 실제로 쓰려면)
 
