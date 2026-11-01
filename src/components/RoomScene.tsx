@@ -21,7 +21,6 @@ import {
   CHARACTER_SPOT,
   clampFloor,
   clampTilt,
-  MAX_TILT,
   project,
   rubberTilt,
   unproject,
@@ -166,10 +165,12 @@ export function RoomScene({
   const camRef = useRef(cam)
   const camRaf = useRef(0)
 
-  type Press = { x: number; y: number; theta: number; cam: Cam; dragging: boolean }
+  /** right: PC 우클릭 (끌면 회전, 짧게 누르면 미니미 이동) */
+  type Press = { x: number; y: number; theta: number; cam: Cam; dragging: boolean; right: boolean }
   const press = useRef<Press | null>(null)
   const pointers = useRef(new Map<number, P>())
-  const pinch = useRef<{ d: number; cam: Cam; world: P } | null>(null)
+  /** 두 손가락: 벌리면 확대, 비틀면 회전 */
+  const pinch = useRef<{ d: number; angle: number; theta: number; cam: Cam; world: P } | null>(null)
 
   const [me, setMe] = useState<UV>(CHARACTER_SPOT)
   const meRef = useRef<UV>(CHARACTER_SPOT)
@@ -496,8 +497,13 @@ export function RoomScene({
   }
 
   const onDown = (e: PointerEvent<SVGSVGElement>) => {
-    if (e.button === 2) return
+    const right = e.button === 2
+    if (right && !free && !walkable) return
     cancelAnimationFrame(raf.current)
+    if (right) {
+      press.current = { x: e.clientX, y: e.clientY, theta: thetaRef.current, cam: camRef.current, dragging: false, right }
+      return
+    }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (free && pointers.current.size === 2) {
       cancelAnimationFrame(camRaf.current)
@@ -505,13 +511,15 @@ export function RoomScene({
       e.currentTarget.setPointerCapture(e.pointerId)
       pinch.current = {
         d: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        angle: Math.atan2(b.y - a.y, b.x - a.x),
+        theta: thetaRef.current,
         cam: camRef.current,
         world: toWorld(e.currentTarget, (a.x + b.x) / 2, (a.y + b.y) / 2),
       }
       if (press.current) press.current.dragging = true
       return
     }
-    press.current = { x: e.clientX, y: e.clientY, theta: thetaRef.current, cam: camRef.current, dragging: false }
+    press.current = { x: e.clientX, y: e.clientY, theta: thetaRef.current, cam: camRef.current, dragging: false, right }
   }
 
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
@@ -527,12 +535,27 @@ export function RoomScene({
       const w = CAM_W / s
       const h = CAM_H / s
       setCam({ s, x: pz.world.x - fx * w + w / 2, y: pz.world.y - fy * h + h / 2 })
+      // 손가락을 시계 방향으로 비틀면 방도 시계 방향으로 돈다
+      let turn = Math.atan2(b.y - a.y, b.x - a.x) - pz.angle
+      if (turn > Math.PI) turn -= Math.PI * 2
+      if (turn < -Math.PI) turn += Math.PI * 2
+      setAngle(rubberTilt(pz.theta + turn))
       return
     }
     const p = press.current
     if (!p) return
     const dx = e.clientX - p.x
     const dy = e.clientY - p.y
+    if (p.right) {
+      // 우클릭 드래그: 좌우로 끌면 방이 돈다
+      if (!p.dragging) {
+        if (Math.abs(dx) <= TAP_SLOP) return
+        p.dragging = true
+        e.currentTarget.setPointerCapture(e.pointerId)
+      }
+      setAngle(rubberTilt(p.theta - dx * DRAG_TURN))
+      return
+    }
     if (!p.dragging) {
       const far = free ? Math.hypot(dx, dy) > TAP_SLOP : rotatable && Math.abs(dx) > TAP_SLOP && Math.abs(dx) > Math.abs(dy)
       if (!far) return
@@ -553,7 +576,10 @@ export function RoomScene({
   const onUp = (e: PointerEvent<SVGSVGElement>) => {
     pointers.current.delete(e.pointerId)
     if (pinch.current) {
-      if (pointers.current.size < 2) pinch.current = null
+      if (pointers.current.size < 2) {
+        pinch.current = null
+        settle(clampTilt(thetaRef.current))
+      }
       press.current = null
       return
     }
@@ -561,7 +587,13 @@ export function RoomScene({
     press.current = null
     if (!p) return
     if (p.dragging) {
-      if (!free) settle(clampTilt(thetaRef.current))
+      if (!free || p.right) settle(clampTilt(thetaRef.current))
+      return
+    }
+    // PC 우클릭을 짧게 누르면 그 자리로 걸어간다
+    if (p.right) {
+      const point = toFloorPoint(e)
+      if (walkable && !onFloorTap && point && onFloorArea(point)) walkTo(point)
       return
     }
     // 탭: 놓기 모드면 자리 정하기, 가구 → 가서 쓰기, 아이템 → 말풍선, 빈 바닥 → 걸어가기
@@ -591,17 +623,13 @@ export function RoomScene({
 
   const onCancel = (e: PointerEvent<SVGSVGElement>) => {
     pointers.current.delete(e.pointerId)
+    if (pinch.current) settle(clampTilt(thetaRef.current))
     pinch.current = null
     press.current = null
   }
 
-  // PC: 우클릭으로도 미니미를 옮긴다
-  const onContextMenu = (e: MouseEvent<SVGSVGElement>) => {
-    if (!walkable || onFloorTap) return
-    e.preventDefault()
-    const point = toFloorPoint(e)
-    if (point && onFloorArea(point)) walkTo(point)
-  }
+  // 우클릭은 위 포인터 처리에서 쓰므로 브라우저 메뉴는 띄우지 않는다
+  const onContextMenu = (e: MouseEvent<SVGSVGElement>) => e.preventDefault()
 
   // ─── 집 뼈대 ───
   const P0 = project({ u: 0, v: 0 }, theta)
@@ -840,7 +868,7 @@ export function RoomScene({
         onPointerMove={interactive ? onMove : undefined}
         onPointerUp={interactive ? onUp : undefined}
         onPointerCancel={onCancel}
-        onContextMenu={walkable ? onContextMenu : undefined}
+        onContextMenu={free || walkable ? onContextMenu : undefined}
         style={{
           cursor: onFloorTap ? 'crosshair' : free || rotatable ? 'grab' : undefined,
           touchAction: free ? 'none' : rotatable || onFloorTap ? 'pan-y' : undefined,
@@ -925,54 +953,26 @@ export function RoomScene({
       )}
 
       {free && (
-        <>
-          <div className="room-zones" role="toolbar" aria-label="방 이동">
-            {ZONES.map((z) => (
-              <button
-                key={z.id}
-                className="zone-chip"
-                onClick={() => {
-                  if (!walkable) {
-                    const at = project(z.spot, thetaRef.current)
-                    animateCam({ ...camRef.current, x: at.x, y: at.y - 24 }, 500)
-                    return
-                  }
-                  walkTo(z.spot)
-                  const at = project(z.spot, thetaRef.current)
-                  animateCam({ ...camRef.current, x: at.x, y: at.y - 24 }, 600)
-                }}
-              >
-                {z.name}
-              </button>
-            ))}
-          </div>
-          <div className="room-ctrl">
-            <button aria-label="확대" onClick={() => zoomAround(1.25)}>
-              +
-            </button>
-            <button aria-label="축소" onClick={() => zoomAround(0.8)}>
-              −
-            </button>
-            <button aria-label="왼쪽으로 돌리기" onClick={() => settle(clampTilt(thetaRef.current - MAX_TILT / 2))}>
-              ⟲
-            </button>
-            <button aria-label="오른쪽으로 돌리기" onClick={() => settle(clampTilt(thetaRef.current + MAX_TILT / 2))}>
-              ⟳
-            </button>
+        <div className="room-zones" role="toolbar" aria-label="방 이동">
+          {ZONES.map((z) => (
             <button
-              aria-label="집 전체 보기"
+              key={z.id}
+              className="zone-chip"
               onClick={() => {
-                if (camRef.current.s > S_MIN + 0.05) animateCam({ x: VIEW_W / 2, y: VIEW_H / 2, s: S_MIN })
-                else {
-                  const at = project(meRef.current, thetaRef.current)
-                  animateCam({ x: at.x, y: at.y - 24, s: S_HOME })
+                if (!walkable) {
+                  const at = project(z.spot, thetaRef.current)
+                  animateCam({ ...camRef.current, x: at.x, y: at.y - 24 }, 500)
+                  return
                 }
+                walkTo(z.spot)
+                const at = project(z.spot, thetaRef.current)
+                animateCam({ ...camRef.current, x: at.x, y: at.y - 24 }, 600)
               }}
             >
-              ⛶
+              {z.name}
             </button>
-          </div>
-        </>
+          ))}
+        </div>
       )}
     </div>
   )

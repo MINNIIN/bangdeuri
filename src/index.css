@@ -1263,33 +1263,6 @@ button {
   box-shadow: none;
 }
 
-.room-ctrl {
-  position: absolute;
-  right: 6px;
-  bottom: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.room-ctrl button {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  background: rgba(255, 255, 255, 0.92);
-  border: 2px solid var(--ink);
-  border-radius: 8px;
-  box-shadow: 1px 1px 0 var(--ink);
-  font-size: 13px;
-  line-height: 1;
-  opacity: 0.9;
-}
-
-.room-ctrl button:active {
-  transform: translate(1px, 1px);
-  box-shadow: none;
-}
-
 /* 미니미 한마디 */
 .say {
   position: absolute;
