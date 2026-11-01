@@ -41,16 +41,15 @@ export function WallSurface({ id, wall, dim = 0 }: { id: string; wall: WallDecor
   )
 }
 
-export function FloorSurface({ id, floor }: { id: string; floor: FloorDecor }) {
+/** 바닥 (기본 160×160 = 거실 한 칸). 집 전체나 방 하나를 그릴 때는 w, h를 넘긴다. 러그는 늘 거실 자리에 */
+export function FloorSurface({ id, floor, w = FLOOR_SIDE, h = FLOOR_SIDE }: { id: string; floor: FloorDecor; w?: number; h?: number }) {
   return (
     <g>
       <defs>
         <FloorPattern id={id} pattern={floor.pattern} color={floor.color} />
       </defs>
-      <rect width={FLOOR_SIDE} height={FLOOR_SIDE} fill={floor.color} />
-      {floor.pattern !== 'plain' && floor.pattern !== 'rug' && (
-        <rect width={FLOOR_SIDE} height={FLOOR_SIDE} fill={`url(#${id})`} />
-      )}
+      <rect width={w} height={h} fill={floor.color} />
+      {floor.pattern !== 'plain' && floor.pattern !== 'rug' && <rect width={w} height={h} fill={`url(#${id})`} />}
       {floor.pattern === 'rug' && <Rug color={floor.color} />}
     </g>
   )

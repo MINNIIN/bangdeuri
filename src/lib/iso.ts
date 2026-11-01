@@ -1,13 +1,14 @@
 /**
- * 아이소메트릭 방 좌표. SVG viewBox는 340×300.
- * 바닥 마름모의 뒤 꼭짓점이 (170, 125), u축은 오른쪽 아래, v축은 왼쪽 아래로 160칸씩.
+ * 아이소메트릭 집 좌표. 집 전체 SVG 좌표는 660×480.
+ * 바닥 마름모의 뒤 꼭짓점이 (330, 135), u축은 오른쪽 아래, v축은 왼쪽 아래로 320칸씩.
+ * 바닥 좌표 0~1이 집 전체이고, 0~0.5 칸(뒤쪽 가운데)이 예전 방 하나 크기인 거실이다.
  */
-export const VIEW_W = 340
-export const VIEW_H = 300
-const BACK_X = 170
-const BACK_Y = 125
-const EX = 160
-const EY = 80
+export const VIEW_W = 660
+export const VIEW_H = 480
+const BACK_X = 330
+const BACK_Y = 135
+const EX = 320
+const EY = 160
 
 export const FLOOR_MIN = 0.04
 export const FLOOR_MAX = 0.96
@@ -32,8 +33,8 @@ export function clampFloor(p: { u: number; v: number }) {
 /** 뒤(작은 값)부터 그린다 */
 export const depth = (p: { u: number; v: number }) => p.u + p.v
 
-/** 방 주인 미니미가 서 있는 자리 */
-export const CHARACTER_SPOT = { u: 0.5, v: 0.5 }
+/** 방 주인 미니미가 처음 서 있는 자리 (거실) */
+export const CHARACTER_SPOT = { u: 0.3, v: 0.36 }
 
 /** 방 가운데를 축으로 바닥 좌표를 돌린다 (θ 라디안, 화면에서 보는 회전) */
 export function rotateFloor(p: { u: number; v: number }, theta: number) {

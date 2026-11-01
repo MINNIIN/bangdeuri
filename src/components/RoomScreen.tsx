@@ -20,7 +20,8 @@ import { firstVisitThisSession, store } from '../lib/storage'
 import type { Drop, Room } from '../lib/types'
 import { DecorEditor } from './DecorEditor'
 import { SpriteIcon } from './PixelSprite'
-import { type Ghost, RoomScene } from './RoomScene'
+import { interactionFor } from '../lib/interactions'
+import { type Ghost, RoomScene, type SceneControl } from './RoomScene'
 import { Sheet } from './Sheet'
 
 type Mode = 'view' | 'pick' | 'place' | 'write' | 'decorate'
@@ -61,6 +62,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   const [guestView, setGuestView] = useState(false)
   const [confirmRemoveRoom, setConfirmRemoveRoom] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
+  const sceneRef = useRef<SceneControl>(null)
   const roomRef = useRef<HTMLElement>(null)
 
   const secret = store.secretFor(roomId)
@@ -287,6 +289,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   }
 
   const selectedItem = selected ? itemById(selected.item) : undefined
+  const selectedInter = selected ? interactionFor(selected.item) : undefined
   const bubble = selected && (
     <>
       <p className="bubble-head">
@@ -296,6 +299,18 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
         </span>
       </p>
       <p className="bubble-msg">{selected.message || '(말없이 놓고 감)'}</p>
+      {selectedInter && !confirmDelete && (
+        <button
+          className="bubble-use"
+          onClick={() => {
+            const id = selected.id
+            select(null)
+            sceneRef.current?.interactDrop(id)
+          }}
+        >
+          {selectedInter.emoji} {selectedInter.verb}
+        </button>
+      )}
       {isOwner &&
         (confirmDelete ? (
           <span className="bubble-actions">
@@ -390,6 +405,8 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
         <div className="room-wrap">
           <RoomScene
             svgRef={svgRef}
+            controlRef={sceneRef}
+            camera="free"
             decor={room.decor}
             character={room.character}
             drops={drops}
@@ -397,14 +414,13 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
             selectedId={placing ? null : selected?.id}
             freshId={freshId}
             bubble={placing ? null : bubble}
-            rotatable
             walkable
             onFloorTap={mode === 'place' && item ? (p) => setGhost({ item, ...p }) : undefined}
             onDropTap={placing ? undefined : (d) => select(selected?.id === d.id ? null : d)}
             onBackgroundTap={() => select(null)}
           />
           {mode === 'place' && (
-            <p className="place-hint">{ghost ? '다른 곳을 누르면 옮겨져요' : '놓을 자리를 눌러 줘'}</p>
+            <p className="place-hint">{ghost ? '다른 곳을 누르면 옮겨져요' : '놓을 자리를 눌러 줘 (끌면 둘러보기)'}</p>
           )}
         </div>
 

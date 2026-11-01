@@ -22,13 +22,13 @@ const demo = (item: string, u: number, v: number): Drop => ({
   createdAt: '',
 })
 const DEMO_DROPS = [
-  demo('plant', 0.12, 0.2),
-  demo('ramen', 0.72, 0.36),
-  demo('teddy', 0.3, 0.72),
-  demo('balloon', 0.2, 0.45),
-  demo('poop', 0.82, 0.74),
-  demo('coffee', 0.55, 0.82),
-  demo('lamp', 0.08, 0.86),
+  demo('plant', 0.42, 0.06),
+  demo('ramen', 0.3, 0.3),
+  demo('teddy', 0.7, 0.24),
+  demo('balloon', 0.44, 0.44),
+  demo('poop', 0.58, 0.82),
+  demo('cat', 0.2, 0.68),
+  demo('disco', 0.46, 0.62),
 ]
 
 const DEMO_DECOR = defaultDecor('pink')

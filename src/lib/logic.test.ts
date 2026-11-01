@@ -75,8 +75,8 @@ describe('아이소메트릭 좌표', () => {
   })
 
   it('바닥 꼭짓점', () => {
-    expect(floorPoint(0, 0)).toEqual({ x: 170, y: 125 })
-    expect(floorPoint(1, 1)).toEqual({ x: 170, y: 285 })
+    expect(floorPoint(0, 0)).toEqual({ x: 330, y: 135 })
+    expect(floorPoint(1, 1)).toEqual({ x: 330, y: 455 })
   })
 
   it('돌린 방에서도 화면 → 바닥 좌표가 원래대로 돌아온다', () => {
@@ -90,8 +90,8 @@ describe('아이소메트릭 좌표', () => {
 
   it('90° 돌리면 왼쪽 앞 모서리가 뒤 모서리 자리로 온다', () => {
     const p = project({ u: 0, v: 1 }, Math.PI / 2)
-    expect(p.x).toBeCloseTo(170)
-    expect(p.y).toBeCloseTo(125)
+    expect(p.x).toBeCloseTo(330)
+    expect(p.y).toBeCloseTo(135)
     expect(viewDepth({ u: 0, v: 1 }, Math.PI / 2)).toBeCloseTo(0)
   })
 

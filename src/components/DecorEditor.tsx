@@ -91,7 +91,7 @@ export function DecorEditor({ initial, character, drops, busy, onSave, onCancel 
       </nav>
 
       <section className="window">
-        <RoomScene decor={decor} character={character} drops={drops} rotatable className="decor-preview" />
+        <RoomScene decor={decor} character={character} drops={drops} rotatable camera="living" className="decor-preview" />
       </section>
 
       <div className="tabs" role="tablist">

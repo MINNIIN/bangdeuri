@@ -13,6 +13,8 @@ function svgToImage(svg: SVGSVGElement): Promise<HTMLImageElement> {
   const clone = svg.cloneNode(true) as SVGSVGElement
   clone.setAttribute('width', '1600')
   clone.setAttribute('height', String(Math.round((1600 * VIEW_H) / VIEW_W)))
+  // 화면은 카메라로 일부만 보고 있어도, 이미지는 집 전체를 담는다
+  clone.setAttribute('viewBox', `0 0 ${VIEW_W} ${VIEW_H}`)
   // 화면에서만 쓰는 선택·등장 애니메이션 표시는 빼고 그린다
   clone.querySelectorAll('.ghost').forEach((n) => n.remove())
   const xml = new XMLSerializer().serializeToString(clone)
