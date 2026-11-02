@@ -18,6 +18,8 @@ function svgToImage(svg: SVGSVGElement): Promise<HTMLImageElement> {
     for (const n of backdrop.childNodes) layer.appendChild(n.cloneNode(true))
     clone.insertBefore(layer, clone.firstChild)
   }
+  // 화면에서 카메라 이동용으로 붙인 크기·이동(style)은 빼고 그린다
+  clone.removeAttribute('style')
   clone.setAttribute('width', '1600')
   clone.setAttribute('height', String(Math.round((1600 * VIEW_H) / VIEW_W)))
   // 화면은 카메라로 일부만 보고 있어도, 이미지는 집 전체를 담는다

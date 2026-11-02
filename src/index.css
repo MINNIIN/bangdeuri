@@ -2594,3 +2594,17 @@ button {
     width: 420px;
   }
 }
+
+/* 꽉 채우기 화면: 방 그림 두 층을 집 전체 크기로 두고 transform으로만 옮긴다 (다시 칠하지 않게) */
+.room-stage.is-moving {
+  touch-action: none;
+}
+
+.room-stage.is-moving .room {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  overflow: visible;
+  transform-origin: 0 0;
+}

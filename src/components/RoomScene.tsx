@@ -285,6 +285,10 @@ export function RoomScene({
   }
   const stageEl = useRef<HTMLDivElement>(null)
   const fitted = useRef(false)
+  /** 무대 크기 (px). 꽉 채우기 화면에서 방 그림을 통째로 옮길 때 쓴다 */
+  const stageSize = useRef({ w: 0, h: 0 })
+  /** 지금 보고 있는 카메라 상자 (화면 좌표 → 방 좌표 바꿀 때) */
+  const vbRef = useRef({ x: 0, y: 0, w: VIEW_W, h: VIEW_H })
 
   // 꽉 채우기: 무대 크기가 바뀌면(회전·주소창·키보드) 카메라 상자 비율을 맞춘다
   useLayoutEffect(() => {
@@ -293,6 +297,7 @@ export function RoomScene({
     const measure = () => {
       const { width, height } = el.getBoundingClientRect()
       if (width < 10 || height < 10) return
+      stageSize.current = { w: width, h: height }
       const next = { a: height / width, k: Math.max(1, Math.sqrt((width * height) / PHONE_PX)) }
       if (Math.abs(next.a - aspect.current.a) < 0.002 && Math.abs(next.k - aspect.current.k) < 0.01) return
       aspect.current = next
@@ -409,14 +414,12 @@ export function RoomScene({
 
   // 휠 확대 (passive가 아니어야 페이지가 같이 스크롤되지 않는다)
   useEffect(() => {
-    const el = svgEl.current
+    const el = stageEl.current
     if (!el || !free) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       camAnim.current = null
-      const ctm = el.getScreenCTM()
-      const world = ctm ? new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse()) : undefined
-      zoomAround(Math.exp(-e.deltaY * 0.0015), world && { x: world.x, y: world.y })
+      zoomAround(Math.exp(-e.deltaY * 0.0015), toWorld(e.clientX, e.clientY))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -751,21 +754,19 @@ export function RoomScene({
   }))
 
   // ─── 포인터 ───
-  const toFloorPoint = (e: { clientX: number; clientY: number; currentTarget: SVGSVGElement }) => {
-    const ctm = e.currentTarget.getScreenCTM()
-    if (!ctm) return null
-    const v = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
+  /** 무대 상자 = 지금 카메라 상자. 화면 좌표를 방 그림 좌표로 바꾼다 */
+  const stageRect = () => stageEl.current!.getBoundingClientRect()
+  const toWorld = (x: number, y: number): P => {
+    const r = stageRect()
+    const v = vbRef.current
+    return { x: v.x + ((x - r.left) / r.width) * v.w, y: v.y + ((y - r.top) / r.height) * v.h }
+  }
+  const toFloorPoint = (e: { clientX: number; clientY: number }) => {
+    const v = toWorld(e.clientX, e.clientY)
     return unproject(v.x, v.y, thetaRef.current)
   }
 
-  const toWorld = (svg: SVGSVGElement, x: number, y: number): P => {
-    const ctm = svg.getScreenCTM()
-    if (!ctm) return { x: 0, y: 0 }
-    const v = new DOMPoint(x, y).matrixTransform(ctm.inverse())
-    return { x: v.x, y: v.y }
-  }
-
-  const onDown = (e: PointerEvent<SVGSVGElement>) => {
+  const onDown = (e: PointerEvent<HTMLDivElement>) => {
     const right = e.button === 2
     if (right && !free && !walkable) return
     cancelAnimationFrame(raf.current)
@@ -783,7 +784,7 @@ export function RoomScene({
         angle: Math.atan2(b.y - a.y, b.x - a.x),
         theta: thetaRef.current,
         cam: camRef.current,
-        world: toWorld(e.currentTarget, (a.x + b.x) / 2, (a.y + b.y) / 2),
+        world: toWorld((a.x + b.x) / 2, (a.y + b.y) / 2),
       }
       if (press.current) press.current.dragging = true
       return
@@ -791,14 +792,14 @@ export function RoomScene({
     press.current = { x: e.clientX, y: e.clientY, theta: thetaRef.current, cam: camRef.current, dragging: false, right }
   }
 
-  const onMove = (e: PointerEvent<SVGSVGElement>) => {
+  const onMove = (e: PointerEvent<HTMLDivElement>) => {
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     const pz = pinch.current
     if (pz && pointers.current.size >= 2) {
       const [a, b] = [...pointers.current.values()]
       const s = Math.min(S_MAX, Math.max(S_MIN, pz.cam.s * (Math.hypot(a.x - b.x, a.y - b.y) / pz.d)))
       // 두 손가락 가운데 아래의 지점이 손가락을 따라온다
-      const rect = e.currentTarget.getBoundingClientRect()
+      const rect = stageRect()
       const fx = ((a.x + b.x) / 2 - rect.left) / rect.width
       const fy = ((a.y + b.y) / 2 - rect.top) / rect.height
       const { w, h } = camSize(s, aspect.current)
@@ -832,7 +833,7 @@ export function RoomScene({
       e.currentTarget.setPointerCapture(e.pointerId)
     }
     if (free) {
-      const rect = e.currentTarget.getBoundingClientRect()
+      const rect = stageRect()
       const k = camSize(p.cam.s, aspect.current).w / rect.width
       setCam({ ...p.cam, x: p.cam.x - dx * k, y: p.cam.y - dy * k })
     } else if (rotatable) {
@@ -841,7 +842,7 @@ export function RoomScene({
     }
   }
 
-  const onUp = (e: PointerEvent<SVGSVGElement>) => {
+  const onUp = (e: PointerEvent<HTMLDivElement>) => {
     pointers.current.delete(e.pointerId)
     if (pinch.current) {
       if (pointers.current.size < 2) {
@@ -889,7 +890,7 @@ export function RoomScene({
     if (walkable && point && onFloorArea(point)) meWalk(point)
   }
 
-  const onCancel = (e: PointerEvent<SVGSVGElement>) => {
+  const onCancel = (e: PointerEvent<HTMLDivElement>) => {
     pointers.current.delete(e.pointerId)
     if (pinch.current) settle(clampTilt(thetaRef.current))
     pinch.current = null
@@ -897,7 +898,7 @@ export function RoomScene({
   }
 
   // 우클릭은 위 포인터 처리에서 쓰므로 브라우저 메뉴는 띄우지 않는다
-  const onContextMenu = (e: MouseEvent<SVGSVGElement>) => e.preventDefault()
+  const onContextMenu = (e: MouseEvent<HTMLDivElement>) => e.preventDefault()
 
   // ─── 집 뼈대 ───
   const theta = thetaRef.current
@@ -1084,12 +1085,42 @@ export function RoomScene({
   const bubbleStyle = bubbleAt && bubblePosition(pct(bubbleAt))
   const tags = showTags || actorList.length > 1
 
+  vbRef.current = vb
+  // 꽉 채우기 화면: 방 그림은 집 전체 크기로 한 번만 그려 두고, 카메라가 움직이면 그림을 통째로 옮긴다(transform).
+  // viewBox를 바꾸면 브라우저가 매 프레임 그림 전체를 다시 칠해서 휴대폰에서 버벅인다. 옮기기만 하면 GPU가 처리한다
+  const moving = fill && free && stageSize.current.w > 0
+  let layerStyle: CSSProperties | undefined
+  if (moving) {
+    const ppu = stageSize.current.w / vb.w
+    const dpr = window.devicePixelRatio || 1
+    const snap = (n: number) => Math.round(n * dpr) / dpr
+    layerStyle = {
+      width: VIEW_W * ppu,
+      height: VIEW_H * ppu,
+      transform: `translate3d(${snap(-vb.x * ppu)}px, ${snap(-vb.y * ppu)}px, 0)`,
+    }
+  }
+  const viewBox = moving ? `0 0 ${VIEW_W} ${VIEW_H}` : `${vb.x} ${vb.y} ${vb.w} ${vb.h}`
+
   return (
-    <div ref={stageEl} className={`room-stage ${free ? 'is-free' : ''} ${fill ? 'is-fill' : ''} ${className ?? ''}`}>
+    <div
+      ref={stageEl}
+      className={`room-stage ${free ? 'is-free' : ''} ${fill ? 'is-fill' : ''} ${moving ? 'is-moving' : ''} ${className ?? ''}`}
+      onPointerDown={interactive ? onDown : undefined}
+      onPointerMove={interactive ? onMove : undefined}
+      onPointerUp={interactive ? onUp : undefined}
+      onPointerCancel={onCancel}
+      onContextMenu={free || walkable ? onContextMenu : undefined}
+      style={{
+        cursor: onFloorTap ? 'crosshair' : free || rotatable ? 'grab' : undefined,
+        touchAction: free ? 'none' : rotatable || onFloorTap ? 'pan-y' : undefined,
+      }}
+    >
       {/* 벽·바닥은 따로 아래 층에 그린다. 미니미가 걸을 때 위층만 다시 칠해서 휴대폰에서도 부드럽게 */}
       <svg
         className="room room-backdrop"
-        viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+        viewBox={viewBox}
+        style={layerStyle}
         xmlns="http://www.w3.org/2000/svg"
         shapeRendering="crispEdges"
         aria-hidden
@@ -1102,18 +1133,10 @@ export function RoomScene({
           setRef(svgRef, el)
         }}
         className="room room-front"
-        viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+        viewBox={viewBox}
         xmlns="http://www.w3.org/2000/svg"
         shapeRendering="crispEdges"
-        onPointerDown={interactive ? onDown : undefined}
-        onPointerMove={interactive ? onMove : undefined}
-        onPointerUp={interactive ? onUp : undefined}
-        onPointerCancel={onCancel}
-        onContextMenu={free || walkable ? onContextMenu : undefined}
-        style={{
-          cursor: onFloorTap ? 'crosshair' : free || rotatable ? 'grab' : undefined,
-          touchAction: free ? 'none' : rotatable || onFloorTap ? 'pan-y' : undefined,
-        }}
+        style={layerStyle}
         role="img"
         aria-label={label}
       >
