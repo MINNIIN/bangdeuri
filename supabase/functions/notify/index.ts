@@ -1,5 +1,6 @@
 // 방 주인에게 푸시 알림 보내기: "OO님이 들어왔어요", "OO님이 라면을 두고 갔어요"
-// 배포: npx supabase functions deploy notify --no-verify-jwt
+// 배포: 대시보드 Edge Functions > Deploy a new function > Via Editor (이름 notify, Verify JWT 끄기)
+//       또는 npx supabase functions deploy notify --no-verify-jwt
 // 비밀값: npx supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:나@example.com
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import webpush from 'npm:web-push@3.6.7'
@@ -11,6 +12,23 @@ const cors = {
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
+
+/**
+ * RLS를 건너뛰는 서버 전용 키. Supabase가 함수에 넣어 주는 이름이 프로젝트마다 달라서 차례로 찾는다:
+ * 예전 service_role 키 → 새 secret 키 묶음(SUPABASE_SECRET_KEYS) → 직접 넣은 비밀값(BANGDEURI_SECRET_KEY)
+ */
+function serverKey(): string | null {
+  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (legacy) return legacy
+  try {
+    const keys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}') as Record<string, string>
+    const first = keys.default ?? Object.values(keys)[0]
+    if (first) return first
+  } catch {
+    // 형식이 다르면 다음 방법으로
+  }
+  return Deno.env.get('BANGDEURI_SECRET_KEY') ?? null
+}
 
 /** 같은 사람이 같은 방에 같은 알림을 다시 보내려면 기다려야 하는 시간 */
 const SAME_GAP_MS = 2 * 60 * 1000
@@ -33,7 +51,10 @@ Deno.serve(async (req) => {
   const item = String(body.item ?? '').trim().slice(0, 16)
   if (!roomId || !kind || !name) return json({ error: 'bad_request' }, 400)
 
-  const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  const serviceKey = serverKey()
+  if (!serviceKey) return json({ error: 'no_service_key' }, 500)
+  if (!Deno.env.get('VAPID_PUBLIC_KEY') || !Deno.env.get('VAPID_PRIVATE_KEY')) return json({ error: 'no_vapid_key' }, 500)
+  const db = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey)
 
   const { data: room } = await db.from('rooms').select('id,slug,name,owner_id').eq('id', roomId).maybeSingle()
   if (!room) return json({ error: 'room_not_found' }, 404)
