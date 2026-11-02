@@ -758,7 +758,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
             ) : (
               <div className="row">
                 <button className="link" onClick={() => setConfirmReset(true)}>
-                  링크가 너무 퍼졌어요 (새 링크 만들기)
+                  새 링크 만들기
                 </button>
                 <button className="link danger" onClick={() => setConfirmRemoveRoom(true)}>
                   방 삭제하기
