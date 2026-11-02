@@ -1935,8 +1935,8 @@ button {
 .toggle-knob {
   position: relative;
   flex: none;
-  width: 42px;
-  height: 24px;
+  width: 44px;
+  height: 26px;
   background: #e5dfea;
   border: 2px solid var(--ink);
   border-radius: 999px;
@@ -1948,8 +1948,10 @@ button {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
+  /* 가상 요소는 * 의 border-box가 안 붙어서 따로 준다 (테두리까지 18px) */
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
   background: #fff;
   border: 2px solid var(--ink);
   border-radius: 50%;
