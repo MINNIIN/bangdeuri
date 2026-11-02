@@ -71,12 +71,18 @@ const LIVING_BOX = { x: 160, y: 10, w: 340, h: 300 }
 /** 화면 세로/가로 비율이 바뀌어도 보이는 넓이는 같게 (세로로 긴 폰 전체 화면에서도 미니미 크기가 알맞게) */
 const CAM_AREA = CAM_W * CAM_H
 const BASE_ASPECT = CAM_H / CAM_W
-const camSize = (s: number, aspect: number) => {
-  const w = Math.sqrt(CAM_AREA / aspect) / s
-  return { w, h: w * aspect }
+/** 무대 모양: a = 세로/가로, k = 보이는 넓이 배수 (PC처럼 큰 화면은 더 멀리서 본다) */
+type View = { a: number; k: number }
+/** 이 정도 크기(폰 한 화면)까지는 기본 넓이, 더 크면 그만큼 더 넓게 */
+const PHONE_PX = 390 * 760
+/** 이보다 넓으면 PC 화면으로 보고 처음에 집 전체를 보여 준다 (index.css 820px과 같이) */
+const WIDE_PX = 820
+const camSize = (s: number, v: View) => {
+  const w = Math.sqrt((CAM_AREA * v.k) / v.a) / s
+  return { w, h: w * v.a }
 }
 
-function clampCam(c: Cam, aspect: number): Cam {
+function clampCam(c: Cam, aspect: View): Cam {
   const s = Math.min(S_MAX, Math.max(S_MIN, c.s))
   const { w, h } = camSize(s, aspect)
   const fit = (n: number, size: number, total: number) =>
@@ -84,7 +90,7 @@ function clampCam(c: Cam, aspect: number): Cam {
   return { s, x: fit(c.x, w, VIEW_W), y: fit(c.y, h, VIEW_H) }
 }
 
-const camBox = (c: Cam, aspect: number) => {
+const camBox = (c: Cam, aspect: View) => {
   const { w, h } = camSize(c.s, aspect)
   return { x: c.x - w / 2, y: c.y - h / 2, w, h }
 }
@@ -267,7 +273,7 @@ export function RoomScene({
   const raf = useRef(0)
 
   /** 무대 세로/가로 비율 (fill이면 화면 크기를 재서 바꾼다) */
-  const aspect = useRef(BASE_ASPECT)
+  const aspect = useRef<View>({ a: BASE_ASPECT, k: 1 })
   const fitCam = (c: Cam) => clampCam(c, aspect.current)
   // 처음 화면: 거실 가운데. 걸어 다닐 수 있으면 내 미니미가 서 있는 쪽으로 반쯤 당긴다 (현관으로 들어온 손님도 보이게)
   const camRef = useRef<Cam>(null as unknown as Cam)
@@ -275,9 +281,10 @@ export function RoomScene({
     const at = project(spawn, 0)
     const home = { x: 330, y: 205 }
     const c = walkable ? { x: (home.x + at.x) / 2, y: (home.y + at.y - 24) / 2 } : home
-    camRef.current = clampCam({ ...c, s: S_HOME }, BASE_ASPECT)
+    camRef.current = clampCam({ ...c, s: S_HOME }, aspect.current)
   }
   const stageEl = useRef<HTMLDivElement>(null)
+  const fitted = useRef(false)
 
   // 꽉 채우기: 무대 크기가 바뀌면(회전·주소창·키보드) 카메라 상자 비율을 맞춘다
   useLayoutEffect(() => {
@@ -286,10 +293,18 @@ export function RoomScene({
     const measure = () => {
       const { width, height } = el.getBoundingClientRect()
       if (width < 10 || height < 10) return
-      const next = height / width
-      if (Math.abs(next - aspect.current) < 0.002) return
+      const next = { a: height / width, k: Math.max(1, Math.sqrt((width * height) / PHONE_PX)) }
+      if (Math.abs(next.a - aspect.current.a) < 0.002 && Math.abs(next.k - aspect.current.k) < 0.01) return
       aspect.current = next
-      camRef.current = clampCam(camRef.current, next)
+      if (!fitted.current && width >= WIDE_PX) {
+        // PC처럼 넓은 화면은 처음에 집 전체가 다 보이게
+        const base = camSize(1, next)
+        const sFit = Math.min(base.w / (VIEW_W + 40), base.h / (VIEW_H + 60))
+        camRef.current = clampCam({ x: VIEW_W / 2, y: VIEW_H / 2, s: Math.max(S_MIN, sFit) }, next)
+      } else {
+        camRef.current = clampCam(camRef.current, next)
+      }
+      fitted.current = true
       bump()
     }
     measure()

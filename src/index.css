@@ -2558,3 +2558,39 @@ button {
     transform: scale(0.92);
   }
 }
+
+/* 휴대폰에서는 꾸미기·놓고 가기가 아래 떠 있는 버튼, PC에서는 위쪽 줄 */
+.hud-wide {
+  display: none;
+}
+
+/* PC처럼 넓은 화면: 채팅은 왼쪽 아래, 꾸미기·놓고 가기는 위쪽 방명록 옆 */
+@media (min-width: 820px) {
+  .hud-bottom {
+    max-width: none;
+    padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .hud-bottom .chat-dock,
+  .hud-bottom .chat-panel {
+    width: 360px;
+  }
+
+  .hud-bottom .chat-panel {
+    height: min(520px, 62cqh);
+  }
+
+  .hud-fabs {
+    display: none;
+  }
+
+  .hud-wide {
+    display: inline-flex;
+    padding: 0 12px;
+  }
+
+  .hud-place {
+    align-self: center;
+    width: 420px;
+  }
+}

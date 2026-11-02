@@ -601,6 +601,10 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   // 들어가기 전에는 방 주인 미니미가 서 있는 모습만 보여 준다
   const meLook = entry?.look ?? room.owner.look
 
+  const startDecorate = () => {
+    select(null)
+    setMode('decorate')
+  }
   const closeMenu = () => setMenuOpen(false)
   const menuItem = (label: ReactNode, onClick: () => void, cls = '') => (
     <button
@@ -658,6 +662,20 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           <b>{room.name}의 미니룸</b>
           {room.motto && <span>{room.motto}</span>}
         </div>
+        {/* PC에서는 꾸미기·놓고 가기 버튼을 위쪽에 (휴대폰은 아래 떠 있는 버튼) */}
+        {entered && !placing && (ownerUi || canDrop) && (
+          <button className="hud-btn hud-wide" onClick={ownerUi ? startDecorate : startPick}>
+            {ownerUi ? (
+              <>
+                <Icon id="paint" size={14} /> 꾸미기
+              </>
+            ) : (
+              <>
+                <SpriteIcon sprite={ITEMS.find((i) => i.id === 'gift')!.sprite} size={18} /> 아이템 놓고 가기
+              </>
+            )}
+          </button>
+        )}
         <button
           className="hud-btn hud-book"
           onClick={() => {
@@ -768,13 +786,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
               {!chatOpen && (ownerUi || canDrop) && (
                 <div className="hud-fabs">
                   {ownerUi ? (
-                    <button
-                      className="fab"
-                      onClick={() => {
-                        select(null)
-                        setMode('decorate')
-                      }}
-                    >
+                    <button className="fab" onClick={startDecorate}>
                       <Icon id="paint" size={18} /> 꾸미기
                     </button>
                   ) : (
