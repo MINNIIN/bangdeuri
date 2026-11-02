@@ -37,6 +37,10 @@ export const ICONS = {
   undo: icon(
     ['...k.....', '..kk.....', '.kkkkkk..', '..kk...k.', '...k....k', '........k', '.......k.', '..kkkkk..', '.........'],
   ),
+  /** 아이폰 공유 버튼 */
+  share: icon(['....k....', '...kkk...', '..k.k.k..', '....k....', 'kk..k..kk', 'k.......k', 'k.......k', 'k.......k', 'kkkkkkkkk']),
+  /** 홈 화면에 추가 */
+  addbox: icon(['kkkkkkkkk', 'k.......k', 'k...k...k', 'k...k...k', 'k.kkkkk.k', 'k...k...k', 'k...k...k', 'k.......k', 'kkkkkkkkk']),
   mask: icon(
     ['..kkkkk..', '.kgggggk.', 'kgggggggk', 'kkkkkkkkk', 'kkwkkkwkk', 'kgggggggk', '.kgggggk.', '..kkkkk..', '.........'],
     { g: '#4b4458' },

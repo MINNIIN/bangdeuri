@@ -9,6 +9,7 @@ import { isIOS, pushSupport, savedPrefs, setPushPrefs } from '../lib/push'
 import { errorText } from '../lib/rules'
 import { store } from '../lib/storage'
 import type { Drop, PushPrefs, Room } from '../lib/types'
+import { InstallCard } from './InstallCard'
 import { Icon, SpriteIcon } from './PixelSprite'
 import { RoomScene } from './RoomScene'
 
@@ -82,6 +83,8 @@ function Landing({ ctx }: { ctx: AppContext }) {
         </button>
       </div>
 
+      <InstallCard reason="앱처럼 아이콘 한 번에 바로 열려요" />
+
       <ol className="steps">
         <li>
           <b>1</b>내 미니미 만들고 방 고르기
@@ -137,6 +140,8 @@ function Dashboard({ ctx }: { ctx: AppContext }) {
           </button>
         </div>
       </header>
+
+      <InstallCard reason="앱처럼 바로 열고, 친구가 놀러 오면 알림도 받아요" />
 
       <section className="my-rooms">
         <h2>
