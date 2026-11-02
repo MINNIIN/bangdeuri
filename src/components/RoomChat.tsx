@@ -13,6 +13,8 @@ interface Props {
   owner: boolean
   /** 방 주인이 없던 동안 (마지막으로 본 때 ~ 들어온 때) */
   unread: { since: string; until: string } | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onSend: (body: string) => Promise<void>
   onDelete: (m: ChatMessage) => void
   onKick: (p: Peer) => void
@@ -21,27 +23,41 @@ interface Props {
 const time = (iso: string) => new Date(iso).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
 const day = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })
 
-/** 방 아래 채팅: 지금 같이 있는 사람들 + 대화 기록 + 입력창 */
-export function RoomChat({ messages, peers, meCid, owner, unread, onSend, onDelete, onKick }: Props) {
+/** 화면 맨 아래 채팅 줄. 누르면 위로 올라와서 같이 있는 사람들 + 대화 기록 + 입력창 */
+export function RoomChat({ messages, peers, meCid, owner, unread, open, onOpenChange, onSend, onDelete, onKick }: Props) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [picked, setPicked] = useState<string | null>(null)
   const logRef = useRef<HTMLOListElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  // 닫혀 있는 동안 새로 온 말 수
+  const [seen, setSeen] = useState(messages.length)
 
-  // 새 말이 오면 맨 아래로 (위로 올려 읽는 중이면 그대로)
+  const missed = unread ? messages.filter((m) => !m.owner && m.createdAt > unread.since && m.createdAt <= unread.until) : []
+  const firstUnread = missed[0]?.id
+  const badge = open ? 0 : Math.max(messages.length - seen, missed.length)
+
+  useEffect(() => {
+    if (open) setSeen(messages.length)
+  }, [open, messages.length])
+
+  // 열리면 맨 아래로, 새 말이 오면 맨 아래로 (위로 올려 읽는 중이면 그대로)
   const last = messages[messages.length - 1]?.id
   useEffect(() => {
     const el = logRef.current
-    if (!el) return
+    if (!el || !open) return
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 80 || !el.dataset.scrolled) {
       el.scrollTop = el.scrollHeight
       el.dataset.scrolled = '1'
     }
-  }, [last])
+  }, [last, open])
 
-  const missed = unread ? messages.filter((m) => !m.owner && m.createdAt > unread.since && m.createdAt <= unread.until) : []
-  const unreadCount = missed.length
-  const firstUnread = missed[0]?.id
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onOpenChange(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onOpenChange])
 
   const send = async () => {
     const body = text.trim()
@@ -52,20 +68,46 @@ export function RoomChat({ messages, peers, meCid, owner, unread, onSend, onDele
       setText('')
     } finally {
       setBusy(false)
+      inputRef.current?.focus()
     }
   }
 
   const sorted = [...peers].sort((a, b) => Number(b.owner) - Number(a.owner) || Number(b.cid === meCid) - Number(a.cid === meCid))
+  const lastMsg = messages[messages.length - 1]
+
+  if (!open) {
+    return (
+      <button className="chat-dock" onClick={() => onOpenChange(true)} aria-label="수다방 열기">
+        <Icon id="chat" size={16} />
+        <span className="chat-dock-text">
+          {lastMsg ? (
+            <>
+              <b>{lastMsg.name}</b> {lastMsg.body}
+            </>
+          ) : (
+            <span className="muted">말 걸기</span>
+          )}
+        </span>
+        {badge > 0 && <span className="chat-badge">{badge > 99 ? '99+' : badge}</span>}
+        <span className="chat-dock-people">
+          <Icon id="people" size={13} /> {peers.length}
+        </span>
+      </button>
+    )
+  }
 
   return (
-    <section className="chat window" aria-label="채팅">
-      <div className="window-bar">
+    <section className="chat-panel" aria-label="수다방">
+      <div className="chat-head">
         <span>
           <Icon id="chat" size={13} /> 수다방
         </span>
         <span className="counter">
           <Icon id="people" size={13} /> 지금 {peers.length}명
         </span>
+        <button className="btn-ghost chat-close" onClick={() => onOpenChange(false)} aria-label="수다방 접기">
+          <Icon id="close" size={12} />
+        </button>
       </div>
 
       <ul className="peers">
@@ -97,7 +139,7 @@ export function RoomChat({ messages, peers, meCid, owner, unread, onSend, onDele
         ))}
       </ul>
 
-      {unreadCount > 0 && <p className="chat-unread">내가 없는 동안 새 대화 {unreadCount}개</p>}
+      {missed.length > 0 && <p className="chat-unread">내가 없는 동안 새 대화 {missed.length}개</p>}
 
       <ol className="chat-log" ref={logRef}>
         {messages.length === 0 && <li className="muted chat-empty">아직 아무 말도 없어요. 먼저 인사해 볼까요?</li>}
@@ -134,11 +176,13 @@ export function RoomChat({ messages, peers, meCid, owner, unread, onSend, onDele
         }}
       >
         <input
+          ref={inputRef}
           value={text}
           onChange={(e) => setText(clip(e.target.value, CHAT_MAX))}
           placeholder="말 걸기"
           aria-label="채팅 입력"
           enterKeyHint="send"
+          autoFocus
         />
         <button className="btn btn-primary btn-small" disabled={!text.trim() || busy} aria-label="보내기">
           <Icon id="send" size={14} />

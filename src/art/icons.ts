@@ -45,6 +45,11 @@ export const ICONS = {
     ['..kkkkk..', '.kgggggk.', 'kgggggggk', 'kkkkkkkkk', 'kkwkkkwkk', 'kgggggggk', '.kgggggk.', '..kkkkk..', '.........'],
     { g: '#4b4458' },
   ),
+  menu: icon(['.........', 'kkkkkkkkk', 'kkkkkkkkk', '.........', 'kkkkkkkkk', 'kkkkkkkkk', '.........', 'kkkkkkkkk', 'kkkkkkkkk']),
+  /** 방명록 */
+  book: icon(['.kkk.kkk.', 'kwwwkwwwk', 'kwkkkkkwk', 'kwwwkwwwk', 'kwkkkkkwk', 'kwwwkwwwk', 'kkkkkkkkk', '....k....', '.........']),
+  /** 스토리 이미지 */
+  camera: icon(['..kkk....', 'kkkkkkkkk', 'kwwkkkwwk', 'kwkwwwkwk', 'kwkwwwkwk', 'kwwkkkwwk', 'kwwwwwwwk', 'kkkkkkkkk', '.........']),
 } satisfies Record<string, Sprite>
 
 export type IconId = keyof typeof ICONS

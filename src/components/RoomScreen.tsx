@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppContext } from '../App'
 import type { Decor } from '../art/decor'
 import { ITEM_CATS, type ItemCat, ITEMS, itemById } from '../art/items'
@@ -47,6 +47,28 @@ function firstEnterNotice(roomId: string) {
   return true
 }
 
+/** 휴대폰 키보드가 올라오면 실제로 보이는 영역만큼만 쓴다 (아래 채팅 입력창이 가려지지 않게) */
+function useVisibleViewport(): CSSProperties | undefined {
+  const [box, setBox] = useState<{ top: number; height: number } | null>(null)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () => {
+      const covered = window.innerHeight - vv.height
+      // 키보드처럼 크게 가려질 때만 맞춘다 (주소창이 줄었다 늘었다 하는 정도는 무시)
+      setBox(covered > 80 ? { top: vv.offsetTop, height: vv.height } : null)
+    }
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
+  return box ? { top: box.top, height: box.height, bottom: 'auto' } : undefined
+}
+
 export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [room, setRoom] = useState<Room | null>(null)
   const [drops, setDrops] = useState<Drop[]>([])
@@ -73,10 +95,12 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [guestView, setGuestView] = useState(false)
   const [confirmRemoveRoom, setConfirmRemoveRoom] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const viewport = useVisibleViewport()
 
   const svgRef = useRef<SVGSVGElement>(null)
   const sceneRef = useRef<SceneControl>(null)
-  const roomRef = useRef<HTMLElement>(null)
   const chRef = useRef<RoomChannel | null>(null)
   const cid = useMemo(newCid, [])
 
@@ -503,8 +527,8 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
 
   const openFromBook = (d: Drop) => {
     setBookOpen(false)
+    setChatOpen(false)
     select(d)
-    roomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   const goMakeRoom = () => {
@@ -577,218 +601,258 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   // 들어가기 전에는 방 주인 미니미가 서 있는 모습만 보여 준다
   const meLook = entry?.look ?? room.owner.look
 
+  const closeMenu = () => setMenuOpen(false)
+  const menuItem = (label: ReactNode, onClick: () => void, cls = '') => (
+    <button
+      className={`menu-item ${cls}`}
+      role="menuitem"
+      onClick={() => {
+        closeMenu()
+        onClick()
+      }}
+    >
+      {label}
+    </button>
+  )
+
   return (
-    <main className="screen room-screen">
-      <nav className="topbar">
-        <button className="btn-ghost" onClick={() => ctx.go({ kind: 'home' })} aria-label="처음으로">
+    <main className="room-screen" style={viewport}>
+      {/* 방 그림이 화면 전체 */}
+      <div className={`room-full ${placing ? 'is-placing' : ''}`}>
+        <RoomScene
+          key={entered ? 'in' : 'out'}
+          svgRef={svgRef}
+          controlRef={sceneRef}
+          camera="free"
+          fill
+          decor={room.decor}
+          look={meLook}
+          name={entry?.name}
+          badge={owner ? 'owner' : 'me'}
+          spawn={entered && !owner ? ENTRANCE : CHARACTER_SPOT}
+          drops={drops}
+          ghost={ghost}
+          selectedId={placing ? null : selected?.id}
+          freshId={freshId}
+          bubble={placing ? null : bubble}
+          walkable={entered}
+          onFloorTap={mode === 'place' && item ? (p) => setGhost({ item, ...p }) : undefined}
+          onDropTap={placing ? undefined : (d) => select(selected?.id === d.id ? null : d)}
+          onBackgroundTap={() => select(null)}
+          onMeMove={(from, to) => send({ t: 'move', cid, from, to })}
+          onMeAct={(key, from) => send({ t: 'act', cid, key, from })}
+        />
+        {!entered && (
+          <div className="enter-overlay">
+            <EnterSheet ctx={ctx} room={room} onEnter={setEntry} />
+          </div>
+        )}
+      </div>
+
+      {/* 위: 나가기 · 방 이름 · 방명록 · 메뉴 */}
+      <header className="hud-top">
+        <button className="hud-btn" onClick={() => ctx.go({ kind: 'home' })} aria-label="처음으로">
           <Icon id="back" />
         </button>
-        <span className="topbar-title">방들이</span>
-        <span className="topbar-spacer" />
-      </nav>
+        <div className="hud-title">
+          <b>{room.name}의 미니룸</b>
+          {room.motto && <span>{room.motto}</span>}
+        </div>
+        <button
+          className="hud-btn hud-book"
+          onClick={() => {
+            setPage(0)
+            setBookOpen(true)
+          }}
+          aria-label={`방명록 ${drops.length}개`}
+        >
+          <Icon id="book" />
+          <span>{drops.length}</span>
+        </button>
+        <button
+          className={`hud-btn ${menuOpen ? 'is-on' : ''}`}
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label="메뉴"
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+        >
+          <Icon id="menu" />
+        </button>
+      </header>
+
+      {menuOpen && (
+        <>
+          <div className="menu-backdrop" onClick={closeMenu} />
+          <div className="menu" role="menu">
+            <p className="menu-counter">
+              TODAY {todayCount(room)} · TOTAL {room.totalVisits} · 아이템 {drops.length}/{MAX_DROPS}
+            </p>
+            {ownerUi ? (
+              <>
+                {menuItem(
+                  <>
+                    <Icon id="paint" size={14} /> 방 꾸미기
+                  </>,
+                  () => {
+                    select(null)
+                    setMode('decorate')
+                  },
+                )}
+                {menuItem(room.motto ? '오늘의 한마디 고치기' : '오늘의 한마디 쓰기', () => setEditingMotto(room.motto))}
+                {menuItem(
+                  <>
+                    <Icon id="camera" size={14} /> 스토리 이미지 저장하기
+                  </>,
+                  shareStory,
+                )}
+                {menuItem(
+                  <>
+                    <Icon id="link" size={14} /> 링크 복사
+                  </>,
+                  copyLink,
+                )}
+                {menuItem(
+                  <>
+                    <Icon id="share" size={14} /> 친구에게 보내기
+                  </>,
+                  shareLink,
+                )}
+                {menuItem('직접 아이템 놓아 보기', () => {
+                  select(null)
+                  setGuestView(true)
+                })}
+                <hr />
+                {menuItem('새 링크 만들기', () => setConfirmReset(true), 'is-quiet')}
+                {menuItem('방 삭제하기', () => setConfirmRemoveRoom(true), 'is-danger')}
+              </>
+            ) : (
+              <>
+                {guestView && menuItem('내 방으로 돌아가기', () => setGuestView(false))}
+                {entered && !canDrop && !guestView && (
+                  <p className="menu-note">
+                    {alreadyDropped ? '이 방엔 이미 하나 놓고 왔어요' : '방이 꽉 찼어요. 방 주인이 정리하면 다시 놓을 수 있어요'}
+                  </p>
+                )}
+                {!guestView && menuItem('나도 내 방 만들기', goMakeRoom)}
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       {guestView && (
-        <p className="guest-banner">
+        <p className="hud-banner">
           친구에게는 이렇게 보여요
           <button className="link" onClick={() => setGuestView(false)}>
-            내 방으로 돌아가기
+            돌아가기
           </button>
         </p>
       )}
 
-      <section ref={roomRef} className={`window ${placing ? 'is-placing' : ''}`}>
-        <div className="window-bar">
-          <span>{room.name}의 미니룸</span>
-          <span className="counter">
-            TODAY {todayCount(room)} | TOTAL {room.totalVisits}
-          </span>
-        </div>
+      {mode === 'place' && <p className="place-hint">{ghost ? '다른 곳을 누르면 옮겨져요' : '놓을 자리를 눌러 줘 (끌면 둘러보기)'}</p>}
 
-        {editingMotto !== null ? (
-          <form
-            className="motto motto-edit"
-            onSubmit={(e) => {
-              e.preventDefault()
-              saveMotto()
-            }}
-          >
+      {/* 아래: 놓기 버튼 · 수다방 */}
+      {entered && (
+        <div className="hud-bottom">
+          {placing ? (
+            <div className="row hud-place">
+              <button className="btn" onClick={() => setMode('pick')}>
+                다시 고르기
+              </button>
+              <button className="btn btn-primary" disabled={!ghost} onClick={() => setMode('write')}>
+                여기에 놓기
+              </button>
+            </div>
+          ) : (
+            <>
+              {!chatOpen && (ownerUi || canDrop) && (
+                <div className="hud-fabs">
+                  {ownerUi ? (
+                    <button
+                      className="fab"
+                      onClick={() => {
+                        select(null)
+                        setMode('decorate')
+                      }}
+                    >
+                      <Icon id="paint" size={18} /> 꾸미기
+                    </button>
+                  ) : (
+                    <button className="fab fab-primary" onClick={startPick}>
+                      <SpriteIcon sprite={ITEMS.find((i) => i.id === 'gift')!.sprite} size={24} /> 아이템 놓고 가기
+                    </button>
+                  )}
+                </div>
+              )}
+              <RoomChat
+                messages={messages}
+                peers={peers.length ? peers : [{ cid, name: entry.name, look: entry.look, owner }]}
+                meCid={cid}
+                owner={ownerUi}
+                unread={owner ? unread : null}
+                open={chatOpen}
+                onOpenChange={setChatOpen}
+                onSend={sendChat}
+                onDelete={deleteChat}
+                onKick={kick}
+              />
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 오늘의 한마디 */}
+      <Sheet open={editingMotto !== null} onClose={() => setEditingMotto(null)} title="오늘의 한마디">
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            saveMotto()
+          }}
+        >
+          <label className="field">
+            <span>
+              방 이름 아래에 보여요 <em>{charLength(editingMotto ?? '')}/{MOTTO_MAX}</em>
+            </span>
             <input
-              value={editingMotto}
+              value={editingMotto ?? ''}
               onChange={(e) => setEditingMotto(clip(e.target.value, MOTTO_MAX))}
               placeholder="오늘의 한마디"
               autoFocus
             />
-            <button className="btn btn-small btn-primary">저장</button>
-          </form>
-        ) : (
-          (room.motto || ownerUi) && (
-            <p className="motto">
-              <span>{room.motto || '오늘의 한마디를 남겨 보세요'}</span>
-              {ownerUi && (
-                <button className="link" onClick={() => setEditingMotto(room.motto)}>
-                  수정
-                </button>
-              )}
-            </p>
-          )
-        )}
+          </label>
+          <button className="btn btn-primary" disabled={busy}>
+            저장
+          </button>
+        </form>
+      </Sheet>
 
-        <div className="room-wrap">
-          <RoomScene
-            key={entered ? 'in' : 'out'}
-            svgRef={svgRef}
-            controlRef={sceneRef}
-            camera="free"
-            decor={room.decor}
-            look={meLook}
-            name={entry?.name}
-            badge={owner ? 'owner' : 'me'}
-            spawn={entered && !owner ? ENTRANCE : CHARACTER_SPOT}
-            drops={drops}
-            ghost={ghost}
-            selectedId={placing ? null : selected?.id}
-            freshId={freshId}
-            bubble={placing ? null : bubble}
-            walkable={entered}
-            onFloorTap={mode === 'place' && item ? (p) => setGhost({ item, ...p }) : undefined}
-            onDropTap={placing ? undefined : (d) => select(selected?.id === d.id ? null : d)}
-            onBackgroundTap={() => select(null)}
-            onMeMove={(from, to) => send({ t: 'move', cid, from, to })}
-            onMeAct={(key, from) => send({ t: 'act', cid, key, from })}
-          />
-          {mode === 'place' && (
-            <p className="place-hint">{ghost ? '다른 곳을 누르면 옮겨져요' : '놓을 자리를 눌러 줘 (끌면 둘러보기)'}</p>
-          )}
-          {!entered && (
-            <div className="enter-overlay">
-              <EnterSheet ctx={ctx} room={room} onEnter={setEntry} />
-            </div>
-          )}
-        </div>
-
-        <div className="room-foot">
-          <span className="muted">
-            놓고 간 아이템 {drops.length}/{MAX_DROPS}
-          </span>
-          <button className="btn btn-small" onClick={() => (setPage(0), setBookOpen(true))}>
-            방명록 보기 {drops.length}
+      {/* 새 링크 · 방 삭제 확인 */}
+      <Sheet open={confirmReset} onClose={() => setConfirmReset(false)} title="새 링크 만들기">
+        <p className="confirm-text">새 링크를 만들면 예전 링크로는 아무도 못 들어와요. 친구들에게 새 링크를 다시 보내야 해요.</p>
+        <div className="row">
+          <button className="btn" onClick={() => setConfirmReset(false)}>
+            그냥 둘래
+          </button>
+          <button className="btn btn-danger" onClick={resetLink} disabled={busy}>
+            새 링크 만들기
           </button>
         </div>
-      </section>
-
-      {entered && (
-        <RoomChat
-          messages={messages}
-          peers={peers.length ? peers : [{ cid, name: entry.name, look: entry.look, owner }]}
-          meCid={cid}
-          owner={ownerUi}
-          unread={owner ? unread : null}
-          onSend={sendChat}
-          onDelete={deleteChat}
-          onKick={kick}
-        />
-      )}
-
-      {/* 아래 행동 버튼 */}
-      {!entered ? null : placing ? (
-        <div className="actions sticky row">
-          <button className="btn" onClick={() => setMode('pick')}>
-            다시 고르기
+      </Sheet>
+      <Sheet open={confirmRemoveRoom} onClose={() => setConfirmRemoveRoom(false)} title="방 삭제하기">
+        <p className="confirm-text">방을 지우면 친구들이 놓고 간 아이템, 방명록, 채팅도 모두 사라지고 되돌릴 수 없어요.</p>
+        <div className="row">
+          <button className="btn" onClick={() => setConfirmRemoveRoom(false)}>
+            그냥 둘래
           </button>
-          <button className="btn btn-primary" disabled={!ghost} onClick={() => setMode('write')}>
-            여기에 놓기
+          <button className="btn btn-danger" onClick={removeRoom} disabled={busy}>
+            {busy ? '지우는 중…' : '정말 삭제하기'}
           </button>
         </div>
-      ) : ownerUi ? (
-        <div className="actions">
-          <button
-            className="btn btn-big"
-            onClick={() => {
-              select(null)
-              setMode('decorate')
-            }}
-          >
-            <Icon id="paint" size={18} /> 방 꾸미기 (벽지 · 그림 · 장식 · 바닥)
-          </button>
-          <button className="btn btn-primary" onClick={shareStory} disabled={busy}>
-            {busy ? '이미지 만드는 중…' : '스토리 이미지 저장하기'}
-          </button>
-          <div className="row">
-            <button className="btn" onClick={copyLink}>
-              <Icon id="link" size={14} /> 링크 복사
-            </button>
-            <button className="btn" onClick={shareLink}>
-              친구에게 보내기
-            </button>
-          </div>
-          <button
-            className="link center-link"
-            onClick={() => {
-              select(null)
-              setGuestView(true)
-            }}
-          >
-            직접 아이템 놓아 보기
-          </button>
-          <div className="danger-zone">
-            {confirmReset ? (
-              <>
-                <p>새 링크를 만들면 예전 링크로는 아무도 못 들어와요. 친구들에게 새 링크를 다시 보내야 해요.</p>
-                <div className="row">
-                  <button className="btn btn-small" onClick={() => setConfirmReset(false)}>
-                    그냥 둘래
-                  </button>
-                  <button className="btn btn-small btn-danger" onClick={resetLink} disabled={busy}>
-                    새 링크 만들기
-                  </button>
-                </div>
-              </>
-            ) : confirmRemoveRoom ? (
-              <>
-                <p>방을 지우면 친구들이 놓고 간 아이템, 방명록, 채팅도 모두 사라지고 되돌릴 수 없어요.</p>
-                <div className="row">
-                  <button className="btn btn-small" onClick={() => setConfirmRemoveRoom(false)}>
-                    그냥 둘래
-                  </button>
-                  <button className="btn btn-small btn-danger" onClick={removeRoom} disabled={busy}>
-                    {busy ? '지우는 중…' : '정말 삭제하기'}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="row">
-                <button className="link" onClick={() => setConfirmReset(true)}>
-                  새 링크 만들기
-                </button>
-                <button className="link danger" onClick={() => setConfirmRemoveRoom(true)}>
-                  방 삭제하기
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="actions">
-          {canDrop ? (
-            <button className="btn btn-primary btn-big" onClick={startPick}>
-              <SpriteIcon sprite={ITEMS.find((i) => i.id === 'gift')!.sprite} size={28} />
-              {room.owner.nickname}의 방에 아이템 놓고 가기
-            </button>
-          ) : (
-            <p className="owner-tip">
-              {alreadyDropped ? '이 방엔 이미 하나 놓고 왔어요' : '방이 꽉 찼어요. 방 주인이 정리하면 다시 놓을 수 있어요'}
-            </p>
-          )}
-          {!guestView && (
-            <button className={`btn ${canDrop ? '' : 'btn-primary'}`} onClick={goMakeRoom}>
-              나도 내 방 만들기
-            </button>
-          )}
-        </div>
-      )}
+      </Sheet>
 
       {/* 방명록 */}
-      <Sheet open={bookOpen} onClose={() => setBookOpen(false)} title={`방명록 ${drops.length}`}>
+      <Sheet open={bookOpen} onClose={() => setBookOpen(false)} title={`방명록 ${drops.length}/${MAX_DROPS}`}>
         {guestbook.length === 0 ? (
           <p className="muted empty">아직 아무도 다녀가지 않았어요</p>
         ) : (

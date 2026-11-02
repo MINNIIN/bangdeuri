@@ -7,6 +7,7 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -67,16 +68,26 @@ const S_HOME = 0.95
 type Cam = { x: number; y: number; s: number }
 const LIVING_BOX = { x: 160, y: 10, w: 340, h: 300 }
 
-function clampCam(c: Cam): Cam {
+/** 화면 세로/가로 비율이 바뀌어도 보이는 넓이는 같게 (세로로 긴 폰 전체 화면에서도 미니미 크기가 알맞게) */
+const CAM_AREA = CAM_W * CAM_H
+const BASE_ASPECT = CAM_H / CAM_W
+const camSize = (s: number, aspect: number) => {
+  const w = Math.sqrt(CAM_AREA / aspect) / s
+  return { w, h: w * aspect }
+}
+
+function clampCam(c: Cam, aspect: number): Cam {
   const s = Math.min(S_MAX, Math.max(S_MIN, c.s))
-  const w = CAM_W / s
-  const h = CAM_H / s
+  const { w, h } = camSize(s, aspect)
   const fit = (n: number, size: number, total: number) =>
     size >= total ? total / 2 : Math.min(total - size / 2 + 20, Math.max(size / 2 - 20, n))
   return { s, x: fit(c.x, w, VIEW_W), y: fit(c.y, h, VIEW_H) }
 }
 
-const camBox = (c: Cam) => ({ x: c.x - CAM_W / c.s / 2, y: c.y - CAM_H / c.s / 2, w: CAM_W / c.s, h: CAM_H / c.s })
+const camBox = (c: Cam, aspect: number) => {
+  const { w, h } = camSize(c.s, aspect)
+  return { x: c.x - w / 2, y: c.y - h / 2, w, h }
+}
 
 export interface Ghost {
   item: string
@@ -131,6 +142,8 @@ interface Props {
   /** 빈 바닥을 누르면 미니미가 걸어가고, 가구를 누르면 가서 쓴다 */
   walkable?: boolean
   camera?: CameraMode
+  /** 부모 크기를 꽉 채운다 (방 화면 전체 화면). 화면 비율에 맞춰 카메라 상자도 바꾼다 */
+  fill?: boolean
   /** 미니미 머리 위 이름표 */
   showTags?: boolean
   onFloorTap?: (p: UV) => void
@@ -233,6 +246,7 @@ export function RoomScene({
   rotatable = false,
   walkable = false,
   camera = 'fit',
+  fill = false,
   showTags = false,
   onFloorTap,
   onDropTap,
@@ -252,7 +266,37 @@ export function RoomScene({
   const thetaRef = useRef(0)
   const raf = useRef(0)
 
-  const camRef = useRef<Cam>(clampCam({ x: 330, y: 205, s: S_HOME }))
+  /** 무대 세로/가로 비율 (fill이면 화면 크기를 재서 바꾼다) */
+  const aspect = useRef(BASE_ASPECT)
+  const fitCam = (c: Cam) => clampCam(c, aspect.current)
+  // 처음 화면: 거실 가운데. 걸어 다닐 수 있으면 내 미니미가 서 있는 쪽으로 반쯤 당긴다 (현관으로 들어온 손님도 보이게)
+  const camRef = useRef<Cam>(null as unknown as Cam)
+  if (!camRef.current) {
+    const at = project(spawn, 0)
+    const home = { x: 330, y: 205 }
+    const c = walkable ? { x: (home.x + at.x) / 2, y: (home.y + at.y - 24) / 2 } : home
+    camRef.current = clampCam({ ...c, s: S_HOME }, BASE_ASPECT)
+  }
+  const stageEl = useRef<HTMLDivElement>(null)
+
+  // 꽉 채우기: 무대 크기가 바뀌면(회전·주소창·키보드) 카메라 상자 비율을 맞춘다
+  useLayoutEffect(() => {
+    const el = stageEl.current
+    if (!fill || !free || !el) return
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect()
+      if (width < 10 || height < 10) return
+      const next = height / width
+      if (Math.abs(next - aspect.current) < 0.002) return
+      aspect.current = next
+      camRef.current = clampCam(camRef.current, next)
+      bump()
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [fill, free])
 
   /** right: PC 우클릭 (끌면 회전, 짧게 누르면 미니미 이동) */
   type Press = { x: number; y: number; theta: number; cam: Cam; dragging: boolean; right: boolean }
@@ -301,13 +345,13 @@ export function RoomScene({
 
   // ─── 카메라 ───
   const setCam = (c: Cam) => {
-    camRef.current = clampCam(c)
+    camRef.current = fitCam(c)
     bump()
   }
 
   /** 카메라를 부드럽게 옮긴다. 걷기와 같은 프레임 루프에서 같이 움직여서 한 프레임에 한 번만 다시 그린다 */
   const animateCam = (target: Cam, ms = 420) => {
-    camAnim.current = { from: camRef.current, to: clampCam(target), start: performance.now(), ms }
+    camAnim.current = { from: camRef.current, to: fitCam(target), start: performance.now(), ms }
     startLoop()
   }
 
@@ -316,7 +360,7 @@ export function RoomScene({
     if (!c) return false
     const k = Math.min(1, (now - c.start) / c.ms)
     const e = 1 - (1 - k) ** 3
-    camRef.current = clampCam({
+    camRef.current = fitCam({
       x: c.from.x + (c.to.x - c.from.x) * e,
       y: c.from.y + (c.to.y - c.from.y) * e,
       s: c.from.s + (c.to.s - c.from.s) * e,
@@ -329,7 +373,7 @@ export function RoomScene({
   const follow = (p: UV) => {
     if (!free) return
     const at = project(p, thetaRef.current)
-    const box = camBox(camRef.current)
+    const box = camBox(camRef.current, aspect.current)
     const inset = 0.22
     const inside =
       at.x > box.x + box.w * inset &&
@@ -742,9 +786,8 @@ export function RoomScene({
       const rect = e.currentTarget.getBoundingClientRect()
       const fx = ((a.x + b.x) / 2 - rect.left) / rect.width
       const fy = ((a.y + b.y) / 2 - rect.top) / rect.height
-      const w = CAM_W / s
-      const h = CAM_H / s
-      camRef.current = clampCam({ s, x: pz.world.x - fx * w + w / 2, y: pz.world.y - fy * h + h / 2 })
+      const { w, h } = camSize(s, aspect.current)
+      camRef.current = fitCam({ s, x: pz.world.x - fx * w + w / 2, y: pz.world.y - fy * h + h / 2 })
       // 손가락을 시계 방향으로 비틀면 방도 시계 방향으로 돈다
       let turn = Math.atan2(b.y - a.y, b.x - a.x) - pz.angle
       if (turn > Math.PI) turn -= Math.PI * 2
@@ -775,7 +818,7 @@ export function RoomScene({
     }
     if (free) {
       const rect = e.currentTarget.getBoundingClientRect()
-      const k = CAM_W / p.cam.s / rect.width
+      const k = camSize(p.cam.s, aspect.current).w / rect.width
       setCam({ ...p.cam, x: p.cam.x - dx * k, y: p.cam.y - dy * k })
     } else if (rotatable) {
       // 오른쪽으로 끌면 방 앞쪽이 손가락을 따라 오른쪽으로 돈다
@@ -1019,7 +1062,7 @@ export function RoomScene({
   }
 
   // ─── 카메라 상자 ───
-  const vb = free ? camBox(cam) : camera === 'living' ? LIVING_BOX : { x: 0, y: 0, w: VIEW_W, h: VIEW_H }
+  const vb = free ? camBox(cam, aspect.current) : camera === 'living' ? LIVING_BOX : { x: 0, y: 0, w: VIEW_W, h: VIEW_H }
   const pct = (p: P) => ({ left: ((p.x - vb.x) / vb.w) * 100, top: ((p.y - vb.y) / vb.h) * 100 })
 
   const interactive = free || rotatable || walkable || onFloorTap || onDropTap || onBackgroundTap
@@ -1027,7 +1070,7 @@ export function RoomScene({
   const tags = showTags || actorList.length > 1
 
   return (
-    <div className={`room-stage ${free ? 'is-free' : ''} ${className ?? ''}`}>
+    <div ref={stageEl} className={`room-stage ${free ? 'is-free' : ''} ${fill ? 'is-fill' : ''} ${className ?? ''}`}>
       {/* 벽·바닥은 따로 아래 층에 그린다. 미니미가 걸을 때 위층만 다시 칠해서 휴대폰에서도 부드럽게 */}
       <svg
         className="room room-backdrop"
@@ -1101,24 +1144,6 @@ export function RoomScene({
       {bubble && bubbleStyle && (
         <div className="bubble" style={bubbleStyle} onPointerDown={(e) => e.stopPropagation()}>
           {bubble}
-        </div>
-      )}
-
-      {free && (
-        <div className="room-zones" role="toolbar" aria-label="방 이동">
-          {ZONES.map((z) => (
-            <button
-              key={z.id}
-              className="zone-chip"
-              onClick={() => {
-                if (walkable) meWalk(z.spot)
-                const at = project(z.spot, thetaRef.current)
-                animateCam({ ...camRef.current, x: at.x, y: at.y - 24 }, walkable ? 600 : 500)
-              }}
-            >
-              {z.name}
-            </button>
-          ))}
         </div>
       )}
     </div>
