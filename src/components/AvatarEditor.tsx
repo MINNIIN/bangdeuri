@@ -17,8 +17,8 @@ type Tab = 'hair' | 'face' | 'top' | 'bottom' | 'hat'
 const TABS: { id: Tab; name: string }[] = [
   { id: 'hair', name: '머리' },
   { id: 'face', name: '얼굴' },
-  { id: 'top', name: '윗옷' },
-  { id: 'bottom', name: '아랫옷' },
+  { id: 'top', name: '상의' },
+  { id: 'bottom', name: '하의' },
   { id: 'hat', name: '모자' },
 ]
 

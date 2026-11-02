@@ -50,7 +50,7 @@ export function bottomRows(sprite: Sprite, from: number): Sprite {
   return memo(sprite, `bottom:${from}`, () => ({ ...sprite, rows: sprite.rows.slice(from) }))
 }
 
-/** 옷장에서 갈아입는 옷 (윗옷 t·아랫옷 j 색만 바꾼다). 0번은 원래 옷 */
+/** 옷장에서 갈아입는 옷 (상의 t·하의 j 색만 바꾼다). 0번은 원래 옷 */
 export const OUTFITS: Record<string, string>[] = [
   {},
   { t: '#8fe0b0', T: '#5cc28a', j: '#3a3f6b', J: '#2a2e52' },
