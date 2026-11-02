@@ -7,10 +7,10 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useReducer,
   useRef,
-  useState,
 } from 'react'
-import { characterById } from '../art/characters'
+import { type AvatarLook, buildAvatar } from '../art/avatar'
 import { type Decor, emptyArt, FLOOR_SIDE, type FloorDecor, shade, WALL_H, WALL_W, type WallDecor } from '../art/decor'
 import { artById } from '../art/fixtures'
 import { backSprite, bottomRows, headSprite, OUTFITS, sitSprite, withOutfit } from '../art/poses'
@@ -28,7 +28,8 @@ import {
   VIEW_W,
   viewDepth,
 } from '../lib/iso'
-import type { CharacterId, Drop } from '../lib/types'
+import type { SharedRoomState } from '../lib/realtime'
+import type { Drop } from '../lib/types'
 import { CHARACTER_PX, PixelSprite, ROOM_PX } from './PixelSprite'
 import { Disco, Floaters, Glow, Night, TvScreen } from './RoomFx'
 import { FloorSurface, slabColors, WallSurface } from './Surfaces'
@@ -49,6 +50,10 @@ const DRAG_TURN = 0.005
 const TAP_SLOP = 6
 /** 미니미 걷는 속도 (바닥 한 변 = 1, 초당) */
 const WALK_SPEED = 0.42
+/** 현관: 손님이 처음 서는 자리 */
+export const ENTRANCE: UV = { u: 0.54, v: 0.9 }
+/** 다른 사람 자리가 이만큼 어긋나 있으면 받은 자리로 옮겨 놓고 걷게 한다 */
+const SNAP = 0.08
 
 // ─── 카메라 ───
 /** 'free': 끌어서 둘러보고 핀치로 확대, 'fit': 집 전체, 'living': 거실만 (예전 방 크기) */
@@ -78,14 +83,42 @@ export interface Ghost {
   v: number
 }
 
-/** 바깥(방 화면)에서 미니미를 시킬 때 */
+/** 방에 있는 미니미 한 명의 겉모습 */
+export interface ActorInfo {
+  look: AvatarLook
+  name?: string
+  /** 이름표 옆 표시 */
+  badge?: 'owner' | 'me'
+}
+
+/** 바깥(방 화면)에서 미니미들을 시킬 때 */
 export interface SceneControl {
+  /** 내 미니미가 그 아이템을 쓰러 간다 */
   interactDrop: (id: string) => void
+  /** 다른 사람 미니미를 들이거나 겉모습을 바꾼다 (처음이면 at 자리, 없으면 현관에 선다) */
+  upsertActor: (id: string, info: ActorInfo, at?: UV) => void
+  removeActor: (id: string) => void
+  moveActor: (id: string, from: UV, to: UV) => void
+  actActor: (id: string, key: string, from: UV) => void
+  /** 머리 위 말풍선 ('me'는 내 미니미) */
+  sayActor: (id: string, text: string) => void
+  /** 혼자 알아서 돌아다니게 (방 주인이 없을 때 주인 미니미) */
+  setIdle: (id: string, idle: boolean) => void
+  /** 새로 들어온 사람에게 알려 줄 지금 내 상태와 방 상태 */
+  snapshot: () => { at: UV; act: string | null; outfit: number; room: SharedRoomState }
+  /** 받은 상태 그대로 그 자리에 둔다 (걸어가거나 효과를 다시 내지 않는다) */
+  placeActor: (id: string, at: UV, act: string | null, outfit: number) => void
+  applyRoom: (room: SharedRoomState) => void
 }
 
 interface Props {
   decor: Decor
-  character: string
+  /** 내 미니미 (walkable이면 내가 움직인다) */
+  look: AvatarLook
+  name?: string
+  badge?: ActorInfo['badge']
+  /** 내 미니미가 처음 서는 자리 */
+  spawn?: UV
   drops: Drop[]
   ghost?: Ghost | null
   selectedId?: string | null
@@ -97,9 +130,15 @@ interface Props {
   /** 빈 바닥을 누르면 미니미가 걸어가고, 가구를 누르면 가서 쓴다 */
   walkable?: boolean
   camera?: CameraMode
+  /** 미니미 머리 위 이름표 */
+  showTags?: boolean
   onFloorTap?: (p: UV) => void
   onDropTap?: (drop: Drop) => void
   onBackgroundTap?: () => void
+  /** 내 미니미가 걷기 시작할 때 (실시간으로 다른 사람에게 보낸다) */
+  onMeMove?: (from: UV, to: UV) => void
+  /** 내 미니미가 가구·아이템을 쓰러 갈 때 */
+  onMeAct?: (key: string, from: UV) => void
   svgRef?: Ref<SVGSVGElement>
   controlRef?: Ref<SceneControl>
   className?: string
@@ -122,11 +161,56 @@ interface Activity extends Target {
   phase: 'going' | 'doing'
 }
 
+interface Walk {
+  segs: { from: UV; to: UV; len: number; start: number }[]
+  total: number
+  start: number
+  duration: number
+  seg: number
+  onArrive?: () => void
+}
+
+interface Actor {
+  id: string
+  info: ActorInfo
+  pos: UV
+  facing: 1 | -1
+  heading: 'front' | 'back'
+  walk: Walk | null
+  act: Activity | null
+  actTimer: number
+  outfit: number
+  say: { text: string; key: number } | null
+  sayTimer: number
+  idle: boolean
+  idleTimer: number
+}
+
+const newActor = (id: string, info: ActorInfo, pos: UV): Actor => ({
+  id,
+  info,
+  pos,
+  facing: 1,
+  heading: 'front',
+  walk: null,
+  act: null,
+  actTimer: 0,
+  outfit: 0,
+  say: null,
+  sayTimer: 0,
+  idle: false,
+  idleTimer: 0,
+})
+
 const pts = (list: P[]) => list.map((p) => `${p.x},${p.y}`).join(' ')
 const onFloorArea = (p: UV) => p.u > -0.04 && p.u < 1.04 && p.v > -0.04 && p.v < 1.04
+const dist = (a: UV, b: UV) => Math.hypot(a.u - b.u, a.v - b.v)
 
 /** 머리 위에 띄우는 효과와 가구 위에 띄우는 효과 */
 const ON_HEAD: Fx[] = ['zzz', 'hearts', 'notes', 'sweat', 'shock', 'type', 'sparkle']
+
+/** 방 주인이 없을 때 주인 미니미가 혼자 하는 일 */
+const IDLE_FIXTURES = ['fx-sofa', 'fx-tv', 'fx-bed', 'fx-beanbag', 'fx-chair', 'fx-fridge', 'fx-counter', 'fx-bathtub', 'fx-bookshelf']
 
 function setRef<T>(ref: Ref<T> | undefined, value: T | null) {
   if (!ref) return
@@ -136,7 +220,10 @@ function setRef<T>(ref: Ref<T> | undefined, value: T | null) {
 
 export function RoomScene({
   decor,
-  character,
+  look,
+  name,
+  badge,
+  spawn = CHARACTER_SPOT,
   drops,
   ghost,
   selectedId,
@@ -145,9 +232,12 @@ export function RoomScene({
   rotatable = false,
   walkable = false,
   camera = 'fit',
+  showTags = false,
   onFloorTap,
   onDropTap,
   onBackgroundTap,
+  onMeMove,
+  onMeAct,
   svgRef,
   controlRef,
   className,
@@ -156,13 +246,12 @@ export function RoomScene({
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const free = camera === 'free'
   const svgEl = useRef<SVGSVGElement | null>(null)
+  const [, bump] = useReducer((n: number) => n + 1, 0)
 
-  const [theta, setTheta] = useState(0)
   const thetaRef = useRef(0)
   const raf = useRef(0)
 
-  const [cam, setCamState] = useState<Cam>(() => clampCam({ x: 330, y: 205, s: S_HOME }))
-  const camRef = useRef(cam)
+  const camRef = useRef<Cam>(clampCam({ x: 330, y: 205, s: S_HOME }))
   const camRaf = useRef(0)
 
   /** right: PC 우클릭 (끌면 회전, 짧게 누르면 미니미 이동) */
@@ -172,50 +261,47 @@ export function RoomScene({
   /** 두 손가락: 벌리면 확대, 비틀면 회전 */
   const pinch = useRef<{ d: number; angle: number; theta: number; cam: Cam; world: P } | null>(null)
 
-  const [me, setMe] = useState<UV>(CHARACTER_SPOT)
-  const meRef = useRef<UV>(CHARACTER_SPOT)
-  const [facing, setFacing] = useState<1 | -1>(1)
-  const [heading, setHeading] = useState<'front' | 'back'>('front')
-  const [walking, setWalking] = useState(false)
-  const walkRaf = useRef(0)
-  const [marker, setMarker] = useState<(UV & { key: number }) | null>(null)
-  const markerTimer = useRef(0)
+  const actors = useRef<Map<string, Actor> | null>(null)
+  if (!actors.current) actors.current = new Map([['me', newActor('me', { look, name, badge }, spawn)]])
+  const all = actors.current
+  const me = all.get('me')!
+  me.info = { look, name, badge }
 
-  const [act, setActState] = useState<Activity | null>(null)
-  const actRef = useRef<Activity | null>(null)
-  const actTimer = useRef(0)
-  const [outfit, setOutfit] = useState(0)
-  const [lights, setLights] = useState<Set<string>>(() => new Set())
-  const lightsRef = useRef(lights)
-  lightsRef.current = lights
-  const [say, setSay] = useState<{ text: string; key: number } | null>(null)
-  const sayTimer = useRef(0)
-  const [bursts, setBursts] = useState<{ key: number; fx: Fx; at: UV; item: string }[]>([])
-  const [channel, setChannel] = useState(0)
-  const channelRef = useRef(0)
-  const [switching, setSwitching] = useState(false)
+  const loopRaf = useRef(0)
+  const markerTimer = useRef(0)
+  const marker = useRef<(UV & { key: number }) | null>(null)
+
+  const lights = useRef(new Set<string>())
+  const bursts = useRef<{ key: number; fx: Fx; at: UV; item: string }[]>([])
+  const channel = useRef(0)
+  const switching = useRef(false)
   const switchTimer = useRef(0)
 
-  const charId = characterById(character).id as CharacterId
+  const dropsRef = useRef(drops)
+  dropsRef.current = drops
+  const cb = useRef({ onMeMove, onMeAct })
+  cb.current = { onMeMove, onMeAct }
 
   useEffect(
     () => () => {
       cancelAnimationFrame(raf.current)
-      cancelAnimationFrame(walkRaf.current)
+      cancelAnimationFrame(loopRaf.current)
       cancelAnimationFrame(camRaf.current)
       window.clearTimeout(markerTimer.current)
-      window.clearTimeout(actTimer.current)
-      window.clearTimeout(sayTimer.current)
       window.clearTimeout(switchTimer.current)
+      for (const a of all.values()) {
+        window.clearTimeout(a.actTimer)
+        window.clearTimeout(a.sayTimer)
+        window.clearTimeout(a.idleTimer)
+      }
     },
-    [],
+    [all],
   )
 
   // ─── 카메라 ───
   const setCam = (c: Cam) => {
-    const next = clampCam(c)
-    camRef.current = next
-    setCamState(next)
+    camRef.current = clampCam(c)
+    bump()
   }
 
   const animateCam = (target: Cam, ms = 420) => {
@@ -232,7 +318,7 @@ export function RoomScene({
     camRaf.current = requestAnimationFrame(step)
   }
 
-  /** 미니미가 갈 곳이 화면 가장자리면 그쪽으로 카메라를 옮긴다 */
+  /** 내 미니미가 갈 곳이 화면 가장자리면 그쪽으로 카메라를 옮긴다 */
   const follow = (p: UV) => {
     if (!free) return
     const at = project(p, thetaRef.current)
@@ -274,7 +360,7 @@ export function RoomScene({
   // ─── 회전 ───
   const setAngle = (t: number) => {
     thetaRef.current = t
-    setTheta(t)
+    bump()
   }
 
   const settle = (target: number) => {
@@ -290,99 +376,108 @@ export function RoomScene({
     raf.current = requestAnimationFrame(step)
   }
 
-  // ─── 미니미 말·효과 ───
-  const speak = (text: string) => {
-    window.clearTimeout(sayTimer.current)
-    setSay({ text, key: performance.now() })
-    sayTimer.current = window.setTimeout(() => setSay(null), 2600)
+  // ─── 말·효과 ───
+  const speak = (a: Actor, text: string, ms = 2600) => {
+    window.clearTimeout(a.sayTimer)
+    a.say = { text, key: performance.now() + Math.random() }
+    a.sayTimer = window.setTimeout(() => {
+      a.say = null
+      bump()
+    }, ms)
+    bump()
   }
 
   const burst = (fx: Fx, t: Target) => {
     const key = performance.now() + Math.random()
-    setBursts((b) => [...b, { key, fx, at: { u: t.u, v: t.v }, item: t.item }])
-    window.setTimeout(() => setBursts((b) => b.filter((x) => x.key !== key)), 1800)
-  }
-
-  const setAct = (a: Activity | null) => {
-    actRef.current = a
-    setActState(a)
+    bursts.current = [...bursts.current, { key, fx, at: { u: t.u, v: t.v }, item: t.item }]
+    window.setTimeout(() => {
+      bursts.current = bursts.current.filter((x) => x.key !== key)
+      bump()
+    }, 1800)
   }
 
   /** 하던 걸 그만둔다 (일어날 때 한마디·효과) */
-  const endAct = () => {
-    window.clearTimeout(actTimer.current)
-    const cur = actRef.current
+  const endAct = (a: Actor) => {
+    window.clearTimeout(a.actTimer)
+    const cur = a.act
     if (cur?.phase === 'doing' && cur.inter.leave) {
       burst(cur.inter.leave.fx, cur)
-      speak(cur.inter.leave.line)
+      speak(a, cur.inter.leave.line)
     }
-    if (cur) setAct(null)
+    a.act = null
   }
 
-  // ─── 걷기 ───
-  const walkAlong = (points: UV[], onArrive?: () => void) => {
-    cancelAnimationFrame(walkRaf.current)
-    const segs: { from: UV; to: UV; len: number; start: number }[] = []
-    let from = meRef.current
+  // ─── 걷기 (모든 미니미를 한 루프로 움직인다) ───
+  const loop = (now: number) => {
+    loopRaf.current = 0
+    for (const a of all.values()) {
+      const w = a.walk
+      if (!w) continue
+      const k = Math.min(1, (now - w.start) / w.duration)
+      const d = k * w.total
+      let i = w.segs.length - 1
+      while (i > 0 && w.segs[i].start > d) i--
+      const s = w.segs[i]
+      if (i !== w.seg) {
+        w.seg = i
+        const pa = project(s.from, thetaRef.current)
+        const pb = project(s.to, thetaRef.current)
+        if (Math.abs(pb.x - pa.x) > 1) a.facing = pb.x < pa.x ? -1 : 1
+        a.heading = pb.y < pa.y - 1 ? 'back' : 'front'
+      }
+      const t = Math.min(1, (d - s.start) / s.len)
+      a.pos = { u: s.from.u + (s.to.u - s.from.u) * t, v: s.from.v + (s.to.v - s.from.v) * t }
+      if (k >= 1) {
+        a.walk = null
+        a.heading = 'front'
+        w.onArrive?.()
+      }
+    }
+    bump()
+    if ([...all.values()].some((a) => a.walk)) loopRaf.current = requestAnimationFrame(loop)
+  }
+
+  const walkAlong = (a: Actor, points: UV[], onArrive?: () => void) => {
+    const segs: Walk['segs'] = []
+    let from = a.pos
     let total = 0
     for (const p of points) {
-      const len = Math.hypot(p.u - from.u, p.v - from.v)
+      const len = dist(p, from)
       if (len < 1e-4) continue
       segs.push({ from, to: p, len, start: total })
       total += len
       from = p
     }
     if (total < 0.004) {
-      setWalking(false)
+      a.walk = null
       onArrive?.()
+      bump()
       return
     }
-    setWalking(true)
-    const duration = (total / WALK_SPEED) * 1000
-    const start = performance.now()
-    let seg = -1
-    const step = (now: number) => {
-      const k = Math.min(1, (now - start) / duration)
-      const d = k * total
-      let i = segs.length - 1
-      while (i > 0 && segs[i].start > d) i--
-      const s = segs[i]
-      if (i !== seg) {
-        seg = i
-        const a = project(s.from, thetaRef.current)
-        const b = project(s.to, thetaRef.current)
-        if (Math.abs(b.x - a.x) > 1) setFacing(b.x < a.x ? -1 : 1)
-        setHeading(b.y < a.y - 1 ? 'back' : 'front')
-      }
-      const t = Math.min(1, (d - s.start) / s.len)
-      const p = { u: s.from.u + (s.to.u - s.from.u) * t, v: s.from.v + (s.to.v - s.from.v) * t }
-      meRef.current = p
-      setMe(p)
-      if (k < 1) walkRaf.current = requestAnimationFrame(step)
-      else {
-        setWalking(false)
-        setHeading('front')
-        onArrive?.()
-      }
-    }
-    walkRaf.current = requestAnimationFrame(step)
+    a.walk = { segs, total, start: performance.now(), duration: (total / WALK_SPEED) * 1000, seg: -1, onArrive }
+    if (!loopRaf.current) loopRaf.current = requestAnimationFrame(loop)
   }
 
-  const go = (dest: UV, onArrive?: () => void, showMarker = false) => {
+  const go = (a: Actor, dest: UV, onArrive?: () => void) => {
     const to = nearestFree(dest)
-    if (showMarker) {
-      window.clearTimeout(markerTimer.current)
-      setMarker({ ...to, key: performance.now() })
-      markerTimer.current = window.setTimeout(() => setMarker(null), 650)
-    }
-    const path = findPath(meRef.current, to)
-    follow(to)
-    walkAlong(path.length ? path : [to], onArrive)
+    const path = findPath(a.pos, to)
+    if (a.id === 'me') follow(to)
+    walkAlong(a, path.length ? path : [to], onArrive)
+    return to
   }
 
-  const walkTo = (p: UV) => {
-    endAct()
-    go(p, undefined, true)
+  /** 내 미니미를 그 자리로 (누른 자리 표시, 다른 사람에게 알림) */
+  const meWalk = (p: UV) => {
+    endAct(me)
+    const from = me.pos
+    const to = go(me, p)
+    window.clearTimeout(markerTimer.current)
+    marker.current = { ...to, key: performance.now() }
+    markerTimer.current = window.setTimeout(() => {
+      marker.current = null
+      bump()
+    }, 650)
+    cb.current.onMeMove?.(from, to)
   }
 
   // ─── 가구 쓰기 ───
@@ -398,86 +493,189 @@ export function RoomScene({
     return nearestFree({ u: t.u + off.du, v: t.v + off.dv })
   }
 
-  const arrive = (t: Target, inter: Interaction) => {
-    setAct({ ...t, inter, phase: 'doing' })
+  const flickChannel = (n: number) => {
+    channel.current = n
+    switching.current = true
+    window.clearTimeout(switchTimer.current)
+    switchTimer.current = window.setTimeout(() => {
+      switching.current = false
+      bump()
+    }, 380)
+  }
+
+  /** 내가 움직이는 미니미 (나, 혼자 돌아다니는 주인 미니미) */
+  const isLocal = (a: Actor) => a.id === 'me' || a.idle
+
+  const arrive = (a: Actor, t: Target, inter: Interaction) => {
+    a.act = { ...t, inter, phase: 'doing' }
     const ip = project(t, thetaRef.current)
-    const mp = project(meRef.current, thetaRef.current)
-    if (Math.abs(ip.x - mp.x) > 2) setFacing(ip.x < mp.x ? -1 : 1)
+    const mp = project(a.pos, thetaRef.current)
+    if (Math.abs(ip.x - mp.x) > 2) a.facing = ip.x < mp.x ? -1 : 1
     if (inter.light) {
-      const on = !lightsRef.current.has(t.key)
-      setLights((prev) => {
-        const next = new Set(prev)
-        if (on) next.add(t.key)
-        else next.delete(t.key)
-        return next
-      })
-      speak(on ? pickLine(inter) : '딸깍, 불 끄기')
+      const on = !lights.current.has(t.key)
+      if (on) lights.current.add(t.key)
+      else lights.current.delete(t.key)
+      speak(a, on ? pickLine(inter) : '딸깍, 불 끄기')
     } else if (t.item === 'tv') {
-      const ch = channelRef.current
+      const ch = channel.current
       flickChannel(ch)
-      speak(`CH${ch + 1} ${TV_CHANNELS[ch]} · ${pickLine(inter)}`)
+      speak(a, `CH${ch + 1} ${TV_CHANNELS[ch]} · ${pickLine(inter)}`)
     } else {
-      speak(pickLine(inter))
+      speak(a, pickLine(inter))
     }
-    if (inter.outfit) setOutfit((o) => (o + 1) % (OUTFITS[charId]?.length ?? 1))
+    if (inter.outfit) a.outfit = (a.outfit + 1) % OUTFITS.length
     if (inter.ms) {
-      window.clearTimeout(actTimer.current)
-      actTimer.current = window.setTimeout(() => {
-        setAct(null)
-        if (inter.flee) {
-          // 기겁하고 반대쪽으로 도망
-          const m = meRef.current
-          const du = m.u - t.u
-          const dv = m.v - t.v
+      window.clearTimeout(a.actTimer)
+      a.actTimer = window.setTimeout(() => {
+        a.act = null
+        // 기겁하고 반대쪽으로 도망 (다른 사람 미니미는 그 사람이 보내 주는 대로)
+        if (inter.flee && isLocal(a)) {
+          const du = a.pos.u - t.u
+          const dv = a.pos.v - t.v
           const len = Math.hypot(du, dv) || 1
-          go({ u: m.u + (du / len) * 0.22, v: m.v + (dv / len) * 0.22 })
+          const dest = { u: a.pos.u + (du / len) * 0.22, v: a.pos.v + (dv / len) * 0.22 }
+          if (a.id === 'me') meWalk(dest)
+          else go(a, dest)
         }
+        bump()
       }, inter.ms)
     }
+    bump()
   }
 
-  const flickChannel = (n: number) => {
-    channelRef.current = n
-    setChannel(n)
-    setSwitching(true)
-    window.clearTimeout(switchTimer.current)
-    switchTimer.current = window.setTimeout(() => setSwitching(false), 380)
-  }
-
-  const startAct = (t: Target) => {
+  const startAct = (a: Actor, t: Target) => {
     const inter = interactionFor(t.item)
     if (!inter) return false
-    const cur = actRef.current
+    const cur = a.act
     // 쓰고 있는 걸 한 번 더 누르면: TV는 채널 돌리기, 나머지는 한마디 더
     if (cur && cur.key === t.key) {
       if (cur.phase !== 'doing') return true
       if (t.item === 'tv') {
-        const next = (channelRef.current + 1) % TV_CHANNELS.length
+        const next = (channel.current + 1) % TV_CHANNELS.length
         flickChannel(next)
-        speak(`CH${next + 1} ${TV_CHANNELS[next]}`)
+        speak(a, `CH${next + 1} ${TV_CHANNELS[next]}`)
         return true
       }
       if (inter.light || inter.outfit) {
-        arrive(t, inter)
+        arrive(a, t, inter)
         return true
       }
-      speak(pickLine(inter))
+      speak(a, pickLine(inter))
       return true
     }
-    endAct()
-    setAct({ ...t, inter, phase: 'going' })
-    go(standSpot(t, inter), () => {
-      if (actRef.current?.key === t.key) arrive(t, inter)
+    endAct(a)
+    a.act = { ...t, inter, phase: 'going' }
+    go(a, standSpot(t, inter), () => {
+      if (a.act?.key === t.key) arrive(a, t, inter)
     })
+    bump()
     return true
   }
 
-  const dropsRef = useRef(drops)
-  dropsRef.current = drops
+  const targetOf = (key: string): Target | null => {
+    const f = FIXTURES.find((x) => x.id === key)
+    if (f) return { key: f.id, item: f.item, u: f.u, v: f.v, scale: f.scale }
+    const d = dropsRef.current.find((x) => x.id === key)
+    return d ? { key: d.id, item: d.item, u: d.u, v: d.v } : null
+  }
+
+  const meAct = (t: Target) => {
+    const from = me.pos
+    if (startAct(me, t)) cb.current.onMeAct?.(t.key, from)
+  }
+
+  // ─── 혼자 돌아다니기 ───
+  const idleStep = (a: Actor) => {
+    window.clearTimeout(a.idleTimer)
+    if (!a.idle || !all.has(a.id)) return
+    a.idleTimer = window.setTimeout(
+      () => {
+        if (!a.idle) return
+        if (!a.walk && a.act?.phase !== 'going') {
+          if (Math.random() < 0.35) {
+            endAct(a)
+            const z = ZONES[Math.floor(Math.random() * ZONES.length)]
+            go(a, { u: z.spot.u + (Math.random() - 0.5) * 0.1, v: z.spot.v + (Math.random() - 0.5) * 0.1 })
+          } else {
+            const key = IDLE_FIXTURES[Math.floor(Math.random() * IDLE_FIXTURES.length)]
+            const t = targetOf(key)
+            if (t && a.act?.key !== key) startAct(a, t)
+          }
+        }
+        idleStep(a)
+      },
+      a.act ? 7000 + Math.random() * 7000 : 1500 + Math.random() * 2500,
+    )
+  }
+
   useImperativeHandle(controlRef, () => ({
-    interactDrop: (id: string) => {
-      const d = dropsRef.current.find((x) => x.id === id)
-      if (d) startAct({ key: d.id, item: d.item, u: d.u, v: d.v })
+    interactDrop: (id) => {
+      const t = targetOf(id)
+      if (t) meAct(t)
+    },
+    upsertActor: (id, info, at) => {
+      const a = all.get(id)
+      if (a) a.info = info
+      else all.set(id, newActor(id, info, nearestFree(at ?? ENTRANCE)))
+      bump()
+    },
+    removeActor: (id) => {
+      const a = all.get(id)
+      if (!a || id === 'me') return
+      window.clearTimeout(a.actTimer)
+      window.clearTimeout(a.sayTimer)
+      window.clearTimeout(a.idleTimer)
+      all.delete(id)
+      bump()
+    },
+    moveActor: (id, from, to) => {
+      const a = all.get(id)
+      if (!a || id === 'me') return
+      if (dist(a.pos, from) > SNAP) a.pos = from
+      endAct(a)
+      go(a, to)
+    },
+    actActor: (id, key, from) => {
+      const a = all.get(id)
+      const t = targetOf(key)
+      if (!a || !t || id === 'me') return
+      if (dist(a.pos, from) > SNAP) a.pos = from
+      startAct(a, t)
+    },
+    sayActor: (id, text) => {
+      const a = all.get(id)
+      if (a) speak(a, text, Math.min(6000, 2600 + text.length * 80))
+    },
+    setIdle: (id, idle) => {
+      const a = all.get(id)
+      if (!a || a.idle === idle) return
+      a.idle = idle
+      if (idle) idleStep(a)
+      else window.clearTimeout(a.idleTimer)
+    },
+    snapshot: () => ({
+      at: me.pos,
+      act: me.act?.phase === 'doing' ? me.act.key : null,
+      outfit: me.outfit,
+      room: { lights: [...lights.current], channel: channel.current },
+    }),
+    placeActor: (id, at, act, outfit) => {
+      const a = all.get(id)
+      if (!a || id === 'me') return
+      window.clearTimeout(a.actTimer)
+      a.walk = null
+      a.pos = nearestFree(at)
+      a.outfit = outfit
+      const t = act ? targetOf(act) : null
+      const inter = t && interactionFor(t.item)
+      // 잠깐 하는 일(ms)은 이미 끝났을 수 있어서 계속하는 일만 이어 둔다
+      a.act = t && inter && !inter.ms ? { ...t, inter, phase: 'doing' } : null
+      bump()
+    },
+    applyRoom: (room) => {
+      lights.current = new Set(room.lights.filter((k) => targetOf(k)))
+      channel.current = Math.max(0, Math.min(TV_CHANNELS.length - 1, room.channel | 0))
+      bump()
     },
   }))
 
@@ -534,7 +732,7 @@ export function RoomScene({
       const fy = ((a.y + b.y) / 2 - rect.top) / rect.height
       const w = CAM_W / s
       const h = CAM_H / s
-      setCam({ s, x: pz.world.x - fx * w + w / 2, y: pz.world.y - fy * h + h / 2 })
+      camRef.current = clampCam({ s, x: pz.world.x - fx * w + w / 2, y: pz.world.y - fy * h + h / 2 })
       // 손가락을 시계 방향으로 비틀면 방도 시계 방향으로 돈다
       let turn = Math.atan2(b.y - a.y, b.x - a.x) - pz.angle
       if (turn > Math.PI) turn -= Math.PI * 2
@@ -593,7 +791,7 @@ export function RoomScene({
     // PC 우클릭을 짧게 누르면 그 자리로 걸어간다
     if (p.right) {
       const point = toFloorPoint(e)
-      if (walkable && !onFloorTap && point && onFloorArea(point)) walkTo(point)
+      if (walkable && !onFloorTap && point && onFloorArea(point)) meWalk(point)
       return
     }
     // 탭: 놓기 모드면 자리 정하기, 가구 → 가서 쓰기, 아이템 → 말풍선, 빈 바닥 → 걸어가기
@@ -607,18 +805,18 @@ export function RoomScene({
     const fixture = fixHit && FIXTURES.find((f) => f.id === fixHit.getAttribute('data-fixture'))
     if (fixture && walkable) {
       onBackgroundTap?.()
-      startAct({ key: fixture.id, item: fixture.item, u: fixture.u, v: fixture.v, scale: fixture.scale })
+      meAct({ key: fixture.id, item: fixture.item, u: fixture.u, v: fixture.v, scale: fixture.scale })
       return
     }
     const hit = target.closest('[data-drop]')
     const drop = hit && drops.find((d) => d.id === hit.getAttribute('data-drop'))
     if (drop) {
       if (onDropTap) onDropTap(drop)
-      else if (walkable) startAct({ key: drop.id, item: drop.item, u: drop.u, v: drop.v })
+      else if (walkable) meAct({ key: drop.id, item: drop.item, u: drop.u, v: drop.v })
       return
     }
     onBackgroundTap?.()
-    if (walkable && point && onFloorArea(point)) walkTo(point)
+    if (walkable && point && onFloorArea(point)) meWalk(point)
   }
 
   const onCancel = (e: PointerEvent<SVGSVGElement>) => {
@@ -632,6 +830,8 @@ export function RoomScene({
   const onContextMenu = (e: MouseEvent<SVGSVGElement>) => e.preventDefault()
 
   // ─── 집 뼈대 ───
+  const theta = thetaRef.current
+  const cam = camRef.current
   const P0 = project({ u: 0, v: 0 }, theta)
   const PU = project({ u: 1, v: 0 }, theta)
   const PV = project({ u: 0, v: 1 }, theta)
@@ -662,7 +862,9 @@ export function RoomScene({
   type Thing = { key: string; depth: number; node: ReactNode }
   const things: Thing[] = []
   let bubbleAt: P | null = null
-  const doing = act?.phase === 'doing' ? act : null
+  const actorList = [...all.values()]
+  const doings = actorList.flatMap((a) => (a.act?.phase === 'doing' ? [{ a, act: a.act }] : []))
+  const doingOn = (key: string) => doings.find((d) => d.act.key === key)?.act
 
   // 칸막이벽: 잘게 잘라 조각마다 깊이를 매긴다
   const partColor = (tone: 'wall' | 'tile', rising: boolean) =>
@@ -696,7 +898,8 @@ export function RoomScene({
     }
   }
 
-  const motionOf = (key: string) => (doing && doing.key === key ? doing.inter.motion : undefined)
+  const motionOf = (key: string) => doingOn(key)?.inter.motion
+  const tvOn = (key: string) => doingOn(key) !== undefined
 
   for (const f of FIXTURES) {
     const art = artById(f.item)
@@ -712,7 +915,9 @@ export function RoomScene({
           <g className={`drop-body ${motion ? `is-${motion}` : ''}`}>
             <PixelSprite sprite={art.sprite} x={p.x} y={p.y + 1} px={pxOf(f)} />
           </g>
-          {f.item === 'tv' && doing?.key === f.id && <TvOverlay at={p} sprite={art.sprite} px={pxOf(f)} channel={channel} switching={switching} />}
+          {f.item === 'tv' && tvOn(f.id) && (
+            <TvOverlay at={p} sprite={art.sprite} px={pxOf(f)} channel={channel.current} switching={switching.current} />
+          )}
         </g>
       ),
     })
@@ -734,25 +939,28 @@ export function RoomScene({
           <g className={`drop-body ${motion ? `is-${motion}` : ''}`}>
             <PixelSprite sprite={art.sprite} x={p.x} y={p.y + 1} />
           </g>
-          {d.item === 'tv' && doing?.key === d.id && <TvOverlay at={p} sprite={art.sprite} px={ROOM_PX} channel={channel} switching={switching} />}
+          {d.item === 'tv' && tvOn(d.id) && (
+            <TvOverlay at={p} sprite={art.sprite} px={ROOM_PX} channel={channel.current} switching={switching.current} />
+          )}
         </g>
       ),
     })
   }
 
-  // ─── 미니미 ───
-  const base = withOutfit(charId, characterById(character).sprite, outfit)
-  const mp = project(me, theta)
-  let headAt: P
-  {
+  // ─── 미니미들 ───
+  const heads = new Map<string, P>()
+  for (const a of actorList) {
+    const doing = a.act?.phase === 'doing' ? a.act : null
+    const base = withOutfit(buildAvatar(a.info.look), a.outfit)
+    const mp = project(a.pos, theta)
     const pose = doing?.inter.pose
     const target = doing ? project(doing, theta) : null
     const targetArt = doing ? artById(doing.item)?.sprite : undefined
     const flip = (x: number, node: ReactNode) =>
-      facing === -1 ? <g transform={`translate(${x * 2} 0) scale(-1 1)`}>{node}</g> : node
+      a.facing === -1 ? <g transform={`translate(${x * 2} 0) scale(-1 1)`}>{node}</g> : node
     let sprite: Sprite = base
     let at: P = { x: mp.x, y: mp.y + 1 }
-    let depth = viewDepth(me, theta)
+    let depth = viewDepth(a.pos, theta)
     let cover: ReactNode = null
     let shadow = true
     let cls = ''
@@ -767,19 +975,19 @@ export function RoomScene({
       if (doing.inter.cover !== undefined) {
         cover = <PixelSprite sprite={bottomRows(targetArt, doing.inter.cover)} x={target.x} y={target.y + 1} px={px} />
       }
-    } else if (doing && pose === 'watch') sprite = sitSprite(backSprite(charId, base))
+    } else if (doing && pose === 'watch') sprite = sitSprite(backSprite(base))
     else if (doing && pose === 'floor') sprite = sitSprite(base)
-    else if (doing && pose === 'back') sprite = backSprite(charId, base)
+    else if (doing && pose === 'back') sprite = backSprite(base)
     else if (doing && pose === 'dance') cls = 'is-dancing'
-    else if (walking && heading === 'back') sprite = backSprite(charId, base)
+    else if (a.walk && a.heading === 'back') sprite = backSprite(base)
 
     if (doing?.inter.flee) cls = 'is-jumping'
-    headAt = { x: at.x, y: at.y - spriteHeight(sprite) * CHARACTER_PX }
+    heads.set(a.id, { x: at.x, y: at.y - spriteHeight(sprite) * CHARACTER_PX })
     things.push({
-      key: 'me',
+      key: `actor-${a.id}`,
       depth,
       node: (
-        <g className={`minime ${walking ? 'is-walking' : ''} ${cls}`}>
+        <g className={`minime ${a.walk ? 'is-walking' : ''} ${cls}`} data-actor={a.id}>
           {shadow && <ellipse cx={mp.x} cy={mp.y} rx={12} ry={4} fill="rgba(30,20,40,0.18)" />}
           <g className="minime-body">{flip(at.x, <PixelSprite sprite={sprite} x={at.x} y={at.y} px={CHARACTER_PX} />)}</g>
           {cover}
@@ -810,29 +1018,39 @@ export function RoomScene({
   // ─── 효과 ───
   const topOf = (t: { u: number; v: number; item: string; scale?: number }) => {
     const p = project(t, theta)
-    const h = (artById(t.item)?.sprite ? spriteHeight(artById(t.item)!.sprite) : 10) * pxOf(t)
+    const art = artById(t.item)
+    const h = (art ? spriteHeight(art.sprite) : 10) * pxOf(t)
     return { x: p.x, y: p.y - h }
   }
   const overlays: ReactNode[] = []
   const under: ReactNode[] = []
   const floaters: ReactNode[] = []
-  if (doing) {
-    const top = topOf(doing)
-    for (const fx of doing.inter.fx) {
+  const shown = new Set<string>()
+  for (const { a, act } of doings) {
+    const top = topOf(act)
+    const head = heads.get(a.id)!
+    for (const fx of act.inter.fx) {
+      // 방 전체 효과(밤·디스코·TV 불빛)는 여러 명이 해도 하나만
+      const once = `${fx}:${fx === 'night' || fx === 'disco' ? '' : act.key}`
+      if ((fx === 'night' || fx === 'disco' || fx === 'tv') && shown.has(once)) continue
+      shown.add(once)
+      const k = `${a.id}-${fx}`
       if (fx === 'night') overlays.push(<Night key="night" />)
       else if (fx === 'disco') overlays.push(<Disco key="disco" at={top} />)
       else if (fx === 'tv') {
-        const p = project(doing, theta)
-        under.push(<Glow key="tvglow" at={{ x: p.x, y: p.y + 22 }} r={58} color="#9fdcff" className="fx-flicker" />)
-      } else if (fx === 'fridge') floaters.push(<Glow key="fridge" at={{ x: top.x, y: top.y + 18 }} r={34} color="#e6f7ff" />)
-      else if (fx === 'screen') floaters.push(<Glow key="screen" at={{ x: top.x, y: top.y + 6 }} r={22} color="#bfe6ff" className="fx-flicker" />)
-      else if (fx === 'wind') floaters.push(<Floaters key={fx} fx={fx} at={{ x: top.x + 10, y: top.y + 8 }} />)
-      else floaters.push(<Floaters key={fx} fx={fx} at={ON_HEAD.includes(fx) ? { x: headAt.x, y: headAt.y - 4 } : { x: top.x, y: top.y - 2 }} />)
+        const p = project(act, theta)
+        under.push(<Glow key={`tvglow-${act.key}`} at={{ x: p.x, y: p.y + 22 }} r={58} color="#9fdcff" className="fx-flicker" />)
+      } else if (fx === 'fridge') floaters.push(<Glow key={k} at={{ x: top.x, y: top.y + 18 }} r={34} color="#e6f7ff" />)
+      else if (fx === 'screen') floaters.push(<Glow key={k} at={{ x: top.x, y: top.y + 6 }} r={22} color="#bfe6ff" className="fx-flicker" />)
+      else if (fx === 'wind') floaters.push(<Floaters key={k} fx={fx} at={{ x: top.x + 10, y: top.y + 8 }} />)
+      else floaters.push(<Floaters key={k} fx={fx} at={ON_HEAD.includes(fx) ? { x: head.x, y: head.y - 4 } : { x: top.x, y: top.y - 2 }} />)
     }
   }
-  for (const b of bursts) floaters.push(<Floaters key={b.key} fx={b.fx} at={b.fx === 'sparkle' ? { x: headAt.x, y: headAt.y - 4 } : topOf({ ...b.at, item: b.item })} />)
+  const meHead = heads.get('me')!
+  for (const b of bursts.current)
+    floaters.push(<Floaters key={b.key} fx={b.fx} at={b.fx === 'sparkle' ? { x: meHead.x, y: meHead.y - 4 } : topOf({ ...b.at, item: b.item })} />)
   // 켜 둔 스탠드는 불을 꺼도(잘 때도) 빛난다
-  for (const key of lights) {
+  for (const key of lights.current) {
     const t = FIXTURES.find((f) => f.id === key) ?? drops.find((d) => d.id === key)
     if (!t) continue
     const top = topOf(t)
@@ -845,7 +1063,7 @@ export function RoomScene({
 
   const interactive = free || rotatable || walkable || onFloorTap || onDropTap || onBackgroundTap
   const bubbleStyle = bubbleAt && bubblePosition(pct(bubbleAt))
-  const sayStyle = say ? bubblePosition(pct({ x: headAt.x, y: headAt.y - 2 })) : null
+  const tags = showTags || actorList.length > 1
 
   const floorRect = (r: { u0: number; v0: number; u1: number; v1: number }, floor: FloorDecor, key: string) => (
     <g key={key} transform={`translate(${r.u0 * FLOOR_UNITS} ${r.v0 * FLOOR_UNITS})`}>
@@ -929,7 +1147,7 @@ export function RoomScene({
           shapeRendering="geometricPrecision"
         />
 
-        {marker && <WalkMarker key={marker.key} at={project(marker, theta)} />}
+        {marker.current && <WalkMarker key={marker.current.key} at={project(marker.current, theta)} />}
         <g pointerEvents="none">{under}</g>
 
         {things.map((t) => (
@@ -940,11 +1158,33 @@ export function RoomScene({
         <g pointerEvents="none">{floaters}</g>
       </svg>
 
-      {say && sayStyle && (
-        <div key={say.key} className="say" style={sayStyle}>
-          {say.text}
-        </div>
-      )}
+      {tags &&
+        actorList.map((a) => {
+          const head = heads.get(a.id)
+          if (!head || !a.info.name) return null
+          const at = pct({ x: head.x, y: head.y - 3 })
+          if (at.left < -5 || at.left > 105 || at.top < -5 || at.top > 105) return null
+          return (
+            <div
+              key={`tag-${a.id}`}
+              className={`tag ${a.info.badge ? `is-${a.info.badge}` : ''}`}
+              style={{ left: `${at.left}%`, top: `${at.top}%` }}
+            >
+              {a.info.badge === 'owner' && <b className="tag-badge">주인</b>}
+              {a.info.name}
+            </div>
+          )
+        })}
+
+      {actorList.map((a) => {
+        const head = heads.get(a.id)
+        if (!a.say || !head) return null
+        return (
+          <div key={a.say.key} className="say" style={bubblePosition(pct({ x: head.x, y: head.y - (tags && a.info.name ? 14 : 2) }))}>
+            {a.say.text}
+          </div>
+        )
+      })}
 
       {bubble && bubbleStyle && (
         <div className="bubble" style={bubbleStyle} onPointerDown={(e) => e.stopPropagation()}>
@@ -959,14 +1199,9 @@ export function RoomScene({
               key={z.id}
               className="zone-chip"
               onClick={() => {
-                if (!walkable) {
-                  const at = project(z.spot, thetaRef.current)
-                  animateCam({ ...camRef.current, x: at.x, y: at.y - 24 }, 500)
-                  return
-                }
-                walkTo(z.spot)
+                if (walkable) meWalk(z.spot)
                 const at = project(z.spot, thetaRef.current)
-                animateCam({ ...camRef.current, x: at.x, y: at.y - 24 }, 600)
+                animateCam({ ...camRef.current, x: at.x, y: at.y - 24 }, walkable ? 600 : 500)
               }}
             >
               {z.name}

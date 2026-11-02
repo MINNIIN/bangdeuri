@@ -16,6 +16,7 @@ import {
   WALL_W,
 } from '../art/decor'
 import { ITEM_CATS, ITEMS } from '../art/items'
+import { DEFAULT_LOOK } from '../art/avatar'
 import { createLocalBackend } from './localBackend'
 
 function memoryStorage(): Storage {
@@ -122,22 +123,25 @@ describe('꾸미기 데이터', () => {
     expect(shade('#808080', 0)).toBe('#808080')
   })
 
-  it('로컬 모드: 방 주인만 꾸밀 수 있고, 옛날 방도 기본 꾸미기로 열린다', async () => {
+  it('로컬 모드: 방 주인만 꾸밀 수 있고, 꾸미기가 없는 방도 기본 꾸미기로 열린다', async () => {
     const storage = memoryStorage()
-    const be = createLocalBackend(storage)
-    const { id, secret } = await be.createRoom({ name: '민수', character: 'bob', theme: 'studio', motto: '' })
-    expect((await be.getRoom(id))?.decor).toEqual(defaultDecor('studio'))
+    const be = createLocalBackend(storage, memoryStorage())
+    await be.signUpEmail('me@test.kr', 'secret1')
+    await be.saveProfile({ nickname: '민수', look: DEFAULT_LOOK })
+    const room = await be.createRoom({ name: '민수', theme: 'studio', motto: '' })
+    expect((await be.getRoom(room.slug))?.decor).toEqual(defaultDecor('studio'))
 
     const next = defaultDecor('night')
-    await expect(be.updateDecor(id, 'wrong', next)).rejects.toThrow('forbidden')
-    await be.updateDecor(id, secret, next)
-    expect((await be.getRoom(id))?.decor).toEqual(next)
+    const guest = createLocalBackend(storage, memoryStorage())
+    await expect(guest.updateDecor(room.id, next)).rejects.toThrow('forbidden')
+    await be.updateDecor(room.id, next)
+    expect((await be.getRoom(room.slug))?.decor).toEqual(next)
 
-    // 꾸미기 칸이 없던 시절에 저장된 방
-    const db = JSON.parse(storage.getItem('bangdeuri:localdb')!)
-    delete db.rooms[id].decor
-    storage.setItem('bangdeuri:localdb', JSON.stringify(db))
-    expect((await be.getRoom(id))?.decor).toEqual(defaultDecor('studio'))
+    // 꾸미기 칸이 빠진 채 저장된 방
+    const db = JSON.parse(storage.getItem('bangdeuri:localdb:v2')!)
+    delete db.rooms[room.id].decor
+    storage.setItem('bangdeuri:localdb:v2', JSON.stringify(db))
+    expect((await be.getRoom(room.slug))?.decor).toEqual(defaultDecor('studio'))
   })
 })
 

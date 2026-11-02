@@ -5,12 +5,27 @@ export const MOTTO_MAX = 30
 export const NICK_MAX = 8
 export const MESSAGE_MAX = 40
 export const MAX_DROPS = 60
+/** 채팅 한 줄 글자 수 */
+export const CHAT_MAX = 80
+/** 방마다 남기는 채팅 수 (서버는 30일 지난 것도 지운다) */
+export const CHAT_KEEP = 500
+export const PASSWORD_MIN = 6
 
 /** 서버가 던지는 에러 코드 → 화면 문구 */
 export const ERROR_TEXT: Record<string, string> = {
   room_full: '방이 꽉 찼어요. 방 주인이 정리하면 다시 놓을 수 있어요',
   room_not_found: '방을 찾을 수 없어요',
   forbidden: '방 주인만 할 수 있어요',
+  login_required: '로그인이 필요해요',
+  profile_required: '먼저 내 미니미를 만들어 주세요',
+  email_taken: '이미 가입한 이메일이에요. 로그인해 주세요',
+  bad_login: '이메일이나 비밀번호가 맞지 않아요',
+  weak_password: `비밀번호는 6자 이상이어야 해요`,
+  push_unavailable: '이 환경에서는 알림을 쓸 수 없어요',
+  push_denied: '브라우저에서 알림이 꺼져 있어요. 설정에서 허용해 주세요',
+  too_fast: '조금 천천히 보내 주세요',
+  too_many_rooms: '방은 5개까지 만들 수 있어요',
+  confirm_email: '가입 확인 메일을 보냈어요',
 }
 
 export function errorText(e: unknown): string {

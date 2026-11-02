@@ -1,0 +1,75 @@
+import { backend } from './backend'
+import type { PushPrefs } from './types'
+
+/** 푸시 알림: 서비스 워커 등록 → 알림 허락 → 구독 정보를 서버에 저장 */
+const VAPID = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
+const PREFS_KEY = 'bangdeuri:push'
+
+export const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
+export const isStandalone = () =>
+  window.matchMedia?.('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true
+
+export type PushSupport = 'ok' | 'local' | 'no-key' | 'unsupported' | 'ios-home'
+
+export function pushSupport(): PushSupport {
+  if (backend.local) return 'local'
+  if (!VAPID) return 'no-key'
+  // 아이폰은 홈 화면에 추가한 앱에서만 푸시를 받을 수 있다
+  if (isIOS() && !isStandalone()) return 'ios-home'
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported'
+  return 'ok'
+}
+
+export function savedPrefs(): PushPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY)
+    if (raw) return { enter: false, drop: false, ...JSON.parse(raw) }
+  } catch {
+    // 못 읽으면 꺼진 것으로
+  }
+  return { enter: false, drop: false }
+}
+
+function rememberPrefs(p: PushPrefs) {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(p))
+  } catch {
+    // 이번 화면에서만 기억
+  }
+}
+
+export function registerServiceWorker() {
+  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return
+  navigator.serviceWorker.register('/sw.js').catch(() => undefined)
+}
+
+function keyBytes(base64: string) {
+  const pad = '='.repeat((4 - (base64.length % 4)) % 4)
+  const raw = atob((base64 + pad).replace(/-/g, '+').replace(/_/g, '/'))
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0))
+}
+
+/** 알림 설정을 바꾼다. 둘 다 끄면 이 기기 구독을 지운다 */
+export async function setPushPrefs(prefs: PushPrefs): Promise<PushPrefs> {
+  if (pushSupport() !== 'ok') throw new Error('push_unavailable')
+  const reg = (await navigator.serviceWorker.getRegistration()) ?? (await navigator.serviceWorker.register('/sw.js'))
+  await navigator.serviceWorker.ready
+  const current = await reg.pushManager.getSubscription()
+
+  if (!prefs.enter && !prefs.drop) {
+    if (current) {
+      await backend.removePush(current.endpoint)
+      await current.unsubscribe()
+    }
+    rememberPrefs(prefs)
+    return prefs
+  }
+
+  const permission = await Notification.requestPermission()
+  if (permission !== 'granted') throw new Error('push_denied')
+  const sub =
+    current ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(VAPID!) }))
+  await backend.savePush(sub.toJSON(), prefs)
+  rememberPrefs(prefs)
+  return prefs
+}

@@ -1,30 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppContext } from '../App'
 import type { Decor } from '../art/decor'
 import { ITEM_CATS, type ItemCat, ITEMS, itemById } from '../art/items'
 import { backend } from '../lib/backend'
-import { roomUrl } from '../lib/links'
-import {
-  charLength,
-  clip,
-  errorText,
-  kstDate,
-  MAX_DROPS,
-  MESSAGE_MAX,
-  MOTTO_MAX,
-  NICK_MAX,
-  todayCount,
-} from '../lib/rules'
+import { interactionFor } from '../lib/interactions'
+import { CHARACTER_SPOT } from '../lib/iso'
+import { RETURN_KEY, roomUrl } from '../lib/links'
+import { MAX_GUESTS, newCid, type Peer, type RoomChannel, type RoomEvent } from '../lib/realtime'
+import { charLength, clip, errorText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, todayCount } from '../lib/rules'
 import { renderStoryImage } from '../lib/shareImage'
 import { firstVisitThisSession, store } from '../lib/storage'
-import type { Drop, Room } from '../lib/types'
+import type { ChatMessage, Drop, Room } from '../lib/types'
 import { DecorEditor } from './DecorEditor'
-import { SpriteIcon } from './PixelSprite'
-import { interactionFor } from '../lib/interactions'
-import { type Ghost, RoomScene, type SceneControl } from './RoomScene'
+import { type Entry, EnterSheet } from './EnterSheet'
+import { Icon, SpriteIcon } from './PixelSprite'
+import { RoomChat } from './RoomChat'
+import { ENTRANCE, type Ghost, RoomScene, type SceneControl } from './RoomScene'
 import { Sheet } from './Sheet'
 
 type Mode = 'view' | 'pick' | 'place' | 'write' | 'decorate'
+type Status = 'loading' | 'ready' | 'missing' | 'error' | 'kicked' | 'full'
 
 const PAGE_SIZE = 5
 
@@ -40,56 +35,70 @@ export function timeAgo(iso: string, now = Date.now()) {
   return day < 30 ? `${day}일 전` : new Date(iso).toLocaleDateString('ko-KR')
 }
 
-export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string }) {
+/** 이번 탭에서 이 방 입장 알림을 이미 보냈는지 */
+function firstEnterNotice(roomId: string) {
+  try {
+    const k = `bangdeuri:notified:${roomId}`
+    if (sessionStorage.getItem(k)) return false
+    sessionStorage.setItem(k, '1')
+  } catch {
+    // 못 기억하면 그냥 보낸다 (서버도 2분 안에 같은 알림은 막는다)
+  }
+  return true
+}
+
+export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [room, setRoom] = useState<Room | null>(null)
   const [drops, setDrops] = useState<Drop[]>([])
-  const [status, setStatus] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading')
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [status, setStatus] = useState<Status>('loading')
+  const [entry, setEntry] = useState<Entry | null>(null)
+  const [peers, setPeers] = useState<Peer[]>([])
+  const [unread, setUnread] = useState<{ since: string; until: string } | null>(null)
+
   const [mode, setMode] = useState<Mode>('view')
   const [item, setItem] = useState<string | null>(null)
   const [cat, setCat] = useState<ItemCat | 'all'>('all')
   const [ghost, setGhost] = useState<Ghost | null>(null)
-  const [nickname, setNickname] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState<Drop | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [freshId, setFreshId] = useState<string | null>(null)
-  const [dropped, setDropped] = useState(() => store.hasDropped(roomId))
+  const [dropped, setDropped] = useState(false)
   const [editingMotto, setEditingMotto] = useState<string | null>(null)
   const [bookOpen, setBookOpen] = useState(false)
   const [page, setPage] = useState(0)
   // 방 주인이 "친구에게 어떻게 보이는지" 확인하면서 직접 놓아 볼 수 있는 모드
   const [guestView, setGuestView] = useState(false)
   const [confirmRemoveRoom, setConfirmRemoveRoom] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
+
   const svgRef = useRef<SVGSVGElement>(null)
   const sceneRef = useRef<SceneControl>(null)
   const roomRef = useRef<HTMLElement>(null)
+  const chRef = useRef<RoomChannel | null>(null)
+  const cid = useMemo(newCid, [])
 
-  const secret = store.secretFor(roomId)
-  const isOwner = secret !== null && !guestView
+  const owner = !!ctx.user && room?.ownerId === ctx.user.id
+  const ownerUi = owner && !guestView
 
-  const reloadDrops = useCallback(async () => {
-    try {
-      setDrops(await backend.listDrops(roomId))
-    } catch {
-      // 조용히 다음 기회에 다시
-    }
-  }, [roomId])
-
+  // ─── 방 불러오기 ───
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        const [r, d] = await Promise.all([backend.getRoom(roomId), backend.listDrops(roomId)])
+        const r = await backend.getRoom(slug)
         if (!alive) return
         if (!r) return setStatus('missing')
+        const [d, m] = await Promise.all([backend.listDrops(r.id), backend.listMessages(r.id)])
+        if (!alive) return
         setRoom(r)
         setDrops(d)
+        setMessages(m)
+        setDropped(store.hasDropped(r.id))
+        if (store.kickedUntil(r.id)) return setStatus('kicked')
         setStatus('ready')
-        if (store.secretFor(roomId) === null && firstVisitThisSession(roomId)) {
-          const counts = await backend.visit(roomId)
-          if (alive) setRoom({ ...r, todayVisits: counts.today, totalVisits: counts.total, todayDate: kstDate() })
-        }
       } catch {
         if (alive) setStatus('error')
       }
@@ -97,33 +106,194 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
     return () => {
       alive = false
     }
-  }, [roomId])
+  }, [slug])
 
-  // 다른 앱 갔다 돌아오면 새로 놓인 아이템을 불러온다
+  // 방 주인은 바로 내 미니미로 들어간다
   useEffect(() => {
-    const onVisible = () => document.visibilityState === 'visible' && reloadDrops()
+    if (!room || entry || !owner || !ctx.profile) return
+    setEntry({ name: ctx.profile.nickname, look: ctx.profile.look, anon: false })
+    // 없는 동안 쌓인 대화 표시하고, 이제 본 것으로
+    setUnread({ since: store.seenAt(room.id) ?? room.createdAt, until: new Date().toISOString() })
+    store.markSeen(room.id)
+  }, [room, entry, owner, ctx.profile])
+
+  // 손님이 들어오면 방문자 수
+  useEffect(() => {
+    if (!room || !entry || owner || !firstVisitThisSession(room.id)) return
+    backend
+      .visit(room.id)
+      .then((c) => setRoom((r) => r && { ...r, todayVisits: c.today, totalVisits: c.total, todayDate: kstDate() }))
+      .catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?.id, entry, owner])
+
+  // 다른 앱 갔다 돌아오면 놓친 아이템·채팅을 다시 불러온다
+  const reload = useCallback(async () => {
+    if (!room) return
+    try {
+      const [d, m] = await Promise.all([backend.listDrops(room.id), backend.listMessages(room.id)])
+      setDrops(d)
+      setMessages(m)
+    } catch {
+      // 조용히 다음 기회에 다시
+    }
+  }, [room])
+
+  useEffect(() => {
+    const onVisible = () => document.visibilityState === 'visible' && reload()
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [reloadDrops])
+  }, [reload])
+
+  // ─── 실시간: 같이 있는 사람, 움직임, 채팅 ───
+  const roomId = room?.id
+  useEffect(() => {
+    if (!room || !entry || status !== 'ready') return
+    const me: Peer = { cid, name: entry.name, look: entry.look, owner }
+    const ch = backend.joinRoom(room.id, me)
+    chRef.current = ch
+    let known = new Set<string>()
+    let first = true
+    let ownerHere = owner
+    let roomApplied = false
+    const pending = new Map<string, Extract<RoomEvent, { t: 'hello' }>>()
+    const ownerInfo = { look: room.owner.look, name: room.owner.nickname, badge: 'owner' as const }
+
+    const applyHello = (e: Extract<RoomEvent, { t: 'hello' }>) => {
+      const scene = sceneRef.current
+      if (!scene) return
+      scene.placeActor(e.cid, e.at, e.act, e.outfit)
+      if (!roomApplied) {
+        scene.applyRoom(e.room)
+        roomApplied = true
+      }
+    }
+
+    ch.onPeers((list) => {
+      const scene = sceneRef.current
+      if (!scene) return
+      const others = list.filter((p) => p.cid !== cid)
+      if (first && !owner && others.filter((p) => !p.owner).length >= MAX_GUESTS) {
+        ch.leave()
+        setStatus('full')
+        return
+      }
+      let newcomer = false
+      for (const p of others) {
+        scene.upsertActor(p.cid, { look: p.look, name: p.name, badge: p.owner ? 'owner' : undefined })
+        if (!known.has(p.cid)) {
+          newcomer = true
+          const h = pending.get(p.cid)
+          if (h) {
+            applyHello(h)
+            pending.delete(p.cid)
+          }
+        }
+      }
+      for (const id of known) if (!others.some((p) => p.cid === id)) scene.removeActor(id)
+      known = new Set(others.map((p) => p.cid))
+
+      // 방 주인이 없으면 주인 미니미가 혼자 집에서 논다
+      ownerHere = owner || others.some((p) => p.owner)
+      if (ownerHere) scene.removeActor('npc')
+      else {
+        scene.upsertActor('npc', ownerInfo, CHARACTER_SPOT)
+        scene.setIdle('npc', true)
+      }
+      // 새로 온 사람에게 내 자리와 방 상태를 알려 준다
+      if (newcomer) ch.send({ t: 'hello', cid, ...scene.snapshot() })
+      first = false
+      setPeers(list)
+    })
+
+    ch.onEvent((e) => {
+      const scene = sceneRef.current
+      if (!scene) return
+      switch (e.t) {
+        case 'move':
+          scene.moveActor(e.cid, e.from, e.to)
+          break
+        case 'act':
+          scene.actActor(e.cid, e.key, e.from)
+          break
+        case 'hello':
+          if (known.has(e.cid)) applyHello(e)
+          else pending.set(e.cid, e)
+          break
+        case 'chat':
+          setMessages((m) => (m.some((x) => x.id === e.msg.id) ? m : [...m, e.msg]))
+          scene.sayActor(e.cid, e.msg.body)
+          if (owner) store.markSeen(room.id)
+          break
+        case 'chat-del':
+          setMessages((m) => m.filter((x) => x.id !== e.id))
+          break
+        case 'drop':
+          setDrops((d) => (d.some((x) => x.id === e.drop.id) ? d : [...d, e.drop]))
+          setFreshId(e.drop.id)
+          break
+        case 'drop-del':
+          setDrops((d) => d.filter((x) => x.id !== e.id))
+          break
+        case 'room':
+          setRoom((r) => r && { ...r, motto: e.motto, decor: e.decor })
+          break
+        case 'kick':
+          if (e.cid === cid) {
+            store.markKicked(room.id)
+            ch.leave()
+            setStatus('kicked')
+          }
+          break
+      }
+    })
+
+    // 방 주인이 없을 때 들어오면 주인에게 알림 (잠깐 기다려 사람 명단을 다 받은 뒤)
+    const noticeTimer = window.setTimeout(() => {
+      if (!owner && !ownerHere && firstEnterNotice(room.id)) void backend.notify(room.id, { kind: 'enter', name: entry.name })
+    }, 2500)
+
+    return () => {
+      window.clearTimeout(noticeTimer)
+      ch.leave()
+      chRef.current = null
+      if (owner) store.markSeen(room.id)
+    }
+    // 방 정보(한마디·꾸미기)가 바뀌어도 다시 들어가지 않는다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, entry, status, cid, owner])
+
+  const send = (e: RoomEvent) => chRef.current?.send(e)
 
   if (status === 'loading') return <main className="screen center muted">방 문 여는 중…</main>
+  if (status === 'kicked' || status === 'full') {
+    return (
+      <main className="screen center">
+        <p>{status === 'kicked' ? '방 주인이 내보냈어요. 조금 있다가 다시 와 주세요' : `방이 꽉 찼어요 (최대 ${MAX_GUESTS}명). 조금 있다가 다시 와 주세요`}</p>
+        <button className="btn btn-primary" onClick={() => ctx.go({ kind: 'home' })}>
+          처음으로
+        </button>
+      </main>
+    )
+  }
   if (status !== 'ready' || !room) {
     return (
       <main className="screen center">
-        <p>{status === 'missing' ? '이 방은 찾을 수 없어요' : '방을 불러오지 못했어요'}</p>
-        <button className="btn btn-primary" onClick={() => ctx.go({ kind: 'create' })}>
-          내 방 만들기
+        <p>{status === 'missing' ? '이 방은 찾을 수 없어요. 링크가 바뀌었을 수도 있어요' : '방을 불러오지 못했어요'}</p>
+        <button className="btn btn-primary" onClick={() => ctx.go({ kind: 'home' })}>
+          처음으로
         </button>
       </main>
     )
   }
 
+  const entered = entry !== null
   const full = drops.length >= MAX_DROPS
   // 로컬 모드는 혼자 테스트하는 용도라 "방마다 1개" 제한을 두지 않는다
   const alreadyDropped = dropped && !backend.local
-  const canDrop = !isOwner && !alreadyDropped && !full
+  const canDrop = entered && !ownerUi && !alreadyDropped && !full
   const pickedItem = item ? itemById(item) : undefined
-  const link = roomUrl(window.location.href, room.id)
+  const link = roomUrl(window.location.href, room.slug)
   const placing = mode === 'place' || mode === 'write'
 
   const guestbook = [...drops].reverse()
@@ -153,14 +323,14 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   }
 
   const submitDrop = async () => {
-    if (!ghost || !nickname.trim() || busy) return
+    if (!ghost || !entry || busy) return
     setBusy(true)
     try {
       const d = await backend.addDrop(room.id, {
         item: ghost.item,
         u: ghost.u,
         v: ghost.v,
-        nickname: nickname.trim(),
+        nickname: entry.name,
         message: message.trim(),
       })
       setDrops((prev) => [...prev, d])
@@ -170,12 +340,14 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
       setDropped(true)
       cancelDrop()
       setMessage('')
-      ctx.toast(`${room.name}의 방에 놓고 왔어요!`)
+      send({ t: 'drop', cid, drop: d })
+      if (!owner) void backend.notify(room.id, { kind: 'drop', name: entry.name, item: itemById(d.item)?.name })
+      ctx.toast(`${room.owner.nickname}의 방에 놓고 왔어요!`)
     } catch (e) {
       ctx.toast(errorText(e))
       if (e instanceof Error && e.message === 'room_full') {
         cancelDrop()
-        reloadDrops()
+        reload()
       }
     } finally {
       setBusy(false)
@@ -183,11 +355,11 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   }
 
   const removeDrop = async (d: Drop) => {
-    if (!secret) return
     try {
-      await backend.deleteDrop(room.id, secret, d.id)
+      await backend.deleteDrop(room.id, d.id)
       setDrops((prev) => prev.filter((x) => x.id !== d.id))
       select(null)
+      send({ t: 'drop-del', id: d.id })
       ctx.toast('치웠어요')
     } catch (e) {
       ctx.toast(errorText(e))
@@ -195,23 +367,23 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   }
 
   const saveMotto = async () => {
-    if (!secret || editingMotto === null) return
+    if (editingMotto === null) return
     const motto = editingMotto.trim()
     try {
-      await backend.updateMotto(room.id, secret, motto)
+      await backend.updateMotto(room.id, motto)
       setRoom({ ...room, motto })
       setEditingMotto(null)
+      send({ t: 'room', motto, decor: room.decor })
     } catch (e) {
       ctx.toast(errorText(e))
     }
   }
 
   const removeRoom = async () => {
-    if (!secret || busy) return
+    if (busy) return
     setBusy(true)
     try {
-      await backend.deleteRoom(room.id, secret)
-      store.removeMine(room.id)
+      await backend.deleteRoom(room.id)
       ctx.go({ kind: 'home' })
       ctx.toast('방을 삭제했어요')
     } catch (e) {
@@ -220,13 +392,31 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
     }
   }
 
-  const saveDecor = async (decor: Decor) => {
-    if (!secret || busy) return
+  const resetLink = async () => {
+    if (busy) return
     setBusy(true)
     try {
-      await backend.updateDecor(room.id, secret, decor)
+      const next = await backend.resetLink(room.id)
+      setRoom({ ...room, slug: next })
+      // 화면은 그대로 두고 주소만 바꾼다 (지금 같이 있는 친구들도 그대로)
+      window.history.replaceState(null, '', roomUrl(window.location.href, next))
+      setConfirmReset(false)
+      ctx.toast('새 링크를 만들었어요. 예전 링크로는 더 못 들어와요')
+    } catch (e) {
+      ctx.toast(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveDecor = async (decor: Decor) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await backend.updateDecor(room.id, decor)
       setRoom({ ...room, decor })
       setMode('view')
+      send({ t: 'room', motto: room.motto, decor })
       ctx.toast('방을 새로 꾸몄어요!')
     } catch (e) {
       ctx.toast(errorText(e))
@@ -235,12 +425,41 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
     }
   }
 
+  const sendChat = async (body: string) => {
+    if (!entry) return
+    try {
+      const msg = await backend.postMessage(room.id, { name: entry.name, body })
+      setMessages((m) => [...m, msg])
+      sceneRef.current?.sayActor('me', body)
+      send({ t: 'chat', cid, msg })
+      if (owner) store.markSeen(room.id)
+    } catch (e) {
+      ctx.toast(errorText(e))
+      throw e
+    }
+  }
+
+  const deleteChat = async (m: ChatMessage) => {
+    try {
+      await backend.deleteMessage(room.id, m.id)
+      setMessages((list) => list.filter((x) => x.id !== m.id))
+      send({ t: 'chat-del', id: m.id })
+    } catch (e) {
+      ctx.toast(errorText(e))
+    }
+  }
+
+  const kick = (p: Peer) => {
+    send({ t: 'kick', cid: p.cid })
+    ctx.toast(`${p.name}님을 내보냈어요`)
+  }
+
   const shareStory = async () => {
     if (!svgRef.current || busy) return
     setBusy(true)
     try {
       const blob = await renderStoryImage(svgRef.current, room, drops.length)
-      const file = new File([blob], `bangdeuri-${room.id}.png`, { type: 'image/png' })
+      const file = new File([blob], `bangdeuri-${room.slug}.png`, { type: 'image/png' })
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: '방들이' })
       } else {
@@ -260,7 +479,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   }
 
   const shareLink = async () => {
-    const text = `${room.name}의 방들이에 와 줘! 뭐 하나 놓고 가`
+    const text = `${room.name}의 방들이에 놀러 와! 같이 놀자`
     try {
       if (navigator.share) {
         await navigator.share({ title: '방들이', text, url: link })
@@ -288,6 +507,16 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
     roomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
+  const goMakeRoom = () => {
+    if (ctx.user) return ctx.go({ kind: 'create' })
+    try {
+      sessionStorage.removeItem(RETURN_KEY)
+    } catch {
+      // 상관없다
+    }
+    ctx.go({ kind: 'login' })
+  }
+
   const selectedItem = selected ? itemById(selected.item) : undefined
   const selectedInter = selected ? interactionFor(selected.item) : undefined
   const bubble = selected && (
@@ -299,7 +528,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
         </span>
       </p>
       <p className="bubble-msg">{selected.message || '(말없이 놓고 감)'}</p>
-      {selectedInter && !confirmDelete && (
+      {selectedInter && entered && !confirmDelete && (
         <button
           className="bubble-use"
           onClick={() => {
@@ -308,10 +537,10 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
             sceneRef.current?.interactDrop(id)
           }}
         >
-          {selectedInter.emoji} {selectedInter.verb}
+          {selectedItem && <SpriteIcon sprite={selectedItem.sprite} size={16} />} {selectedInter.verb}
         </button>
       )}
-      {isOwner &&
+      {ownerUi &&
         (confirmDelete ? (
           <span className="bubble-actions">
             <button className="link" onClick={() => setConfirmDelete(false)}>
@@ -335,7 +564,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
     return (
       <DecorEditor
         initial={room.decor}
-        character={room.character}
+        look={room.owner.look}
         drops={drops}
         busy={busy}
         onSave={saveDecor}
@@ -345,12 +574,14 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
   }
 
   const shownItems = cat === 'all' ? ITEMS : ITEMS.filter((it) => it.cat === cat)
+  // 들어가기 전에는 방 주인 미니미가 서 있는 모습만 보여 준다
+  const meLook = entry?.look ?? room.owner.look
 
   return (
     <main className="screen room-screen">
       <nav className="topbar">
         <button className="btn-ghost" onClick={() => ctx.go({ kind: 'home' })} aria-label="처음으로">
-          ←
+          <Icon id="back" />
         </button>
         <span className="topbar-title">방들이</span>
         <span className="topbar-spacer" />
@@ -390,10 +621,10 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
             <button className="btn btn-small btn-primary">저장</button>
           </form>
         ) : (
-          (room.motto || isOwner) && (
+          (room.motto || ownerUi) && (
             <p className="motto">
               <span>{room.motto || '오늘의 한마디를 남겨 보세요'}</span>
-              {isOwner && (
+              {ownerUi && (
                 <button className="link" onClick={() => setEditingMotto(room.motto)}>
                   수정
                 </button>
@@ -404,23 +635,34 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
 
         <div className="room-wrap">
           <RoomScene
+            key={entered ? 'in' : 'out'}
             svgRef={svgRef}
             controlRef={sceneRef}
             camera="free"
             decor={room.decor}
-            character={room.character}
+            look={meLook}
+            name={entry?.name}
+            badge={owner ? 'owner' : 'me'}
+            spawn={entered && !owner ? ENTRANCE : CHARACTER_SPOT}
             drops={drops}
             ghost={ghost}
             selectedId={placing ? null : selected?.id}
             freshId={freshId}
             bubble={placing ? null : bubble}
-            walkable
+            walkable={entered}
             onFloorTap={mode === 'place' && item ? (p) => setGhost({ item, ...p }) : undefined}
             onDropTap={placing ? undefined : (d) => select(selected?.id === d.id ? null : d)}
             onBackgroundTap={() => select(null)}
+            onMeMove={(from, to) => send({ t: 'move', cid, from, to })}
+            onMeAct={(key, from) => send({ t: 'act', cid, key, from })}
           />
           {mode === 'place' && (
             <p className="place-hint">{ghost ? '다른 곳을 누르면 옮겨져요' : '놓을 자리를 눌러 줘 (끌면 둘러보기)'}</p>
+          )}
+          {!entered && (
+            <div className="enter-overlay">
+              <EnterSheet ctx={ctx} room={room} onEnter={setEntry} />
+            </div>
           )}
         </div>
 
@@ -434,8 +676,21 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
         </div>
       </section>
 
+      {entered && (
+        <RoomChat
+          messages={messages}
+          peers={peers.length ? peers : [{ cid, name: entry.name, look: entry.look, owner }]}
+          meCid={cid}
+          owner={ownerUi}
+          unread={owner ? unread : null}
+          onSend={sendChat}
+          onDelete={deleteChat}
+          onKick={kick}
+        />
+      )}
+
       {/* 아래 행동 버튼 */}
-      {placing ? (
+      {!entered ? null : placing ? (
         <div className="actions sticky row">
           <button className="btn" onClick={() => setMode('pick')}>
             다시 고르기
@@ -444,7 +699,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
             여기에 놓기
           </button>
         </div>
-      ) : isOwner ? (
+      ) : ownerUi ? (
         <div className="actions">
           <button
             className="btn btn-big"
@@ -453,14 +708,14 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
               setMode('decorate')
             }}
           >
-            🎨 방 꾸미기 (벽지 · 그림 · 장식 · 바닥)
+            <Icon id="paint" size={18} /> 방 꾸미기 (벽지 · 그림 · 장식 · 바닥)
           </button>
           <button className="btn btn-primary" onClick={shareStory} disabled={busy}>
             {busy ? '이미지 만드는 중…' : '스토리 이미지 저장하기'}
           </button>
           <div className="row">
             <button className="btn" onClick={copyLink}>
-              링크 복사
+              <Icon id="link" size={14} /> 링크 복사
             </button>
             <button className="btn" onClick={shareLink}>
               친구에게 보내기
@@ -476,9 +731,21 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
             친구 입장으로 보기 (직접 아이템 놓아 보기)
           </button>
           <div className="danger-zone">
-            {confirmRemoveRoom ? (
+            {confirmReset ? (
               <>
-                <p>방을 지우면 친구들이 놓고 간 아이템과 방명록도 모두 사라지고 되돌릴 수 없어요.</p>
+                <p>새 링크를 만들면 예전 링크로는 아무도 못 들어와요. 친구들에게 새 링크를 다시 보내야 해요.</p>
+                <div className="row">
+                  <button className="btn btn-small" onClick={() => setConfirmReset(false)}>
+                    그냥 둘래
+                  </button>
+                  <button className="btn btn-small btn-danger" onClick={resetLink} disabled={busy}>
+                    새 링크 만들기
+                  </button>
+                </div>
+              </>
+            ) : confirmRemoveRoom ? (
+              <>
+                <p>방을 지우면 친구들이 놓고 간 아이템, 방명록, 채팅도 모두 사라지고 되돌릴 수 없어요.</p>
                 <div className="row">
                   <button className="btn btn-small" onClick={() => setConfirmRemoveRoom(false)}>
                     그냥 둘래
@@ -489,9 +756,14 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
                 </div>
               </>
             ) : (
-              <button className="link danger" onClick={() => setConfirmRemoveRoom(true)}>
-                방 삭제하기
-              </button>
+              <div className="row">
+                <button className="link" onClick={() => setConfirmReset(true)}>
+                  링크가 너무 퍼졌어요 (새 링크 만들기)
+                </button>
+                <button className="link danger" onClick={() => setConfirmRemoveRoom(true)}>
+                  방 삭제하기
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -500,7 +772,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
           {canDrop ? (
             <button className="btn btn-primary btn-big" onClick={startPick}>
               <SpriteIcon sprite={ITEMS.find((i) => i.id === 'gift')!.sprite} size={28} />
-              {room.name}의 방에 아이템 놓고 가기
+              {room.owner.nickname}의 방에 아이템 놓고 가기
             </button>
           ) : (
             <p className="owner-tip">
@@ -508,7 +780,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
             </p>
           )}
           {!guestView && (
-            <button className={`btn ${canDrop ? '' : 'btn-primary'}`} onClick={() => ctx.go({ kind: 'create' })}>
+            <button className={`btn ${canDrop ? '' : 'btn-primary'}`} onClick={goMakeRoom}>
               나도 내 방 만들기
             </button>
           )}
@@ -594,17 +866,9 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
             submitDrop()
           }}
         >
-          <label className="field">
-            <span>
-              내 닉네임 <em>{charLength(nickname)}/{NICK_MAX}</em>
-            </span>
-            <input
-              value={nickname}
-              onChange={(e) => setNickname(clip(e.target.value, NICK_MAX))}
-              placeholder={`${room.name}이(가) 알아볼 이름`}
-              required
-            />
-          </label>
+          <p className="muted">
+            <b>{entry?.name}</b> 이름으로 남겨요
+          </p>
           <label className="field">
             <span>
               한마디 <em>{charLength(message)}/{MESSAGE_MAX}</em>
@@ -616,7 +880,7 @@ export function RoomScreen({ ctx, roomId }: { ctx: AppContext; roomId: string })
               placeholder={pickedItem?.hint}
             />
           </label>
-          <button className="btn btn-primary" disabled={!nickname.trim() || busy}>
+          <button className="btn btn-primary" disabled={busy}>
             {busy ? '놓는 중…' : '놓고 가기'}
           </button>
         </form>

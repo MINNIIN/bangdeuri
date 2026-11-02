@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { ICONS } from '../art/icons'
 import { type Sprite, spriteHeight, spriteWidth, toRuns } from '../art/sprite'
 
 /** 방 안에서 도트 한 칸의 크기 (viewBox 340 기준). 미니미는 방이 넓어 보이게 조금 작게 */
@@ -36,4 +37,9 @@ export function SpriteIcon({ sprite, size = 40, className }: { sprite: Sprite; s
       <PixelSprite sprite={sprite} x={w / 2} y={h} px={1} />
     </svg>
   )
+}
+
+/** 이모지 대신 쓰는 도트 아이콘 */
+export function Icon({ id, size = 16, className }: { id: import('../art/icons').IconId; size?: number; className?: string }) {
+  return <SpriteIcon sprite={ICONS[id]} size={size} className={`icon ${className ?? ''}`} />
 }

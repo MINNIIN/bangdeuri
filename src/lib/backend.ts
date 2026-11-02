@@ -1,21 +1,62 @@
-import { createLocalBackend } from './localBackend'
-import { createSupabaseBackend } from './supabase'
+import type { AvatarLook } from '../art/avatar'
 import type { Decor } from '../art/decor'
-import type { Drop, NewDrop, NewRoom, Room } from './types'
+import { createLocalBackend } from './localBackend'
+import type { Peer, RoomChannel } from './realtime'
+import { createSupabaseBackend } from './supabase'
+import type { AuthUser, ChatMessage, Drop, NewDrop, NewRoom, Profile, PushPrefs, Room } from './types'
+
+export type SocialProvider = 'kakao' | 'google'
 
 export interface Backend {
-  /** 키 없이 이 브라우저에만 저장하는 모드인지 */
+  /** 키 없이 이 브라우저에만 저장하는 모드인지 (혼자 테스트용) */
   local: boolean
-  createRoom(input: NewRoom): Promise<{ id: string; secret: string }>
-  getRoom(id: string): Promise<Room | null>
+
+  // ─── 회원 ───
+  getUser(): Promise<AuthUser | null>
+  onAuthChange(cb: (user: AuthUser | null) => void): () => void
+  /** 카카오·구글 로그인 페이지로 이동한다. 돌아오면 onAuthChange로 알 수 있다 */
+  signInWith(provider: SocialProvider): Promise<void>
+  signUpEmail(email: string, password: string): Promise<void>
+  signInEmail(email: string, password: string): Promise<void>
+  resetPassword(email: string): Promise<void>
+  signOut(): Promise<void>
+
+  // ─── 내 프로필 (닉네임·미니미) ───
+  getProfile(): Promise<Profile | null>
+  saveProfile(p: { nickname: string; look: AvatarLook }): Promise<Profile>
+
+  // ─── 방 (만들기·고치기는 방 주인 회원만) ───
+  createRoom(input: NewRoom): Promise<Room>
+  myRooms(): Promise<Room[]>
+  getRoom(slug: string): Promise<Room | null>
+  updateMotto(roomId: string, motto: string): Promise<void>
+  updateDecor(roomId: string, decor: Decor): Promise<void>
+  /** 방과 그 방의 아이템·방명록·채팅을 모두 지운다 */
+  deleteRoom(roomId: string): Promise<void>
+  /** 링크를 새로 만든다. 예전 링크로는 더 못 들어온다. 새 주소를 돌려준다 */
+  resetLink(roomId: string): Promise<string>
+  visit(roomId: string): Promise<{ today: number; total: number }>
+
+  // ─── 아이템·방명록 (놓기는 누구나, 치우기는 방 주인) ───
   listDrops(roomId: string): Promise<Drop[]>
   addDrop(roomId: string, drop: NewDrop): Promise<Drop>
-  deleteDrop(roomId: string, secret: string, dropId: string): Promise<void>
-  updateMotto(roomId: string, secret: string, motto: string): Promise<void>
-  updateDecor(roomId: string, secret: string, decor: Decor): Promise<void>
-  /** 방과 그 방에 놓인 아이템·방명록을 모두 지운다 (방 주인만) */
-  deleteRoom(roomId: string, secret: string): Promise<void>
-  visit(roomId: string): Promise<{ today: number; total: number }>
+  deleteDrop(roomId: string, dropId: string): Promise<void>
+
+  // ─── 채팅 기록 (쓰기는 누구나, 지우기는 방 주인) ───
+  listMessages(roomId: string): Promise<ChatMessage[]>
+  postMessage(roomId: string, m: { name: string; body: string }): Promise<ChatMessage>
+  deleteMessage(roomId: string, id: string): Promise<void>
+  /** 이 시각 뒤에 손님들이 쓴 말 수 */
+  countMessagesSince(roomId: string, sinceIso: string): Promise<number>
+
+  // ─── 실시간 ───
+  joinRoom(roomId: string, me: Peer): RoomChannel
+
+  // ─── 푸시 알림 ───
+  savePush(sub: PushSubscriptionJSON, prefs: PushPrefs): Promise<void>
+  removePush(endpoint: string): Promise<void>
+  /** 방 주인에게 알림을 보낸다 (주인이 켜 둔 알림만 간다) */
+  notify(roomId: string, n: { kind: 'enter' | 'drop'; name: string; item?: string }): Promise<void>
 }
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined

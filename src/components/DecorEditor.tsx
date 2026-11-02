@@ -1,4 +1,5 @@
 import { type PointerEvent, useId, useRef, useState } from 'react'
+import type { AvatarLook } from '../art/avatar'
 import {
   ART_COLS,
   ART_PX,
@@ -20,6 +21,7 @@ import {
   type WallDecor,
 } from '../art/decor'
 import type { Drop } from '../lib/types'
+import { Icon } from './PixelSprite'
 import { RoomScene } from './RoomScene'
 import { FloorSurface, Sticker, WallSurface } from './Surfaces'
 
@@ -38,7 +40,7 @@ const UNDO_LIMIT = 30
 
 interface Props {
   initial: Decor
-  character: string
+  look: AvatarLook
   drops: Drop[]
   busy: boolean
   onSave: (decor: Decor) => void
@@ -46,7 +48,7 @@ interface Props {
 }
 
 /** 방 주인의 꾸미기 툴: 벽지·색, 벽에 도트 그림, 벽 장식 붙이기, 바닥 */
-export function DecorEditor({ initial, character, drops, busy, onSave, onCancel }: Props) {
+export function DecorEditor({ initial, look, drops, busy, onSave, onCancel }: Props) {
   const [decor, setDecor] = useState<Decor>(initial)
   const [tab, setTab] = useState<Tab>('wallpaper')
   const [target, setTarget] = useState<WallTarget>(0)
@@ -82,16 +84,16 @@ export function DecorEditor({ initial, character, drops, busy, onSave, onCancel 
     <main className="screen decor-editor">
       <nav className="topbar">
         <button className="btn-ghost" onClick={onCancel} aria-label="꾸미기 그만두기">
-          ✕
+          <Icon id="close" />
         </button>
         <span className="topbar-title">방 꾸미기</span>
         <button className="btn-ghost undo" onClick={undoLast} disabled={!undo.current.length} aria-label="되돌리기">
-          ↶
+          <Icon id="undo" />
         </button>
       </nav>
 
       <section className="window">
-        <RoomScene decor={decor} character={character} drops={drops} rotatable camera="living" className="decor-preview" />
+        <RoomScene decor={decor} look={look} drops={drops} rotatable camera="living" className="decor-preview" />
       </section>
 
       <div className="tabs" role="tablist">

@@ -32,7 +32,7 @@ describe('설비 그림', () => {
 
 describe('미니미 자세', () => {
   it.each(CHARACTERS)('$id: 뒷모습은 얼굴이 없고 크기는 그대로', (c) => {
-    const back = backSprite(c.id, c.sprite)
+    const back = backSprite(c.sprite)
     expect(back.rows).toHaveLength(c.sprite.rows.length)
     expect(back.rows.slice(7, 15).join('')).not.toMatch(/[sbm]/)
   })
@@ -45,8 +45,8 @@ describe('미니미 자세', () => {
   })
 
   it.each(CHARACTERS)('$id: 옷을 갈아입으면 색만 바뀐다', (c) => {
-    expect(OUTFITS[c.id].length).toBeGreaterThan(1)
-    const dressed = withOutfit(c.id, c.sprite, 1)
+    expect(OUTFITS.length).toBeGreaterThan(1)
+    const dressed = withOutfit(c.sprite, 1)
     expect(dressed.rows).toBe(c.sprite.rows)
     expect(dressed.palette).not.toEqual(c.sprite.palette)
   })
@@ -91,9 +91,9 @@ describe('집 구조와 길찾기', () => {
 describe('옷 갈아입은 자세', () => {
   it('뒷모습·앉은 모습에도 갈아입은 옷 색이 남는다', () => {
     const c = CHARACTERS[0]
-    const dressed = withOutfit(c.id, c.sprite, 1)
-    expect(backSprite(c.id, dressed).palette).toEqual(dressed.palette)
+    const dressed = withOutfit(c.sprite, 1)
+    expect(backSprite(dressed).palette).toEqual(dressed.palette)
     expect(sitSprite(dressed).palette).toEqual(dressed.palette)
-    expect(backSprite(c.id, c.sprite).palette).toEqual(c.sprite.palette)
+    expect(backSprite(c.sprite).palette).toEqual(c.sprite.palette)
   })
 })

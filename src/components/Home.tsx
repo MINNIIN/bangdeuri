@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { AppContext } from '../App'
-import { characterById } from '../art/characters'
+import { buildAvatar, PRESET_LOOKS } from '../art/avatar'
 import { defaultDecor } from '../art/decor'
 import { ITEMS } from '../art/items'
 import { themeById } from '../art/themes'
 import { backend } from '../lib/backend'
+import { isIOS, pushSupport, savedPrefs, setPushPrefs } from '../lib/push'
+import { errorText } from '../lib/rules'
 import { store } from '../lib/storage'
-import type { Drop, Room } from '../lib/types'
-import { SpriteIcon } from './PixelSprite'
+import type { Drop, PushPrefs, Room } from '../lib/types'
+import { Icon, SpriteIcon } from './PixelSprite'
 import { RoomScene } from './RoomScene'
 
 // 첫 화면 예시 방: 친구들이 놓고 간 것처럼 몇 개 깔아 둔다
@@ -35,33 +37,25 @@ const DEMO_DECOR = defaultDecor('pink')
 
 const DEMO_NOTES = [
   { who: '지윤', item: 'ramen', text: '맨날 라면만 먹는 너에게' },
-  { who: '태오', item: 'poop', text: '그냥 놓고 감 ㅋ' },
+  { who: '수상한 고구마', item: 'poop', text: '누군지 맞혀 봐 ㅋ' },
   { who: '하린', item: 'teddy', text: '안고 자라고 놓고 감' },
 ]
 
 export function Home({ ctx }: { ctx: AppContext }) {
-  const [myRooms, setMyRooms] = useState<Room[]>([])
+  return ctx.user && ctx.profile ? <Dashboard ctx={ctx} /> : <Landing ctx={ctx} />
+}
 
-  // 이 브라우저에서 만든 방들 (최근 것 먼저). 지워졌거나 못 불러온 방은 빼고 보여준다
-  useEffect(() => {
-    let alive = true
-    Promise.all(store.myRooms().map((id) => backend.getRoom(id).catch(() => null))).then((rooms) => {
-      if (alive) setMyRooms(rooms.filter((r): r is Room => r !== null))
-    })
-    return () => {
-      alive = false
-    }
-  }, [])
-
+/** 로그인 전 첫 화면 */
+function Landing({ ctx }: { ctx: AppContext }) {
   return (
     <main className="screen home">
       <header className="home-head">
-        <p className="eyebrow">친구들이 채워주는 미니룸</p>
+        <p className="eyebrow">친구들이 놀러 오는 미니룸</p>
         <h1 className="logo">방들이</h1>
         <p className="lead">
-          내 방 링크를 공유하면
+          내 방 링크를 보내면 친구들이 놀러 와서
           <br />
-          친구들이 방들이 선물을 놓고 가요
+          같이 돌아다니고, 수다 떨고, 선물을 놓고 가요
         </p>
       </header>
 
@@ -70,7 +64,7 @@ export function Home({ ctx }: { ctx: AppContext }) {
           <span>내친구의 미니룸</span>
           <span className="counter">TODAY 12 | TOTAL 128</span>
         </div>
-        <RoomScene decor={DEMO_DECOR} character="bob" drops={DEMO_DROPS} className="room" walkable />
+        <RoomScene decor={DEMO_DECOR} look={PRESET_LOOKS[0].look} drops={DEMO_DROPS} className="room" walkable />
         <ul className="demo-notes">
           {DEMO_NOTES.map((n) => (
             <li key={n.who}>
@@ -82,52 +76,172 @@ export function Home({ ctx }: { ctx: AppContext }) {
         </ul>
       </section>
 
-      {myRooms.length > 0 && (
-        <section className="my-rooms">
-          <h2>
-            내 방 <span className="muted">{myRooms.length}</span>
-          </h2>
+      <div className="actions">
+        <button className="btn btn-primary btn-big" onClick={() => ctx.go({ kind: 'login' })}>
+          내 방 만들러 가기
+        </button>
+      </div>
+
+      <ol className="steps">
+        <li>
+          <b>1</b>내 미니미 만들고 방 고르기
+        </li>
+        <li>
+          <b>2</b>친구들에게 방 링크 보내기
+        </li>
+        <li>
+          <b>3</b>놀러 온 친구들이랑 같이 놀기
+        </li>
+      </ol>
+      <a className="link center-link" href="/privacy.html">
+        개인정보처리방침
+      </a>
+    </main>
+  )
+}
+
+/** 로그인한 회원의 첫 화면: 내 미니미, 내 방들, 알림 설정 */
+function Dashboard({ ctx }: { ctx: AppContext }) {
+  const profile = ctx.profile!
+  const [rooms, setRooms] = useState<Room[] | null>(null)
+  const [unread, setUnread] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    let alive = true
+    backend
+      .myRooms()
+      .then(async (list) => {
+        if (!alive) return
+        setRooms(list)
+        // 없는 동안 친구들이 남긴 대화 수
+        const counts = await Promise.all(
+          list.map((r) => backend.countMessagesSince(r.id, store.seenAt(r.id) ?? r.createdAt).catch(() => 0)),
+        )
+        if (alive) setUnread(Object.fromEntries(list.map((r, i) => [r.id, counts[i]])))
+      })
+      .catch(() => alive && setRooms([]))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  return (
+    <main className="screen home dashboard">
+      <header className="me-card">
+        <SpriteIcon sprite={buildAvatar(profile.look)} size={84} className="me-avatar" />
+        <div className="me-body">
+          <p className="eyebrow">반가워요</p>
+          <h1 className="me-name">{profile.nickname}</h1>
+          <button className="btn btn-small" onClick={() => ctx.go({ kind: 'me' })}>
+            <Icon id="paint" size={14} /> 내 미니미 꾸미기
+          </button>
+        </div>
+      </header>
+
+      <section className="my-rooms">
+        <h2>
+          내 방 <span className="muted">{rooms?.length ?? ''}</span>
+        </h2>
+        {rooms === null ? (
+          <p className="muted">불러오는 중…</p>
+        ) : rooms.length === 0 ? (
+          <p className="owner-tip">아직 방이 없어요. 방을 만들고 친구들을 불러 봐요</p>
+        ) : (
           <ul>
-            {myRooms.map((r) => (
+            {rooms.map((r) => (
               <li key={r.id}>
-                <button className="my-room" onClick={() => ctx.go({ kind: 'room', id: r.id })}>
-                  <SpriteIcon sprite={characterById(r.character).sprite} size={40} />
+                <button className="my-room" onClick={() => ctx.go({ kind: 'room', slug: r.slug })}>
+                  <SpriteIcon sprite={buildAvatar(profile.look)} size={40} />
                   <span className="my-room-body">
                     <b>{r.name}의 미니룸</b>
                     <span className="muted">
                       {themeById(r.theme).name} · TOTAL {r.totalVisits}
                     </span>
                   </span>
+                  {unread[r.id] > 0 && (
+                    <span className="unread" aria-label={`새 대화 ${unread[r.id]}개`}>
+                      <Icon id="chat" size={12} /> {unread[r.id]}
+                    </span>
+                  )}
                   <span className="my-room-go" aria-hidden>
-                    →
+                    <Icon id="send" size={12} />
                   </span>
                 </button>
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
 
       <div className="actions">
-        <button
-          className={`btn ${myRooms.length ? '' : 'btn-primary'}`}
-          onClick={() => ctx.go({ kind: 'create' })}
-        >
-          {myRooms.length ? '방 하나 더 만들기' : '내 방 만들기'}
+        <button className={`btn ${rooms?.length ? '' : 'btn-primary'}`} onClick={() => ctx.go({ kind: 'create' })}>
+          {rooms?.length ? '방 하나 더 만들기' : '내 방 만들기'}
         </button>
       </div>
 
-      <ol className="steps">
-        <li>
-          <b>1</b>미니미랑 방 고르기
-        </li>
-        <li>
-          <b>2</b>스토리에 링크 올리기
-        </li>
-        <li>
-          <b>3</b>친구들이 꾸며주는 방 구경하기
-        </li>
-      </ol>
+      <NotifySettings ctx={ctx} />
+
+      <button className="link center-link" onClick={() => backend.signOut().then(() => ctx.toast('로그아웃했어요'))}>
+        로그아웃
+      </button>
+      <a className="link center-link" href="/privacy.html">
+        개인정보처리방침
+      </a>
     </main>
+  )
+}
+
+function NotifySettings({ ctx }: { ctx: AppContext }) {
+  const support = pushSupport()
+  const [prefs, setPrefs] = useState<PushPrefs>(savedPrefs)
+  const [busy, setBusy] = useState(false)
+
+  const toggle = async (key: keyof PushPrefs) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      setPrefs(await setPushPrefs({ ...prefs, [key]: !prefs[key] }))
+    } catch (e) {
+      ctx.toast(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const tip =
+    support === 'local'
+      ? '테스트 모드에서는 알림을 보낼 수 없어요. 배포하면 켤 수 있어요'
+      : support === 'no-key'
+        ? '알림 키(VITE_VAPID_PUBLIC_KEY)가 아직 설정되지 않았어요'
+        : support === 'ios-home'
+          ? '아이폰은 Safari 공유 버튼 > "홈 화면에 추가"로 앱을 깔아야 알림을 받을 수 있어요'
+          : support === 'unsupported'
+            ? '이 브라우저는 알림을 지원하지 않아요'
+            : null
+
+  return (
+    <section className="panel notify">
+      <p className="panel-label">
+        <Icon id="bell" size={14} /> 알림
+      </p>
+      {tip ? (
+        <p className="panel-tip">{tip}</p>
+      ) : (
+        <>
+          <Toggle on={prefs.enter} disabled={busy} onClick={() => toggle('enter')} label="친구가 내 방에 들어오면" />
+          <Toggle on={prefs.drop} disabled={busy} onClick={() => toggle('drop')} label="친구가 물건을 두고 가면" />
+          <p className="panel-tip">이 기기에서만 켜져요{isIOS() ? '' : '. 휴대폰에서 받으려면 휴대폰에서도 켜 주세요'}</p>
+        </>
+      )}
+    </section>
+  )
+}
+
+function Toggle({ on, disabled, onClick, label }: { on: boolean; disabled?: boolean; onClick: () => void; label: string }) {
+  return (
+    <button className={`toggle ${on ? 'is-on' : ''}`} role="switch" aria-checked={on} disabled={disabled} onClick={onClick}>
+      <span>{label}</span>
+      <span className="toggle-knob" aria-hidden />
+    </button>
   )
 }

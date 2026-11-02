@@ -5,6 +5,8 @@
 export interface Sprite {
   rows: string[]
   palette: Record<string, string>
+  /** 미니미 뒷모습에서 얼굴을 덮을 글자 (머리색) */
+  back?: string
 }
 
 export const BASE_PALETTE: Record<string, string> = {

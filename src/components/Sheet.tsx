@@ -1,3 +1,4 @@
+import { Icon } from './PixelSprite'
 import { type ReactNode, useEffect } from 'react'
 
 /** 아래에서 올라오는 시트. 바깥을 누르거나 Esc로 닫는다 */
@@ -26,7 +27,7 @@ export function Sheet({
         <div className="sheet-head">
           <span className="sheet-title">{title}</span>
           <button className="btn-ghost" onClick={onClose} aria-label="닫기">
-            ✕
+            <Icon id="close" />
           </button>
         </div>
         {children}

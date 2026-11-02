@@ -11,3 +11,6 @@ export function roomIdFrom(href: string) {
   const id = new URL(href).searchParams.get('r')
   return id && /^[a-z0-9]{4,16}$/.test(id) ? id : null
 }
+
+/** 남의 방에서 로그인하러 갈 때 돌아올 방 주소 (sessionStorage) */
+export const RETURN_KEY = 'bangdeuri:return'

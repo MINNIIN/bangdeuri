@@ -1,0 +1,20 @@
+# Supabase 무료 프로젝트는 7일 동안 요청이 없으면 일시정지된다. 사흘마다 한 번 가볍게 읽어서 깨워 둔다.
+# 저장소 Settings > Secrets and variables > Actions 에 SUPABASE_URL, SUPABASE_KEY(publishable 키)를 넣는다.
+name: supabase-keepalive
+
+on:
+  schedule:
+    - cron: '0 3 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 방 하나 읽기
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then echo "SUPABASE_URL 비밀값이 없어 건너뜀"; exit 0; fi
+          curl -fsS "$SUPABASE_URL/rest/v1/rooms?select=id&limit=1" -H "apikey: $SUPABASE_KEY" > /dev/null

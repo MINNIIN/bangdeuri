@@ -1,22 +1,20 @@
 import { useState } from 'react'
 import type { AppContext } from '../App'
-import { CHARACTERS } from '../art/characters'
 import { defaultDecor } from '../art/decor'
 import { THEMES } from '../art/themes'
 import { backend } from '../lib/backend'
 import { charLength, clip, errorText, MOTTO_MAX, NAME_MAX } from '../lib/rules'
-import { store } from '../lib/storage'
-import type { CharacterId, ThemeId } from '../lib/types'
-import { SpriteIcon } from './PixelSprite'
+import type { ThemeId } from '../lib/types'
+import { Icon } from './PixelSprite'
 import { RoomScene } from './RoomScene'
 
-const STEPS = ['미니미 고르기', '방 고르기', '이름 정하기']
+const STEPS = ['방 고르기', '이름 정하기']
 
 export function CreateScreen({ ctx }: { ctx: AppContext }) {
   const [step, setStep] = useState(0)
-  const [character, setCharacter] = useState<CharacterId>('bob')
+  const look = ctx.profile!.look
   const [theme, setTheme] = useState<ThemeId>('pink')
-  const [name, setName] = useState('')
+  const [name, setName] = useState(ctx.profile?.nickname ?? '')
   const [motto, setMotto] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -24,10 +22,9 @@ export function CreateScreen({ ctx }: { ctx: AppContext }) {
     if (!name.trim() || busy) return
     setBusy(true)
     try {
-      const { id, secret } = await backend.createRoom({ name: name.trim(), character, theme, motto: motto.trim() })
-      store.addMine(id, secret)
-      ctx.go({ kind: 'room', id })
-      ctx.toast('방이 생겼어요! 이제 링크를 올려 볼까요')
+      const room = await backend.createRoom({ name: name.trim(), theme, motto: motto.trim() })
+      ctx.go({ kind: 'room', slug: room.slug })
+      ctx.toast('방이 생겼어요! 이제 친구들에게 링크를 보내 볼까요')
     } catch (e) {
       ctx.toast(errorText(e))
       setBusy(false)
@@ -40,10 +37,10 @@ export function CreateScreen({ ctx }: { ctx: AppContext }) {
     <main className="screen create">
       <nav className="topbar">
         <button className="btn-ghost" onClick={back} aria-label="뒤로">
-          ←
+          <Icon id="back" />
         </button>
         <span className="topbar-title">
-          {step + 1}/3 {STEPS[step]}
+          {step + 1}/{STEPS.length} {STEPS[step]}
         </span>
         <span className="topbar-spacer" />
       </nav>
@@ -53,28 +50,10 @@ export function CreateScreen({ ctx }: { ctx: AppContext }) {
           <span>{name.trim() || '나'}의 미니룸</span>
           <span className="counter">TODAY 0 | TOTAL 0</span>
         </div>
-        <RoomScene decor={defaultDecor(theme)} character={character} drops={[]} className="room" />
+        <RoomScene decor={defaultDecor(theme)} look={look} drops={[]} className="room" />
       </section>
 
       {step === 0 && (
-        <div className="choices" role="radiogroup" aria-label="미니미">
-          {CHARACTERS.map((c) => (
-            <button
-              key={c.id}
-              role="radio"
-              aria-checked={character === c.id}
-              className={`choice ${character === c.id ? 'is-on' : ''}`}
-              onClick={() => setCharacter(c.id)}
-            >
-              <SpriteIcon sprite={c.sprite} size={64} />
-              <b>{c.name}</b>
-              <span className="muted">{c.desc}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {step === 1 && (
         <div className="choices" role="radiogroup" aria-label="방">
           {THEMES.map((t) => (
             <button
@@ -84,7 +63,7 @@ export function CreateScreen({ ctx }: { ctx: AppContext }) {
               className={`choice ${theme === t.id ? 'is-on' : ''}`}
               onClick={() => setTheme(t.id)}
             >
-              <RoomScene decor={defaultDecor(t.id)} character={character} drops={[]} className="choice-room" />
+              <RoomScene decor={defaultDecor(t.id)} look={look} drops={[]} className="choice-room" />
               <b>{t.name}</b>
               <span className="muted">{t.desc}</span>
             </button>
@@ -92,7 +71,7 @@ export function CreateScreen({ ctx }: { ctx: AppContext }) {
         </div>
       )}
 
-      {step === 2 && (
+      {step === 1 && (
         <form
           className="form"
           onSubmit={(e) => {
@@ -126,7 +105,7 @@ export function CreateScreen({ ctx }: { ctx: AppContext }) {
       )}
 
       <div className="actions sticky">
-        {step < 2 ? (
+        {step < 1 ? (
           <button className="btn btn-primary" onClick={() => setStep(step + 1)}>
             다음
           </button>
