@@ -2286,3 +2286,21 @@ button {
 .btn-kakao {
   color: rgba(0, 0, 0, 0.85);
 }
+
+/* 방 그림 두 층: 아래 벽·바닥, 위 가구·미니미. 층을 나눠 두면 걸을 때 위층만 다시 칠한다 */
+.room-stage .room-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.room-stage .room-backdrop,
+.room-stage .room-front {
+  will-change: transform;
+}
+
+.room-stage .room-front {
+  position: relative;
+}

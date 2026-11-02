@@ -11,6 +11,13 @@ const ORANGE = '#ff7f2a'
 
 function svgToImage(svg: SVGSVGElement): Promise<HTMLImageElement> {
   const clone = svg.cloneNode(true) as SVGSVGElement
+  // 방 화면은 벽·바닥을 아래 층 svg에 따로 그린다. 이미지에는 둘을 합쳐서 담는다
+  const backdrop = svg.parentElement?.querySelector('svg.room-backdrop')
+  if (backdrop && backdrop !== svg) {
+    const layer = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    for (const n of backdrop.childNodes) layer.appendChild(n.cloneNode(true))
+    clone.insertBefore(layer, clone.firstChild)
+  }
   clone.setAttribute('width', '1600')
   clone.setAttribute('height', String(Math.round((1600 * VIEW_H) / VIEW_W)))
   // 화면은 카메라로 일부만 보고 있어도, 이미지는 집 전체를 담는다

@@ -7,6 +7,7 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useMemo,
   useReducer,
   useRef,
 } from 'react'
@@ -252,7 +253,6 @@ export function RoomScene({
   const raf = useRef(0)
 
   const camRef = useRef<Cam>(clampCam({ x: 330, y: 205, s: S_HOME }))
-  const camRaf = useRef(0)
 
   /** right: PC 우클릭 (끌면 회전, 짧게 누르면 미니미 이동) */
   type Press = { x: number; y: number; theta: number; cam: Cam; dragging: boolean; right: boolean }
@@ -268,6 +268,7 @@ export function RoomScene({
   me.info = { look, name, badge }
 
   const loopRaf = useRef(0)
+  const camAnim = useRef<{ from: Cam; to: Cam; start: number; ms: number } | null>(null)
   const markerTimer = useRef(0)
   const marker = useRef<(UV & { key: number }) | null>(null)
 
@@ -286,7 +287,7 @@ export function RoomScene({
     () => () => {
       cancelAnimationFrame(raf.current)
       cancelAnimationFrame(loopRaf.current)
-      cancelAnimationFrame(camRaf.current)
+      camAnim.current = null
       window.clearTimeout(markerTimer.current)
       window.clearTimeout(switchTimer.current)
       for (const a of all.values()) {
@@ -304,18 +305,24 @@ export function RoomScene({
     bump()
   }
 
+  /** 카메라를 부드럽게 옮긴다. 걷기와 같은 프레임 루프에서 같이 움직여서 한 프레임에 한 번만 다시 그린다 */
   const animateCam = (target: Cam, ms = 420) => {
-    cancelAnimationFrame(camRaf.current)
-    const from = camRef.current
-    const to = clampCam(target)
-    const start = performance.now()
-    const step = (now: number) => {
-      const k = Math.min(1, (now - start) / ms)
-      const e = 1 - (1 - k) ** 3
-      setCam({ x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, s: from.s + (to.s - from.s) * e })
-      if (k < 1) camRaf.current = requestAnimationFrame(step)
-    }
-    camRaf.current = requestAnimationFrame(step)
+    camAnim.current = { from: camRef.current, to: clampCam(target), start: performance.now(), ms }
+    startLoop()
+  }
+
+  const stepCam = (now: number) => {
+    const c = camAnim.current
+    if (!c) return false
+    const k = Math.min(1, (now - c.start) / c.ms)
+    const e = 1 - (1 - k) ** 3
+    camRef.current = clampCam({
+      x: c.from.x + (c.to.x - c.from.x) * e,
+      y: c.from.y + (c.to.y - c.from.y) * e,
+      s: c.from.s + (c.to.s - c.from.s) * e,
+    })
+    if (k >= 1) camAnim.current = null
+    return k < 1
   }
 
   /** 내 미니미가 갈 곳이 화면 가장자리면 그쪽으로 카메라를 옮긴다 */
@@ -347,7 +354,7 @@ export function RoomScene({
     if (!el || !free) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      cancelAnimationFrame(camRaf.current)
+      camAnim.current = null
       const ctm = el.getScreenCTM()
       const world = ctm ? new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse()) : undefined
       zoomAround(Math.exp(-e.deltaY * 0.0015), world && { x: world.x, y: world.y })
@@ -408,8 +415,13 @@ export function RoomScene({
   }
 
   // ─── 걷기 (모든 미니미를 한 루프로 움직인다) ───
+  const startLoop = () => {
+    if (!loopRaf.current) loopRaf.current = requestAnimationFrame(loop)
+  }
+
   const loop = (now: number) => {
     loopRaf.current = 0
+    const camMoving = stepCam(now)
     for (const a of all.values()) {
       const w = a.walk
       if (!w) continue
@@ -434,7 +446,7 @@ export function RoomScene({
       }
     }
     bump()
-    if ([...all.values()].some((a) => a.walk)) loopRaf.current = requestAnimationFrame(loop)
+    if (camMoving || [...all.values()].some((a) => a.walk)) startLoop()
   }
 
   const walkAlong = (a: Actor, points: UV[], onArrive?: () => void) => {
@@ -455,7 +467,7 @@ export function RoomScene({
       return
     }
     a.walk = { segs, total, start: performance.now(), duration: (total / WALK_SPEED) * 1000, seg: -1, onArrive }
-    if (!loopRaf.current) loopRaf.current = requestAnimationFrame(loop)
+    startLoop()
   }
 
   const go = (a: Actor, dest: UV, onArrive?: () => void) => {
@@ -704,7 +716,7 @@ export function RoomScene({
     }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (free && pointers.current.size === 2) {
-      cancelAnimationFrame(camRaf.current)
+      camAnim.current = null
       const [a, b] = [...pointers.current.values()]
       e.currentTarget.setPointerCapture(e.pointerId)
       pinch.current = {
@@ -758,7 +770,7 @@ export function RoomScene({
       const far = free ? Math.hypot(dx, dy) > TAP_SLOP : rotatable && Math.abs(dx) > TAP_SLOP && Math.abs(dx) > Math.abs(dy)
       if (!far) return
       p.dragging = true
-      cancelAnimationFrame(camRaf.current)
+      camAnim.current = null
       e.currentTarget.setPointerCapture(e.pointerId)
     }
     if (free) {
@@ -832,71 +844,20 @@ export function RoomScene({
   // ─── 집 뼈대 ───
   const theta = thetaRef.current
   const cam = camRef.current
-  const P0 = project({ u: 0, v: 0 }, theta)
-  const PU = project({ u: 1, v: 0 }, theta)
-  const PV = project({ u: 0, v: 1 }, theta)
-  const PUV = project({ u: 1, v: 1 }, theta)
-  const floorMatrix = `matrix(${(PU.x - P0.x) / FLOOR_UNITS} ${(PU.y - P0.y) / FLOOR_UNITS} ${(PV.x - P0.x) / FLOOR_UNITS} ${(PV.y - P0.y) / FLOOR_UNITS} ${P0.x} ${P0.y})`
-  const [slabLight, slabDark] = slabColors(decor.floor)
-
-  const frontEdges = [
-    { a: PU, b: PUV, rising: false },
-    { a: PUV, b: PV, rising: true },
-  ].map((e) => ({ ...e, rising: (e.b.y - e.a.y) * (e.b.x - e.a.x) <= 0 }))
-
-  // 뒤 벽 두 면을 반씩 나눠 거실 쪽은 방 주인이 꾸민 벽, 나머지는 각 방 벽
-  const [wallL, wallR] = decor.walls
-  const studyWall = roomWall(wallL, [
-    { id: 'poster', x: 48, y: 26 },
-    { id: 'clock', x: 112, y: 20 },
-  ])
-  const bedroomWall = roomWall(wallR, [{ id: 'window', x: 62, y: 20 }])
-  const backSegs: { key: string; from: UV; to: UV; wall: WallDecor }[] = [
-    { key: 'study', from: { u: 0, v: 1 }, to: { u: 0, v: 0.5 }, wall: studyWall },
-    { key: 'livingL', from: { u: 0, v: 0.5 }, to: { u: 0, v: 0 }, wall: wallL },
-    { key: 'livingR', from: { u: 0, v: 0 }, to: { u: 0.5, v: 0 }, wall: wallR },
-    { key: 'bedroom', from: { u: 0.5, v: 0 }, to: { u: 1, v: 0 }, wall: bedroomWall },
-  ]
+  // 바닥 두께·벽·바닥은 방 각도와 꾸미기가 바뀔 때만 다시 그린다 (미니미가 걸을 때마다 그리면 휴대폰에서 버벅인다)
+  const backdrop = useMemo(() => drawBackdrop(decor, theta, uid), [decor, theta, uid])
 
   // ─── 집 안의 것들 (깊이 순서로 그린다) ───
-  type Thing = { key: string; depth: number; node: ReactNode }
   const things: Thing[] = []
   let bubbleAt: P | null = null
   const actorList = [...all.values()]
   const doings = actorList.flatMap((a) => (a.act?.phase === 'doing' ? [{ a, act: a.act }] : []))
   const doingOn = (key: string) => doings.find((d) => d.act.key === key)?.act
 
-  // 칸막이벽: 잘게 잘라 조각마다 깊이를 매긴다
-  const partColor = (tone: 'wall' | 'tile', rising: boolean) =>
-    tone === 'tile' ? (rising ? '#f4f9fc' : '#dfeaf2') : rising ? shade(wallL.color, -0.04) : shade(wallL.color, -0.14)
-  for (const [si, seg] of SOLID.entries()) {
-    const part = PARTITIONS.find((w) => onSegment(seg.from, w) && onSegment(seg.to, w))
-    const tone = part?.tone ?? 'wall'
-    const len = Math.hypot(seg.to.u - seg.from.u, seg.to.v - seg.from.v)
-    const n = Math.max(1, Math.ceil(len / PIECE))
-    for (let k = 0; k < n; k++) {
-      const a = lerpUV(seg.from, seg.to, k / n)
-      const b = lerpUV(seg.from, seg.to, (k + 1) / n)
-      const pa = project(a, theta)
-      const pb = project(b, theta)
-      const rising = (pb.y - pa.y) * (pb.x - pa.x) <= 0
-      const ta = { x: pa.x, y: pa.y - PART_H }
-      const tb = { x: pb.x, y: pb.y - PART_H }
-      things.push({
-        key: `w${si}-${k}`,
-        depth: viewDepth(lerpUV(a, b, 0.5), theta),
-        node: (
-          <g shapeRendering="geometricPrecision">
-            <polygon points={pts([pa, pb, tb, ta])} fill={partColor(tone, rising)} stroke={partColor(tone, rising)} strokeWidth={0.6} />
-            <line x1={ta.x} y1={ta.y} x2={tb.x} y2={tb.y} stroke={INK} strokeWidth={2.2} strokeLinecap="round" />
-            <line x1={ta.x} y1={ta.y - 0.4} x2={tb.x} y2={tb.y - 0.4} stroke="#fff" strokeWidth={0.8} opacity={0.7} />
-            {k === 0 && <line x1={pa.x} y1={pa.y} x2={ta.x} y2={ta.y} stroke={INK} strokeWidth={1.4} />}
-            {k === n - 1 && <line x1={pb.x} y1={pb.y} x2={tb.x} y2={tb.y} stroke={INK} strokeWidth={1.4} />}
-          </g>
-        ),
-      })
-    }
-  }
+  // 칸막이벽 조각도 각도·벽 색이 바뀔 때만 새로 만든다
+  const wallColor = decor.walls[0].color
+  const partitions = useMemo(() => drawPartitions(theta, wallColor), [theta, wallColor])
+  things.push(...partitions)
 
   const motionOf = (key: string) => doingOn(key)?.inter.motion
   const tvOn = (key: string) => doingOn(key) !== undefined
@@ -1065,20 +1026,24 @@ export function RoomScene({
   const bubbleStyle = bubbleAt && bubblePosition(pct(bubbleAt))
   const tags = showTags || actorList.length > 1
 
-  const floorRect = (r: { u0: number; v0: number; u1: number; v1: number }, floor: FloorDecor, key: string) => (
-    <g key={key} transform={`translate(${r.u0 * FLOOR_UNITS} ${r.v0 * FLOOR_UNITS})`}>
-      <FloorSurface id={`${uid}-f-${key}`} floor={floor} w={(r.u1 - r.u0) * FLOOR_UNITS} h={(r.v1 - r.v0) * FLOOR_UNITS} />
-    </g>
-  )
-
   return (
     <div className={`room-stage ${free ? 'is-free' : ''} ${className ?? ''}`}>
+      {/* 벽·바닥은 따로 아래 층에 그린다. 미니미가 걸을 때 위층만 다시 칠해서 휴대폰에서도 부드럽게 */}
+      <svg
+        className="room room-backdrop"
+        viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
+        xmlns="http://www.w3.org/2000/svg"
+        shapeRendering="crispEdges"
+        aria-hidden
+      >
+        {backdrop}
+      </svg>
       <svg
         ref={(el) => {
           svgEl.current = el
           setRef(svgRef, el)
         }}
-        className="room"
+        className="room room-front"
         viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
         xmlns="http://www.w3.org/2000/svg"
         shapeRendering="crispEdges"
@@ -1094,59 +1059,6 @@ export function RoomScene({
         role="img"
         aria-label={label}
       >
-        {/* 바닥 두께 (앞쪽 모서리) */}
-        {frontEdges.map((e, i) => (
-          <polygon
-            key={i}
-            points={pts([e.a, e.b, { x: e.b.x, y: e.b.y + SLAB }, { x: e.a.x, y: e.a.y + SLAB }])}
-            fill={e.rising ? slabLight : slabDark}
-            stroke={INK}
-            strokeWidth={1.5}
-            strokeLinejoin="round"
-            shapeRendering="geometricPrecision"
-          />
-        ))}
-
-        {backSegs.map((w) => {
-          const a = project(w.from, theta)
-          const b = project(w.to, theta)
-          const rising = (b.y - a.y) * (b.x - a.x) <= 0
-          const m = `matrix(${(b.x - a.x) / WALL_W} ${(b.y - a.y) / WALL_W} 0 1 ${a.x} ${a.y - WALL_H})`
-          return (
-            <g key={w.key}>
-              <g transform={m}>
-                <WallSurface id={`${uid}-${w.key}`} wall={w.wall} dim={rising ? 0 : 0.06} />
-              </g>
-              <polygon
-                points={pts([a, b, { x: b.x, y: b.y - WALL_H }, { x: a.x, y: a.y - WALL_H }])}
-                fill="none"
-                stroke={INK}
-                strokeWidth={1.5}
-                strokeLinejoin="round"
-                shapeRendering="geometricPrecision"
-              />
-            </g>
-          )
-        })}
-
-        <g transform={floorMatrix}>
-          <FloorSurface id={`${uid}-floor`} floor={decor.floor} w={FLOOR_UNITS} h={FLOOR_UNITS} />
-          {floorRect(ROOM_FLOORS.bedroom, { color: '#d9a46c', pattern: 'planks' }, 'bedroom')}
-          {floorRect(ROOM_FLOORS.study, { color: shade(wallL.color, -0.1), pattern: 'dots' }, 'study')}
-          {floorRect(ROOM_FLOORS.kitchen, { color: '#f4efe6', pattern: 'checker' }, 'kitchen')}
-          {floorRect(ROOM_FLOORS.bath, { color: '#e2f1fa', pattern: 'tiles' }, 'bath')}
-          {/* 현관 매트 */}
-          <rect x={0.46 * FLOOR_UNITS} y={0.9 * FLOOR_UNITS} width={0.16 * FLOOR_UNITS} height={0.07 * FLOOR_UNITS} rx={3} fill="#c9935b" stroke={INK} strokeWidth={1} />
-        </g>
-        <polygon
-          points={pts([P0, PU, PUV, PV])}
-          fill="none"
-          stroke={INK}
-          strokeWidth={1.5}
-          strokeLinejoin="round"
-          shapeRendering="geometricPrecision"
-        />
-
         {marker.current && <WalkMarker key={marker.current.key} at={project(marker.current, theta)} />}
         <g pointerEvents="none">{under}</g>
 
@@ -1211,6 +1123,139 @@ export function RoomScene({
       )}
     </div>
   )
+}
+
+type Thing = { key: string; depth: number; node: ReactNode }
+
+const BEDROOM_FLOOR: FloorDecor = { color: '#d9a46c', pattern: 'planks' }
+const KITCHEN_FLOOR: FloorDecor = { color: '#f4efe6', pattern: 'checker' }
+const BATH_FLOOR: FloorDecor = { color: '#e2f1fa', pattern: 'tiles' }
+
+/** 바닥 두께 · 뒤 벽 네 면 · 바닥(방마다 다른 바닥) */
+function drawBackdrop(decor: Decor, theta: number, uid: string): ReactNode {
+  const P0 = project({ u: 0, v: 0 }, theta)
+  const PU = project({ u: 1, v: 0 }, theta)
+  const PV = project({ u: 0, v: 1 }, theta)
+  const PUV = project({ u: 1, v: 1 }, theta)
+  const floorMatrix = `matrix(${(PU.x - P0.x) / FLOOR_UNITS} ${(PU.y - P0.y) / FLOOR_UNITS} ${(PV.x - P0.x) / FLOOR_UNITS} ${(PV.y - P0.y) / FLOOR_UNITS} ${P0.x} ${P0.y})`
+  const [slabLight, slabDark] = slabColors(decor.floor)
+  const frontEdges = [
+    { a: PU, b: PUV },
+    { a: PUV, b: PV },
+  ].map((e) => ({ ...e, rising: (e.b.y - e.a.y) * (e.b.x - e.a.x) <= 0 }))
+
+  // 뒤 벽 두 면을 반씩 나눠 거실 쪽은 방 주인이 꾸민 벽, 나머지는 각 방 벽
+  const [wallL, wallR] = decor.walls
+  const studyWall = roomWall(wallL, [
+    { id: 'poster', x: 48, y: 26 },
+    { id: 'clock', x: 112, y: 20 },
+  ])
+  const bedroomWall = roomWall(wallR, [{ id: 'window', x: 62, y: 20 }])
+  const backSegs: { key: string; from: UV; to: UV; wall: WallDecor }[] = [
+    { key: 'study', from: { u: 0, v: 1 }, to: { u: 0, v: 0.5 }, wall: studyWall },
+    { key: 'livingL', from: { u: 0, v: 0.5 }, to: { u: 0, v: 0 }, wall: wallL },
+    { key: 'livingR', from: { u: 0, v: 0 }, to: { u: 0.5, v: 0 }, wall: wallR },
+    { key: 'bedroom', from: { u: 0.5, v: 0 }, to: { u: 1, v: 0 }, wall: bedroomWall },
+  ]
+  const studyFloor: FloorDecor = { color: shade(wallL.color, -0.1), pattern: 'dots' }
+  const floorRect = (r: { u0: number; v0: number; u1: number; v1: number }, floor: FloorDecor, key: string) => (
+    <g key={key} transform={`translate(${r.u0 * FLOOR_UNITS} ${r.v0 * FLOOR_UNITS})`}>
+      <FloorSurface id={`${uid}-f-${key}`} floor={floor} w={(r.u1 - r.u0) * FLOOR_UNITS} h={(r.v1 - r.v0) * FLOOR_UNITS} />
+    </g>
+  )
+
+  return (
+    <>
+      {/* 바닥 두께 (앞쪽 모서리) */}
+      {frontEdges.map((e, i) => (
+        <polygon
+          key={i}
+          points={pts([e.a, e.b, { x: e.b.x, y: e.b.y + SLAB }, { x: e.a.x, y: e.a.y + SLAB }])}
+          fill={e.rising ? slabLight : slabDark}
+          stroke={INK}
+          strokeWidth={1.5}
+          strokeLinejoin="round"
+          shapeRendering="geometricPrecision"
+        />
+      ))}
+
+      {backSegs.map((w) => {
+        const a = project(w.from, theta)
+        const b = project(w.to, theta)
+        const rising = (b.y - a.y) * (b.x - a.x) <= 0
+        const m = `matrix(${(b.x - a.x) / WALL_W} ${(b.y - a.y) / WALL_W} 0 1 ${a.x} ${a.y - WALL_H})`
+        return (
+          <g key={w.key}>
+            <g transform={m}>
+              <WallSurface id={`${uid}-${w.key}`} wall={w.wall} dim={rising ? 0 : 0.06} />
+            </g>
+            <polygon
+              points={pts([a, b, { x: b.x, y: b.y - WALL_H }, { x: a.x, y: a.y - WALL_H }])}
+              fill="none"
+              stroke={INK}
+              strokeWidth={1.5}
+              strokeLinejoin="round"
+              shapeRendering="geometricPrecision"
+            />
+          </g>
+        )
+      })}
+
+      <g transform={floorMatrix}>
+        <FloorSurface id={`${uid}-floor`} floor={decor.floor} w={FLOOR_UNITS} h={FLOOR_UNITS} />
+        {floorRect(ROOM_FLOORS.bedroom, BEDROOM_FLOOR, 'bedroom')}
+        {floorRect(ROOM_FLOORS.study, studyFloor, 'study')}
+        {floorRect(ROOM_FLOORS.kitchen, KITCHEN_FLOOR, 'kitchen')}
+        {floorRect(ROOM_FLOORS.bath, BATH_FLOOR, 'bath')}
+        {/* 현관 매트 */}
+        <rect x={0.46 * FLOOR_UNITS} y={0.9 * FLOOR_UNITS} width={0.16 * FLOOR_UNITS} height={0.07 * FLOOR_UNITS} rx={3} fill="#c9935b" stroke={INK} strokeWidth={1} />
+      </g>
+      <polygon
+        points={pts([P0, PU, PUV, PV])}
+        fill="none"
+        stroke={INK}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        shapeRendering="geometricPrecision"
+      />
+    </>
+  )
+}
+
+/** 칸막이벽: 잘게 잘라 조각마다 깊이를 매긴다 (가구·미니미와 섞어서 깊이 순서로 그린다) */
+function drawPartitions(theta: number, wallColor: string): Thing[] {
+  const out: Thing[] = []
+  const partColor = (tone: 'wall' | 'tile', rising: boolean) =>
+    tone === 'tile' ? (rising ? '#f4f9fc' : '#dfeaf2') : rising ? shade(wallColor, -0.04) : shade(wallColor, -0.14)
+  for (const [si, seg] of SOLID.entries()) {
+    const part = PARTITIONS.find((w) => onSegment(seg.from, w) && onSegment(seg.to, w))
+    const tone = part?.tone ?? 'wall'
+    const len = Math.hypot(seg.to.u - seg.from.u, seg.to.v - seg.from.v)
+    const n = Math.max(1, Math.ceil(len / PIECE))
+    for (let k = 0; k < n; k++) {
+      const a = lerpUV(seg.from, seg.to, k / n)
+      const b = lerpUV(seg.from, seg.to, (k + 1) / n)
+      const pa = project(a, theta)
+      const pb = project(b, theta)
+      const rising = (pb.y - pa.y) * (pb.x - pa.x) <= 0
+      const ta = { x: pa.x, y: pa.y - PART_H }
+      const tb = { x: pb.x, y: pb.y - PART_H }
+      out.push({
+        key: `w${si}-${k}`,
+        depth: viewDepth(lerpUV(a, b, 0.5), theta),
+        node: (
+          <g shapeRendering="geometricPrecision">
+            <polygon points={pts([pa, pb, tb, ta])} fill={partColor(tone, rising)} stroke={partColor(tone, rising)} strokeWidth={0.6} />
+            <line x1={ta.x} y1={ta.y} x2={tb.x} y2={tb.y} stroke={INK} strokeWidth={2.2} strokeLinecap="round" />
+            <line x1={ta.x} y1={ta.y - 0.4} x2={tb.x} y2={tb.y - 0.4} stroke="#fff" strokeWidth={0.8} opacity={0.7} />
+            {k === 0 && <line x1={pa.x} y1={pa.y} x2={ta.x} y2={ta.y} stroke={INK} strokeWidth={1.4} />}
+            {k === n - 1 && <line x1={pb.x} y1={pb.y} x2={tb.x} y2={tb.y} stroke={INK} strokeWidth={1.4} />}
+          </g>
+        ),
+      })
+    }
+  }
+  return out
 }
 
 /** TV 화면 칸 (스프라이트의 3~16열, 3~8줄)에 채널을 겹친다 */

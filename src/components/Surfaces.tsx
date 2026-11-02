@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import {
   ART_PX,
   artRuns,
@@ -16,7 +16,8 @@ import {
 const INK = '#2b2233'
 
 /** 벽 한 면을 평면 좌표(160×115)로 그린다. 방에서는 아이소메트릭 행렬로 눕혀 쓰고, 편집기에서는 그대로 쓴다 */
-export function WallSurface({ id, wall, dim = 0 }: { id: string; wall: WallDecor; dim?: number }) {
+/** 미니미가 걸을 때마다 다시 그리지 않게 memo (벽 도트 그림은 rect가 수백 개) */
+export const WallSurface = memo(function WallSurface({ id, wall, dim = 0 }: { id: string; wall: WallDecor; dim?: number }) {
   const runs = useMemo(() => artRuns(wall.art), [wall.art])
   const base = dim ? shade(wall.color, -dim) : wall.color
   return (
@@ -39,10 +40,20 @@ export function WallSurface({ id, wall, dim = 0 }: { id: string; wall: WallDecor
       <rect y={WALL_H - 8} width={WALL_W} height={8} fill="rgba(0,0,0,0.08)" />
     </g>
   )
-}
+})
 
 /** 바닥 (기본 160×160 = 거실 한 칸). 집 전체나 방 하나를 그릴 때는 w, h를 넘긴다. 러그는 늘 거실 자리에 */
-export function FloorSurface({ id, floor, w = FLOOR_SIDE, h = FLOOR_SIDE }: { id: string; floor: FloorDecor; w?: number; h?: number }) {
+export const FloorSurface = memo(function FloorSurface({
+  id,
+  floor,
+  w = FLOOR_SIDE,
+  h = FLOOR_SIDE,
+}: {
+  id: string
+  floor: FloorDecor
+  w?: number
+  h?: number
+}) {
   return (
     <g>
       <defs>
@@ -53,7 +64,7 @@ export function FloorSurface({ id, floor, w = FLOOR_SIDE, h = FLOOR_SIDE }: { id
       {floor.pattern === 'rug' && <Rug color={floor.color} />}
     </g>
   )
-}
+})
 
 /** 바닥 두께 색 (왼쪽 앞면, 오른쪽 앞면) */
 export const slabColors = (floor: FloorDecor) => [shade(floor.color, -0.25), shade(floor.color, -0.4)] as const

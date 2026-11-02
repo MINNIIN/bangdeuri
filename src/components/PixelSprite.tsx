@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { ICONS } from '../art/icons'
 import { type Sprite, spriteHeight, spriteWidth, toRuns } from '../art/sprite'
 
@@ -7,7 +7,17 @@ export const ROOM_PX = 2.1
 export const CHARACTER_PX = 1.8
 
 /** 스프라이트를 SVG rect로 그린다. (x, y)는 발 밑 가운데 */
-export function PixelSprite({ sprite, x = 0, y = 0, px = ROOM_PX }: { sprite: Sprite; x?: number; y?: number; px?: number }) {
+export const PixelSprite = memo(function PixelSprite({
+  sprite,
+  x = 0,
+  y = 0,
+  px = ROOM_PX,
+}: {
+  sprite: Sprite
+  x?: number
+  y?: number
+  px?: number
+}) {
   const runs = useMemo(() => toRuns(sprite), [sprite])
   const left = x - (spriteWidth(sprite) * px) / 2
   const top = y - spriteHeight(sprite) * px
@@ -18,7 +28,7 @@ export function PixelSprite({ sprite, x = 0, y = 0, px = ROOM_PX }: { sprite: Sp
       ))}
     </g>
   )
-}
+})
 
 /** 버튼·목록에 쓰는 작은 미리보기 (HTML 안에 넣는 독립 SVG) */
 export function SpriteIcon({ sprite, size = 40, className }: { sprite: Sprite; size?: number; className?: string }) {

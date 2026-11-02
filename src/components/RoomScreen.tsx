@@ -728,7 +728,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
               setGuestView(true)
             }}
           >
-            친구 입장으로 보기 (직접 아이템 놓아 보기)
+            직접 아이템 놓아 보기
           </button>
           <div className="danger-zone">
             {confirmReset ? (
