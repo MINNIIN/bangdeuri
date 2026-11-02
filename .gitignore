@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# wrangler 로컬 실행 기록
+.wrangler/

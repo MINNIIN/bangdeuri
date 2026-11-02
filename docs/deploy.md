@@ -72,6 +72,8 @@ npx supabase functions deploy notify --no-verify-jwt
 
 방 링크는 `/?r=...` 형태라 따로 리다이렉트 규칙이 필요 없다.
 
+`functions/_middleware.ts`는 Cloudflare Pages Functions로 같이 올라간다. 카톡·SNS가 방 링크(`/?r=...`)를 읽어 갈 때 미리보기 제목을 "OO의 미니룸에 놀러 와!"로 바꿔 준다. 위 환경 변수(`VITE_SUPABASE_URL`, `VITE_SUPABASE_KEY`)를 그대로 쓴다. 로컬 확인: `npm run build && npx wrangler pages dev dist`.
+
 ## 5. 잠들지 않게 (선택)
 
 무료 Supabase 프로젝트는 **7일 동안 요청이 없으면 일시정지**된다. 데이터는 그대로이고 대시보드에서 **Restore**를 누르면 다시 살아난다.
