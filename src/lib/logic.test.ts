@@ -6,7 +6,7 @@ import { clampFloor, clampTilt, floorPoint, MAX_TILT, project, rubberTilt, toFlo
 import { roomIdFrom, roomUrl } from './links'
 import { PRESET_LOOKS } from '../art/avatar'
 import { createLocalBackend } from './localBackend'
-import { CHAT_KEEP, clip, kstDate, MAX_DROPS, todayCount } from './rules'
+import { CHAT_KEEP, clip, inviteText, kstDate, MAX_DROPS, todayCount } from './rules'
 
 function memoryStorage(): Storage {
   const m = new Map<string, string>()
@@ -128,6 +128,12 @@ describe('규칙', () => {
     const room = { todayVisits: 5, todayDate: '2026-10-23' } as Parameters<typeof todayCount>[0]
     expect(todayCount(room, new Date('2026-10-24T03:00:00Z'))).toBe(0)
     expect(todayCount({ ...room, todayDate: '2026-10-24' }, new Date('2026-10-24T03:00:00Z'))).toBe(5)
+  })
+
+  it('초대 문구는 이름 받침에 맞춰 이가/가', () => {
+    expect(inviteText('민수')).toBe('민수가 집들이에 초대했어요! 선물 하나 두고, 한마디 남겨 주세요!')
+    expect(inviteText('지민').startsWith('지민이가 ')).toBe(true)
+    expect(inviteText('Tom').startsWith('Tom가 ')).toBe(true)
   })
 
   it('글자 자르기는 이모지를 한 글자로 센다', () => {

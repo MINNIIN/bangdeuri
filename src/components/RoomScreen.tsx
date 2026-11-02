@@ -7,7 +7,7 @@ import { interactionFor } from '../lib/interactions'
 import { CHARACTER_SPOT } from '../lib/iso'
 import { RETURN_KEY, roomUrl } from '../lib/links'
 import { MAX_GUESTS, newCid, type Peer, type RoomChannel, type RoomEvent } from '../lib/realtime'
-import { charLength, clip, errorText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, todayCount } from '../lib/rules'
+import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, todayCount } from '../lib/rules'
 import { renderStoryImage } from '../lib/shareImage'
 import { firstVisitThisSession, store } from '../lib/storage'
 import type { ChatMessage, Drop, Room } from '../lib/types'
@@ -479,7 +479,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   }
 
   const shareLink = async () => {
-    const text = `${room.name}의 방들이에 놀러 와! 같이 놀자`
+    const text = inviteText(room.owner.nickname)
     try {
       if (navigator.share) {
         await navigator.share({ title: '방들이', text, url: link })

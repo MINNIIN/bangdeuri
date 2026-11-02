@@ -44,3 +44,13 @@ export const todayCount = (room: Room, now = new Date()) => (room.todayDate === 
 /** 글자 수는 화면에 보이는 글자 기준 (이모지 하나 = 1자) */
 export const charLength = (s: string) => [...s].length
 export const clip = (s: string, max: number) => [...s].slice(0, max).join('')
+
+/** 부르는 말 + 가: 민수 → 민수가, 지민 → 지민이가 */
+export function subjectOf(name: string) {
+  const last = name.charCodeAt(name.length - 1)
+  const batchim = last >= 0xac00 && last <= 0xd7a3 && (last - 0xac00) % 28 !== 0
+  return batchim ? `${name}이가` : `${name}가`
+}
+
+/** 방 링크를 보낼 때 같이 가는 초대 문구 (functions/_middleware.ts 미리보기와 같은 말) */
+export const inviteText = (owner: string) => `${subjectOf(owner)} 집들이에 초대했어요! 선물 하나 두고, 한마디 남겨 주세요!`

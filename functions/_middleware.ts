@@ -35,6 +35,16 @@ declare const HTMLRewriter: {
 
 const SLUG = /^[a-z0-9]{4,16}$/
 
+/** 부르는 말 + 가: 민수 → 민수가, 지민 → 지민이가 (src/lib/rules.ts와 같은 규칙) */
+const subject = (name: string) => {
+  const last = name.charCodeAt(name.length - 1)
+  const batchim = last >= 0xac00 && last <= 0xd7a3 && (last - 0xac00) % 28 !== 0
+  return batchim ? `${name}이가` : `${name}가`
+}
+
+/** 방 주인이 한마디를 안 썼을 때의 미리보기 설명 */
+const inviteText = (owner: string) => `${subject(owner)} 집들이에 초대했어요! 선물 하나 두고, 한마디 남겨 주세요!`
+
 async function findRoom(env: Env, slug: string): Promise<RoomRow | null> {
   const base = env.VITE_SUPABASE_URL?.replace(/\/$/, '')
   const key = env.VITE_SUPABASE_KEY
@@ -59,7 +69,7 @@ export const onRequest = async ({ request, env, next }: Ctx) => {
 
   const owner = room.owner?.nickname || room.name
   const title = `${room.name}의 미니룸에 놀러 와!`
-  const desc = room.motto ? `${owner}: "${room.motto}"` : `${owner}의 방에서 같이 돌아다니고, 수다 떨고, 선물 하나 놓고 가 줘`
+  const desc = room.motto ? `${owner}: "${room.motto}"` : inviteText(owner)
   const link = `${url.origin}/?r=${slug}`
 
   const set = (value: string) => ({ element: (el: Element) => el.setAttribute('content', value) })
