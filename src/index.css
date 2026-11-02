@@ -2264,3 +2264,19 @@ button {
   margin: 14px 0 0;
   font-size: 12px;
 }
+
+/* 소셜 로그인: 로고는 왼쪽 고정, 글자는 가운데 */
+.btn-social {
+  position: relative;
+}
+
+.btn-social .brand-logo {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.btn-kakao {
+  color: rgba(0, 0, 0, 0.85);
+}

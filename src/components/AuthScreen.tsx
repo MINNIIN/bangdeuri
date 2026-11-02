@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { AppContext } from '../App'
 import { backend, type SocialProvider } from '../lib/backend'
 import { errorText, PASSWORD_MIN } from '../lib/rules'
+import { GoogleLogo, KakaoSymbol } from './BrandLogos'
 
 /** 로그인·가입: 카카오, 구글, 이메일 */
 export function AuthScreen({ ctx, reason }: { ctx: AppContext; reason?: string }) {
@@ -67,10 +68,12 @@ export function AuthScreen({ ctx, reason }: { ctx: AppContext; reason?: string }
       )}
 
       <div className="actions">
-        <button className="btn btn-kakao" onClick={() => social('kakao')} disabled={busy}>
+        <button className="btn btn-social btn-kakao" onClick={() => social('kakao')} disabled={busy}>
+          <KakaoSymbol />
           카카오로 시작하기
         </button>
-        <button className="btn" onClick={() => social('google')} disabled={busy}>
+        <button className="btn btn-social" onClick={() => social('google')} disabled={busy}>
+          <GoogleLogo />
           구글로 시작하기
         </button>
       </div>
