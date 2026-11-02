@@ -906,6 +906,10 @@ button {
   border-radius: 10px;
   font-size: 13px;
   text-align: center;
+  /* 문구 안의 
+은 줄바꿈, 나머지는 단어 단위로 끊는다 */
+  white-space: pre-line;
+  word-break: keep-all;
   transform: translate(-50%, 20px);
   opacity: 0;
   pointer-events: none;

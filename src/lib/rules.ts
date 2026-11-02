@@ -30,7 +30,7 @@ export const ERROR_TEXT: Record<string, string> = {
 
 export function errorText(e: unknown): string {
   const code = e instanceof Error ? e.message : ''
-  return ERROR_TEXT[code] ?? '잠깐 문제가 생겼어요. 다시 해 볼래요?'
+  return ERROR_TEXT[code] ?? '잠깐 문제가 생겼어요\n다시 해 볼래요?'
 }
 
 /** 한국 날짜 YYYY-MM-DD */

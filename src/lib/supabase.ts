@@ -150,13 +150,13 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     },
     async saveProfile({ nickname, look }) {
       const id = await needUid()
-      const row = check(
-        await sb
-          .from('profiles')
-          .upsert({ id, nickname: nickname.trim(), look: normalizeLook(look) })
-          .select('id,nickname,look')
-          .single(),
-      )
+      const fields = { nickname: nickname.trim(), look: normalizeLook(look) }
+      // upsert는 id 칸 수정 권한까지 필요해서 쓰지 않는다 (DB는 닉네임·미니미만 고칠 수 있게 막아 둠)
+      const exists = check(await sb.from('profiles').select('id').eq('id', id).maybeSingle()) as { id: string } | null
+      const query = exists
+        ? sb.from('profiles').update(fields).eq('id', id)
+        : sb.from('profiles').insert({ id, ...fields })
+      const row = check(await query.select('id,nickname,look').single())
       return { id: row.id, nickname: row.nickname, look: normalizeLook(row.look) }
     },
 
