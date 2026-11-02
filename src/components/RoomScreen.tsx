@@ -716,7 +716,12 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
                     setMode('decorate')
                   },
                 )}
-                {menuItem(room.motto ? '오늘의 한마디 고치기' : '오늘의 한마디 쓰기', () => setEditingMotto(room.motto))}
+                {menuItem(
+                  <>
+                    <Icon id="note" size={14} /> {room.motto ? '오늘의 한마디 고치기' : '오늘의 한마디 쓰기'}
+                  </>,
+                  () => setEditingMotto(room.motto),
+                )}
                 {menuItem(
                   <>
                     <Icon id="camera" size={14} /> 스토리 이미지 저장하기
@@ -735,23 +740,52 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
                   </>,
                   shareLink,
                 )}
-                {menuItem('직접 아이템 놓아 보기', () => {
-                  select(null)
-                  setGuestView(true)
-                })}
+                {menuItem(
+                  <>
+                    <Icon id="eye" size={14} /> 직접 아이템 놓아 보기
+                  </>,
+                  () => {
+                    select(null)
+                    setGuestView(true)
+                  },
+                )}
                 <hr />
-                {menuItem('새 링크 만들기', () => setConfirmReset(true), 'is-quiet')}
-                {menuItem('방 삭제하기', () => setConfirmRemoveRoom(true), 'is-danger')}
+                {menuItem(
+                  <>
+                    <Icon id="refresh" size={14} /> 새 링크 만들기
+                  </>,
+                  () => setConfirmReset(true),
+                  'is-quiet',
+                )}
+                {menuItem(
+                  <>
+                    <Icon id="trash" size={14} /> 방 삭제하기
+                  </>,
+                  () => setConfirmRemoveRoom(true),
+                  'is-danger',
+                )}
               </>
             ) : (
               <>
-                {guestView && menuItem('내 방으로 돌아가기', () => setGuestView(false))}
+                {guestView &&
+                  menuItem(
+                    <>
+                      <Icon id="undo" size={14} /> 내 방으로 돌아가기
+                    </>,
+                    () => setGuestView(false),
+                  )}
                 {entered && !canDrop && !guestView && (
                   <p className="menu-note">
                     {alreadyDropped ? '이 방엔 이미 하나 놓고 왔어요' : '방이 꽉 찼어요. 방 주인이 정리하면 다시 놓을 수 있어요'}
                   </p>
                 )}
-                {!guestView && menuItem('나도 내 방 만들기', goMakeRoom)}
+                {!guestView &&
+                  menuItem(
+                    <>
+                      <Icon id="home" size={14} /> 나도 내 방 만들기
+                    </>,
+                    goMakeRoom,
+                  )}
               </>
             )}
           </div>

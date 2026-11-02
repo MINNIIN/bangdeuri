@@ -50,6 +50,15 @@ export const ICONS = {
   book: icon(['.kkk.kkk.', 'kwwwkwwwk', 'kwkkkkkwk', 'kwwwkwwwk', 'kwkkkkkwk', 'kwwwkwwwk', 'kkkkkkkkk', '....k....', '.........']),
   /** 스토리 이미지 */
   camera: icon(['..kkk....', 'kkkkkkkkk', 'kwwkkkwwk', 'kwkwwwkwk', 'kwkwwwkwk', 'kwwkkkwwk', 'kwwwwwwwk', 'kkkkkkkkk', '.........']),
+  /** 오늘의 한마디 */
+  note: icon(['kkkkkkkk.', 'kwwwwwwk.', 'kwkkkkwk.', 'kwwwwwwk.', 'kwkkkwwk.', 'kwwwwwwk.', 'kwkkkkwk.', 'kwwwwwwk.', 'kkkkkkkk.']),
+  /** 친구 눈으로 보기 */
+  eye: icon(['.........', '..kkkkk..', '.kwwwwwk.', 'kwwkkkwwk', 'kwwkkkwwk', 'kwwkkkwwk', '.kwwwwwk.', '..kkkkk..', '.........']),
+  /** 새 링크 */
+  refresh: icon(['..kkkk.k.', '.k....kk.', 'k....kkk.', 'k........', 'k.......k', '........k', '.kkk....k', '.kk....k.', '.k.kkkk..']),
+  /** 방 삭제 (빨간색) */
+  trash: icon(['...kkk...', 'kkkkkkkkk', '.........', '.kkkkkkk.', '.kwkwkwk.', '.kwkwkwk.', '.kwkwkwk.', '.kwkwkwk.', '..kkkkk..'], { k: '#e8384f' }),
+  home: icon(['....k....', '...kkk...', '..kwwwk..', '.kwwwwwk.', 'kkwwwwwkk', '.kwwwwwk.', '.kwkkkwk.', '.kwkwkwk.', '.kkkkkkk.']),
 } satisfies Record<string, Sprite>
 
 export type IconId = keyof typeof ICONS
