@@ -7,7 +7,7 @@ import { themeById } from '../art/themes'
 import { backend } from '../lib/backend'
 import { isIOS, pushSupport, savedPrefs, setPushPrefs } from '../lib/push'
 import { errorText } from '../lib/rules'
-import { store } from '../lib/storage'
+import { store, type VisitedRoom } from '../lib/storage'
 import type { Drop, PushPrefs, Room } from '../lib/types'
 import { InstallCard } from './InstallCard'
 import { Icon, SpriteIcon } from './PixelSprite'
@@ -82,6 +82,8 @@ function Landing({ ctx }: { ctx: AppContext }) {
           내 방 만들러 가기
         </button>
       </div>
+
+      <VisitedRooms ctx={ctx} />
 
       <InstallCard reason="앱처럼 아이콘 한 번에 바로 열려요" />
 
@@ -184,6 +186,8 @@ function Dashboard({ ctx }: { ctx: AppContext }) {
         </button>
       </div>
 
+      <VisitedRooms ctx={ctx} />
+
       <NotifySettings ctx={ctx} />
 
       <button className="link center-link" onClick={() => backend.signOut().then(() => ctx.toast('로그아웃했어요'))}>
@@ -194,6 +198,59 @@ function Dashboard({ ctx }: { ctx: AppContext }) {
       </a>
     </main>
   )
+}
+
+/** 놀러 갔던 친구 방: 링크를 다시 찾지 않아도 바로 들어간다 (이 기기에 기억) */
+function VisitedRooms({ ctx }: { ctx: AppContext }) {
+  const [list, setList] = useState<VisitedRoom[]>(() => store.visits())
+  // 내 방은 '내 방'에 따로 나온다
+  const shown = list.filter((v) => v.ownerId !== ctx.user?.id)
+  if (shown.length === 0) return null
+
+  const forget = (id: string) => {
+    store.forgetVisit(id)
+    setList(store.visits())
+  }
+
+  return (
+    <section className="my-rooms visited-rooms">
+      <h2>
+        놀러 간 방 <span className="muted">{shown.length}</span>
+      </h2>
+      <ul>
+        {shown.map((v) => (
+          <li key={v.id} className="visited-room">
+            <button className="my-room" onClick={() => ctx.go({ kind: 'room', slug: v.slug })}>
+              <SpriteIcon sprite={buildAvatar(v.owner.look)} size={40} />
+              <span className="my-room-body">
+                <b>{v.name}의 미니룸</b>
+                <span className="muted">
+                  {v.owner.nickname} · {ago(v.at)}
+                </span>
+              </span>
+              <span className="my-room-go" aria-hidden>
+                <Icon id="send" size={12} />
+              </span>
+            </button>
+            <button className="visited-forget" aria-label={`${v.name}의 미니룸 목록에서 지우기`} onClick={() => forget(v.id)}>
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="panel-tip">이 기기에서 들어간 방만 기억해요. 주인이 링크를 새로 만들면 새 링크로 한 번 더 들어와 주세요</p>
+    </section>
+  )
+}
+
+/** 마지막으로 간 때 */
+function ago(iso: string, now = Date.now()) {
+  const min = Math.floor((now - new Date(iso).getTime()) / 60000)
+  if (!(min >= 0)) return ''
+  if (min < 1) return '방금'
+  if (min < 60) return `${min}분 전`
+  if (min < 60 * 24) return `${Math.floor(min / 60)}시간 전`
+  return `${Math.floor(min / 60 / 24)}일 전`
 }
 
 function NotifySettings({ ctx }: { ctx: AppContext }) {

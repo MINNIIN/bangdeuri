@@ -141,6 +141,12 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     store.markSeen(room.id)
   }, [room, entry, owner, ctx.profile])
 
+  // 친구 방이면 기억해 둔다 (다음엔 링크 없이 첫 화면에서 바로 들어오게)
+  useEffect(() => {
+    if (!room || status !== 'ready' || owner) return
+    store.rememberVisit({ id: room.id, slug: room.slug, name: room.name, ownerId: room.ownerId, owner: room.owner })
+  }, [room, status, owner])
+
   // 손님이 들어오면 방문자 수
   useEffect(() => {
     if (!room || !entry || owner || !firstVisitThisSession(room.id)) return

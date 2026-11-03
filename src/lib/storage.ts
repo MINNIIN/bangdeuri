@@ -1,16 +1,31 @@
 import { type AvatarLook, normalizeLook } from '../art/avatar'
 
-/** 이 브라우저에만 남는 것들: 손님 닉네임·미니미, 아이템을 놓고 온 방, 채팅 읽은 시각, 내보내진 방 */
+/** 이 브라우저에만 남는 것들: 손님 닉네임·미니미, 아이템을 놓고 온 방, 채팅 읽은 시각, 내보내진 방, 놀러 간 방 */
 const KEY = 'bangdeuri:v2'
+
+/** 놀러 갔던 친구 방 (다음엔 링크 없이 바로 들어가게) */
+export interface VisitedRoom {
+  id: string
+  slug: string
+  name: string
+  ownerId: string
+  owner: { nickname: string; look: AvatarLook }
+  /** 마지막으로 들어간 시각 (ISO) */
+  at: string
+}
+
+/** 놀러 간 방은 최근 순으로 이만큼만 기억한다 */
+export const VISITS_KEEP = 30
 
 interface Saved {
   guest: { nickname: string; look: AvatarLook } | null
   dropped: string[]
   seen: Record<string, string>
   kicked: Record<string, number>
+  visits: VisitedRoom[]
 }
 
-const empty = (): Saved => ({ guest: null, dropped: [], seen: {}, kicked: {} })
+const empty = (): Saved => ({ guest: null, dropped: [], seen: {}, kicked: {}, visits: [] })
 
 function load(): Saved {
   try {
@@ -67,6 +82,23 @@ export const store = {
   markKicked(roomId: string, now = Date.now()) {
     const s = load()
     s.kicked[roomId] = now + KICK_MS
+    save(s)
+  },
+  /** 놀러 간 방 (최근에 간 방부터) */
+  visits(): VisitedRoom[] {
+    const list = load().visits
+    return Array.isArray(list) ? list.map((v) => ({ ...v, owner: { ...v.owner, look: normalizeLook(v.owner.look) } })) : []
+  },
+  /** 친구 방에 들어가면 기억해 둔다. 이미 있으면 맨 앞으로 올리고 이름·링크를 새로 바꾼다 */
+  rememberVisit(room: Omit<VisitedRoom, 'at'>, at = new Date().toISOString()) {
+    const s = load()
+    const rest = (Array.isArray(s.visits) ? s.visits : []).filter((v) => v.id !== room.id)
+    s.visits = [{ ...room, at }, ...rest].slice(0, VISITS_KEEP)
+    save(s)
+  },
+  forgetVisit(roomId: string) {
+    const s = load()
+    s.visits = (Array.isArray(s.visits) ? s.visits : []).filter((v) => v.id !== roomId)
     save(s)
   },
 }
