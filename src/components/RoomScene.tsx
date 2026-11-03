@@ -30,6 +30,7 @@ import {
   VIEW_W,
   viewDepth,
 } from '../lib/iso'
+import { type PinchMode, pinchMode, ROTATE_GAIN, twist } from '../lib/gesture'
 import type { SharedRoomState } from '../lib/realtime'
 import type { Drop } from '../lib/types'
 import { CHARACTER_PX, PixelSprite, ROOM_PX } from './PixelSprite'
@@ -322,8 +323,8 @@ export function RoomScene({
   type Press = { x: number; y: number; theta: number; cam: Cam; dragging: boolean; right: boolean }
   const press = useRef<Press | null>(null)
   const pointers = useRef(new Map<number, P>())
-  /** 두 손가락: 벌리면 확대, 비틀면 회전 */
-  const pinch = useRef<{ d: number; angle: number; theta: number; cam: Cam; world: P } | null>(null)
+  /** 두 손가락: 벌리면 확대, 비틀면 회전. 먼저 뚜렷하게 한 쪽으로 잠근다 (mode) */
+  const pinch = useRef<{ d: number; angle: number; theta: number; cam: Cam; world: P; mode: PinchMode; zoomD: number; turnFrom: number } | null>(null)
 
   const actors = useRef<Map<string, Actor> | null>(null)
   if (!actors.current) actors.current = new Map([['me', newActor('me', { look, name, badge }, spawn)]])
@@ -779,12 +780,17 @@ export function RoomScene({
       camAnim.current = null
       const [a, b] = [...pointers.current.values()]
       e.currentTarget.setPointerCapture(e.pointerId)
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1
+      const angle = Math.atan2(b.y - a.y, b.x - a.x)
       pinch.current = {
-        d: Math.hypot(a.x - b.x, a.y - b.y) || 1,
-        angle: Math.atan2(b.y - a.y, b.x - a.x),
+        d,
+        angle,
         theta: thetaRef.current,
         cam: camRef.current,
         world: toWorld((a.x + b.x) / 2, (a.y + b.y) / 2),
+        mode: 'wait',
+        zoomD: d,
+        turnFrom: 0,
       }
       if (press.current) press.current.dragging = true
       return
@@ -797,7 +803,17 @@ export function RoomScene({
     const pz = pinch.current
     if (pz && pointers.current.size >= 2) {
       const [a, b] = [...pointers.current.values()]
-      const s = Math.min(S_MAX, Math.max(S_MIN, pz.cam.s * (Math.hypot(a.x - b.x, a.y - b.y) / pz.d)))
+      const d = Math.hypot(a.x - b.x, a.y - b.y)
+      const turn = twist(pz.angle, Math.atan2(b.y - a.y, b.x - a.x))
+      const next = pinchMode(pz.mode, d / pz.d, turn)
+      if (next !== pz.mode) {
+        // 잠기는 순간부터 재서 확대·회전이 툭 튀지 않게
+        if (next === 'zoom') pz.zoomD = d
+        if (next === 'rotate' || next === 'both') pz.turnFrom = turn
+        pz.mode = next
+      }
+      const zooming = pz.mode === 'zoom' || pz.mode === 'both'
+      const s = zooming ? Math.min(S_MAX, Math.max(S_MIN, pz.cam.s * (d / pz.zoomD))) : camRef.current.s
       // 두 손가락 가운데 아래의 지점이 손가락을 따라온다
       const rect = stageRect()
       const fx = ((a.x + b.x) / 2 - rect.left) / rect.width
@@ -805,10 +821,8 @@ export function RoomScene({
       const { w, h } = camSize(s, aspect.current)
       camRef.current = fitCam({ s, x: pz.world.x - fx * w + w / 2, y: pz.world.y - fy * h + h / 2 })
       // 손가락을 시계 방향으로 비틀면 방도 시계 방향으로 돈다
-      let turn = Math.atan2(b.y - a.y, b.x - a.x) - pz.angle
-      if (turn > Math.PI) turn -= Math.PI * 2
-      if (turn < -Math.PI) turn += Math.PI * 2
-      setAngle(rubberTilt(pz.theta + turn))
+      if (pz.mode === 'rotate' || pz.mode === 'both') setAngle(rubberTilt(pz.theta + (turn - pz.turnFrom) * ROTATE_GAIN))
+      else bump()
       return
     }
     const p = press.current
