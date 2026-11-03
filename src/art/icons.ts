@@ -59,6 +59,13 @@ export const ICONS = {
   /** 방 삭제 (빨간색) */
   trash: icon(['...kkk...', 'kkkkkkkkk', '.........', '.kkkkkkk.', '.kwkwkwk.', '.kwkwkwk.', '.kwkwkwk.', '.kwkwkwk.', '..kkkkk..'], { k: '#e8384f' }),
   home: icon(['....k....', '...kkk...', '..kwwwk..', '.kwwwwwk.', 'kkwwwwwkk', '.kwwwwwk.', '.kwkkkwk.', '.kwkwkwk.', '.kkkkkkk.']),
+  /** 배경음악 켜짐 */
+  music: icon(['...kkkkkk', '...kkkkkk', '...k....k', '...k....k', '...k....k', '.kkk..kkk', 'kkkk.kkkk', 'kkkk.kkkk', '.kk...kk.']),
+  /** 배경음악 꺼짐 */
+  mute: icon(
+    ['...kkkkkr', '...kkkkr.', '...k..r.k', '...k.r..k', '...kr...k', '.kkr..kkk', 'kkrk.kkkk', 'krkk.kkkk', 'r.k...kk.'],
+    { r: '#e8384f' },
+  ),
 } satisfies Record<string, Sprite>
 
 export type IconId = keyof typeof ICONS

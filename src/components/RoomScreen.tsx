@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { AppContext } from '../App'
 import type { Decor } from '../art/decor'
 import { ITEM_CATS, type ItemCat, ITEMS, itemById } from '../art/items'
@@ -9,6 +9,7 @@ import { RETURN_KEY, roomUrl } from '../lib/links'
 import { MAX_GUESTS, newCid, type Peer, type RoomChannel, type RoomEvent } from '../lib/realtime'
 import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, todayCount } from '../lib/rules'
 import { renderStoryImage } from '../lib/shareImage'
+import { bgm, bgmEnabled } from '../lib/music'
 import { firstVisitThisSession, store } from '../lib/storage'
 import type { ChatMessage, Drop, Room } from '../lib/types'
 import { DecorEditor } from './DecorEditor'
@@ -140,6 +141,24 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     setUnread({ since: store.seenAt(room.id) ?? room.createdAt, until: new Date().toISOString() })
     store.markSeen(room.id)
   }, [room, entry, owner, ctx.profile])
+
+  // ─── 배경음악: 첫 터치 때 시작 (브라우저가 그 전엔 소리를 막는다), 화면이 가려지면 멈춘다 ───
+  const [, bgmBump] = useReducer((n: number) => n + 1, 0)
+  const theme = room?.theme
+  useEffect(() => {
+    if (!theme) return
+    const off = bgm.subscribe(bgmBump)
+    const start = () => bgm.play(theme)
+    window.addEventListener('pointerdown', start, { once: true })
+    const onVis = () => (document.hidden ? bgm.pause() : bgm.resume())
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      off()
+      window.removeEventListener('pointerdown', start)
+      document.removeEventListener('visibilitychange', onVis)
+      bgm.stop()
+    }
+  }, [theme])
 
   // 친구 방이면 기억해 둔다 (다음엔 링크 없이 첫 화면에서 바로 들어오게)
   useEffect(() => {
@@ -682,6 +701,19 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
             )}
           </button>
         )}
+        <button
+          className="hud-btn"
+          onClick={(e) => {
+            // 위 '첫 터치' 시작과 겹치지 않게
+            e.stopPropagation()
+            bgm.toggle(room.theme)
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label={bgmEnabled() ? '배경음악 끄기' : '배경음악 켜기'}
+          aria-pressed={bgmEnabled()}
+        >
+          <Icon id={bgmEnabled() ? 'music' : 'mute'} />
+        </button>
         <button
           className="hud-btn hud-book"
           onClick={() => {
