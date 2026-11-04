@@ -10,6 +10,7 @@ import { MAX_GUESTS, newCid, type Peer, type RoomChannel, type RoomEvent } from 
 import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, todayCount } from '../lib/rules'
 import { renderStoryImage } from '../lib/shareImage'
 import { bgm, bgmEnabled } from '../lib/music'
+import { isSafeSong } from '../lib/songs'
 import { timers } from '../lib/timers'
 import { type NowPlaying, turntable } from '../lib/turntable'
 import { type ToolId, toolFor } from '../lib/tools'
@@ -222,8 +223,12 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     const pending = new Map<string, Extract<RoomEvent, { t: 'hello' }>>()
     const ownerInfo = { look: room.owner.look, name: room.owner.nickname, badge: 'owner' as const }
 
-    const hear = (np: NowPlaying) =>
-      void turntable.play(np).then((r) => setSongBlocked(r === 'blocked' ? np : null))
+    // 남이 보낸 곡은 Apple 주소인지 확인하고 튼다
+    const hear = (np: NowPlaying) => {
+      if (!isSafeSong(np.song) || !Number.isFinite(np.at) || typeof np.by !== 'string') return
+      const safe = { by: np.by.slice(0, 12), song: np.song, at: np.at }
+      void turntable.play(safe).then((r) => setSongBlocked(r === 'blocked' ? safe : null))
+    }
 
     const applyHello = (e: Extract<RoomEvent, { t: 'hello' }>) => {
       const scene = sceneRef.current

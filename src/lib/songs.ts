@@ -57,3 +57,29 @@ export function songOffset(at: number, now: number): number | null {
   const sec = Math.max(0, (now - at) / 1000)
   return sec >= PREVIEW_SEC ? null : sec
 }
+
+const host = (url: string, ok: (h: string) => boolean) => {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' && ok(u.hostname)
+  } catch {
+    return false
+  }
+}
+const under = (h: string, domain: string) => h === domain || h.endsWith(`.${domain}`)
+const text = (v: unknown, max: number) => typeof v === 'string' && v.length <= max
+
+/**
+ * 다른 사람이 실시간으로 보낸 곡은 그대로 믿지 않는다:
+ * 아무 주소나 틀게 하면 같은 방 사람들 IP가 새거나 이상한 소리가 날 수 있다. Apple 주소만 받는다.
+ */
+export function isSafeSong(s: unknown): s is Song {
+  const x = s as Partial<Song> | null
+  if (!x || typeof x !== 'object') return false
+  if (typeof x.id !== 'number' || !Number.isFinite(x.id)) return false
+  if (!text(x.title, 200) || !text(x.artist, 200) || !text(x.preview, 500) || !text(x.art, 500) || !text(x.link, 500)) return false
+  if (!host(x.preview!, (h) => under(h, 'itunes.apple.com') || under(h, 'mzstatic.com'))) return false
+  if (x.art && !host(x.art, (h) => under(h, 'mzstatic.com'))) return false
+  if (x.link && !host(x.link, (h) => under(h, 'apple.com'))) return false
+  return true
+}

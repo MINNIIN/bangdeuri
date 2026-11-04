@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseItunes, PREVIEW_SEC, songOffset } from './songs'
+import { isSafeSong, parseItunes, PREVIEW_SEC, songOffset } from './songs'
 
 const song = (over: Record<string, unknown> = {}) => ({
   kind: 'song',
@@ -48,5 +48,35 @@ describe('같이 듣기 위치', () => {
 
   it('보낸 사람 시계가 조금 빠르면 처음부터', () => {
     expect(songOffset(5000, 1000)).toBe(0)
+  })
+})
+
+describe('받은 노래 확인', () => {
+  const ok = {
+    id: 1,
+    title: 'Ditto',
+    artist: 'NewJeans',
+    art: 'https://is1-ssl.mzstatic.com/image/thumb/a/200x200bb.jpg',
+    preview: 'https://audio-ssl.itunes.apple.com/itunes-assets/x.m4a',
+    link: 'https://music.apple.com/us/album/ditto/1',
+  }
+
+  it('Apple 주소에서 온 곡만 믿는다', () => {
+    expect(isSafeSong(ok)).toBe(true)
+    expect(isSafeSong({ ...ok, preview: 'https://tracker.example/p.m4a' })).toBe(false)
+    expect(isSafeSong({ ...ok, preview: 'http://audio-ssl.itunes.apple.com/x.m4a' })).toBe(false)
+    expect(isSafeSong({ ...ok, art: 'https://evil.example/a.jpg' })).toBe(false)
+    expect(isSafeSong({ ...ok, link: 'javascript:alert(1)' })).toBe(false)
+    expect(isSafeSong({ ...ok, preview: 'https://itunes.apple.com.evil.example/x.m4a' })).toBe(false)
+  })
+
+  it('이상한 모양이면 버린다', () => {
+    expect(isSafeSong(null)).toBe(false)
+    expect(isSafeSong({ ...ok, title: 'x'.repeat(500) })).toBe(false)
+    expect(isSafeSong({ ...ok, id: 'x' })).toBe(false)
+  })
+
+  it('앨범 아트·링크가 비어 있어도 된다', () => {
+    expect(isSafeSong({ ...ok, art: '', link: '' })).toBe(true)
   })
 })
