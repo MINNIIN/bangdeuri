@@ -9,7 +9,9 @@ import { RETURN_KEY, roomUrl } from '../lib/links'
 import { MAX_GUESTS, newCid, type Peer, type RoomChannel, type RoomEvent } from '../lib/realtime'
 import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, todayCount } from '../lib/rules'
 import { renderStoryImage } from '../lib/shareImage'
+import { FIXTURES } from '../lib/home'
 import { bgm, bgmEnabled } from '../lib/music'
+import { type ToolId, toolFor } from '../lib/tools'
 import { firstVisitThisSession, store } from '../lib/storage'
 import type { ChatMessage, Drop, Room } from '../lib/types'
 import { DecorEditor } from './DecorEditor'
@@ -18,6 +20,7 @@ import { Icon, SpriteIcon } from './PixelSprite'
 import { RoomChat } from './RoomChat'
 import { ENTRANCE, type Ghost, RoomScene, type SceneControl } from './RoomScene'
 import { Sheet } from './Sheet'
+import { ToolSheet } from './tools/ToolSheet'
 
 type Mode = 'view' | 'pick' | 'place' | 'write' | 'decorate'
 type Status = 'loading' | 'ready' | 'missing' | 'error' | 'kicked' | 'full'
@@ -98,6 +101,8 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [confirmReset, setConfirmReset] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  /** 미니미가 가구에 도착해서 연 도구 창 */
+  const [tool, setTool] = useState<ToolId | null>(null)
   const viewport = useVisibleViewport()
 
   const svgRef = useRef<SVGSVGElement>(null)
@@ -670,6 +675,10 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           onBackgroundTap={() => select(null)}
           onMeMove={(from, to) => send({ t: 'move', cid, from, to })}
           onMeAct={(key, from) => send({ t: 'act', cid, key, from })}
+          onMeArrive={(key, item) => {
+            // 집 가구만 (친구가 놓은 아이템은 도구가 없다), 놓기·꾸미기 중에는 열지 않는다
+            if (mode === 'view' && FIXTURES.some((f) => f.id === key)) setTool(toolFor(item) ?? null)
+          }}
         />
         {!entered && (
           <div className="enter-overlay">
@@ -934,6 +943,8 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           </button>
         </div>
       </Sheet>
+
+      <ToolSheet tool={tool} onClose={() => setTool(null)} />
 
       {/* 방명록 */}
       <Sheet open={bookOpen} onClose={() => setBookOpen(false)} title={`방명록 ${drops.length}/${MAX_DROPS}`}>

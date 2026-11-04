@@ -30,6 +30,7 @@ import {
   VIEW_W,
   viewDepth,
 } from '../lib/iso'
+import { toolFor } from '../lib/tools'
 import { type PinchMode, pinchMode, ROTATE_GAIN, twist } from '../lib/gesture'
 import type { SharedRoomState } from '../lib/realtime'
 import type { Drop } from '../lib/types'
@@ -160,6 +161,8 @@ interface Props {
   onMeMove?: (from: UV, to: UV) => void
   /** 내 미니미가 가구·아이템을 쓰러 갈 때 */
   onMeAct?: (key: string, from: UV) => void
+  /** 내 미니미가 가구·아이템에 도착해서 쓰기 시작할 때 (도구 창을 연다) */
+  onMeArrive?: (key: string, item: string) => void
   svgRef?: Ref<SVGSVGElement>
   controlRef?: Ref<SceneControl>
   className?: string
@@ -260,6 +263,7 @@ export function RoomScene({
   onBackgroundTap,
   onMeMove,
   onMeAct,
+  onMeArrive,
   svgRef,
   controlRef,
   className,
@@ -345,8 +349,8 @@ export function RoomScene({
 
   const dropsRef = useRef(drops)
   dropsRef.current = drops
-  const cb = useRef({ onMeMove, onMeAct })
-  cb.current = { onMeMove, onMeAct }
+  const cb = useRef({ onMeMove, onMeAct, onMeArrive })
+  cb.current = { onMeMove, onMeAct, onMeArrive }
 
   useEffect(
     () => () => {
@@ -583,6 +587,7 @@ export function RoomScene({
 
   const arrive = (a: Actor, t: Target, inter: Interaction) => {
     a.act = { ...t, inter, phase: 'doing' }
+    if (a.id === 'me') cb.current.onMeArrive?.(t.key, t.item)
     const ip = project(t, thetaRef.current)
     const mp = project(a.pos, thetaRef.current)
     if (Math.abs(ip.x - mp.x) > 2) a.facing = ip.x < mp.x ? -1 : 1
@@ -625,6 +630,8 @@ export function RoomScene({
     // 쓰고 있는 걸 한 번 더 누르면: TV는 채널 돌리기, 나머지는 한마디 더
     if (cur && cur.key === t.key) {
       if (cur.phase !== 'doing') return true
+      // 쓰고 있는 가구를 또 누르면 도구 창을 다시 연다
+      if (a.id === 'me') cb.current.onMeArrive?.(t.key, t.item)
       if (t.item === 'tv') {
         const next = (channel.current + 1) % TV_CHANNELS.length
         flickChannel(next)
@@ -949,6 +956,7 @@ export function RoomScene({
           <g className={`drop-body ${motion ? `is-${motion}` : ''}`}>
             <PixelSprite sprite={art.sprite} x={p.x} y={p.y + 1} px={pxOf(f)} />
           </g>
+          {walkable && toolFor(f.item) && <ToolMark x={p.x} y={p.y - spriteHeight(art.sprite) * pxOf(f) - 4} />}
           {f.item === 'tv' && tvOn(f.id) && (
             <TvOverlay at={p} sprite={art.sprite} px={pxOf(f)} channel={channel.current} switching={switching.current} />
           )}
@@ -1373,4 +1381,16 @@ function bubblePosition(at: { left: number; top: number }): CSSProperties {
     top: `${Math.min(100, Math.max(at.top, 14))}%`,
     ['--tail' as string]: `${at.left - clamped}cqw`,
   }
+}
+
+/** 진짜로 쓸 수 있는 가구 위에 반짝이는 작은 별 */
+function ToolMark({ x, y }: { x: number; y: number }) {
+  const k = 1.5
+  return (
+    <g className="tool-mark" pointerEvents="none">
+      <rect x={x - k / 2} y={y - k * 2.5} width={k} height={k * 5} fill="#fff6a8" stroke="#2b2233" strokeWidth={0.4} />
+      <rect x={x - k * 2.5} y={y - k / 2} width={k * 5} height={k} fill="#fff6a8" stroke="#2b2233" strokeWidth={0.4} />
+      <rect x={x - k / 2} y={y - k / 2} width={k} height={k} fill="#ffd94a" />
+    </g>
+  )
 }
