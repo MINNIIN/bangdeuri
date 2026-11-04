@@ -9,8 +9,8 @@ import { RETURN_KEY, roomUrl } from '../lib/links'
 import { MAX_GUESTS, newCid, type Peer, type RoomChannel, type RoomEvent } from '../lib/realtime'
 import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, todayCount } from '../lib/rules'
 import { renderStoryImage } from '../lib/shareImage'
-import { FIXTURES } from '../lib/home'
 import { bgm, bgmEnabled } from '../lib/music'
+import { timers } from '../lib/timers'
 import { type ToolId, toolFor } from '../lib/tools'
 import { firstVisitThisSession, store } from '../lib/storage'
 import type { ChatMessage, Drop, Room } from '../lib/types'
@@ -675,9 +675,9 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           onBackgroundTap={() => select(null)}
           onMeMove={(from, to) => send({ t: 'move', cid, from, to })}
           onMeAct={(key, from) => send({ t: 'act', cid, key, from })}
-          onMeArrive={(key, item) => {
-            // 집 가구만 (친구가 놓은 아이템은 도구가 없다), 놓기·꾸미기 중에는 열지 않는다
-            if (mode === 'view' && FIXTURES.some((f) => f.id === key)) setTool(toolFor(item) ?? null)
+          onMeArrive={(_key, item) => {
+            // 친구가 놓은 전자레인지·알람시계도 쓸 수 있다. 놓기·꾸미기 중에는 열지 않는다
+            if (mode === 'view') setTool(toolFor(item) ?? null)
           }}
         />
         {!entered && (
@@ -944,7 +944,14 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
         </div>
       </Sheet>
 
-      <ToolSheet tool={tool} onClose={() => setTool(null)} />
+      <ToolSheet
+        tool={tool}
+        onClose={() => setTool(null)}
+        onTimer={(label, sec) => {
+          timers.start({ label, source: 'recipe', endsAt: Date.now() + sec * 1000, total: sec })
+          ctx.toast(`${label} ${sec / 60}분 타이머를 맞췄어요`)
+        }}
+      />
 
       {/* 방명록 */}
       <Sheet open={bookOpen} onClose={() => setBookOpen(false)} title={`방명록 ${drops.length}/${MAX_DROPS}`}>

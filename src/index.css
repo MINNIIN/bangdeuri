@@ -2723,3 +2723,113 @@ button {
 .recipe-timer {
   margin-top: 8px;
 }
+
+/* ─── 타이머 ─── */
+
+.timer-dock {
+  position: fixed;
+  left: 50%;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+
+.timer-pill {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--soft);
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-tool {
+  align-items: center;
+  text-align: center;
+}
+
+.timer-big {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.timer-bar {
+  width: 100%;
+  height: 10px;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.timer-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.timer-adjust {
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* ─── 큰 알림 창 (타이머·알람) ─── */
+
+.notice-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(43, 34, 51, 0.45);
+}
+
+.notice {
+  width: min(320px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 16px;
+  background: #fffdf8;
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.notice-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.notice-body {
+  margin: 0;
+  color: var(--muted);
+}
+
+.notice .row {
+  justify-content: center;
+  gap: 8px;
+}

@@ -1,6 +1,7 @@
 import type { ToolId } from '../../lib/tools'
 import { Sheet } from '../Sheet'
 import { RecipeTool } from './RecipeTool'
+import { TimerTool } from './TimerTool'
 
 const TITLES: Record<ToolId, string> = {
   recipe: '오늘 뭐 해 먹지?',
@@ -33,6 +34,12 @@ function renderTool(tool: ToolId, p: ToolProps) {
       return <RecipeTool mode="list" onTimer={p.onTimer} />
     case 'pantry':
       return <RecipeTool mode="pantry" onTimer={p.onTimer} />
+    case 'timer-desk':
+      return <TimerTool source="desk" />
+    case 'timer-microwave':
+      return <TimerTool source="microwave" />
+    case 'timer-washer':
+      return <TimerTool source="washer" />
     default:
       return null
   }

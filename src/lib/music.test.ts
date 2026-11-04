@@ -27,3 +27,14 @@ describe('배경음악', () => {
     bgm.stop()
   })
 })
+
+describe('배경음악 잠깐 멈추기', () => {
+  it('멈춘 이유가 여러 개면 다 풀려야 다시 나온다', () => {
+    bgm.hold('song', true)
+    bgm.hold('alarm', true)
+    bgm.hold('song', false)
+    expect(bgm.isHeld()).toBe(true)
+    bgm.hold('alarm', false)
+    expect(bgm.isHeld()).toBe(false)
+  })
+})

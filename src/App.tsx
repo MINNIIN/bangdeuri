@@ -5,6 +5,7 @@ import { Gallery } from './components/Gallery'
 import { Home } from './components/Home'
 import { ProfileScreen } from './components/ProfileScreen'
 import { RoomScreen } from './components/RoomScreen'
+import { TimerDock } from './components/TimerDock'
 import { backend } from './lib/backend'
 import { RETURN_KEY, roomIdFrom, roomUrl } from './lib/links'
 import type { AuthUser, Profile } from './lib/types'
@@ -136,6 +137,7 @@ export default function App() {
   return (
     <div className="app">
       {screen}
+      <TimerDock />
       <div className={`toast ${toastText ? 'is-on' : ''}`} role="status" aria-live="polite">
         {toastText}
       </div>

@@ -109,8 +109,8 @@ let timer = 0
 let track: Track | null = null
 let step = 0
 let nextAt = 0
-/** 턴테이블처럼 다른 소리가 나는 동안은 잠깐 멈춘다 */
-let held = false
+/** 턴테이블·알람처럼 다른 소리가 나는 동안은 잠깐 멈춘다 (멈춘 이유들) */
+const held = new Set<string>()
 const listeners = new Set<() => void>()
 
 function audio() {
@@ -172,7 +172,7 @@ function schedule() {
 }
 
 function run() {
-  if (!ac || timer || held || !track || !bgmEnabled()) return
+  if (!ac || timer || held.size || !track || !bgmEnabled()) return
   void ac.resume()
   nextAt = ac.currentTime + 0.05
   timer = window.setInterval(schedule, 30)
@@ -210,12 +210,14 @@ export const bgm = {
     if (on) bgm.play(theme)
     else halt()
   },
-  /** 다른 소리(턴테이블 등)가 날 때 잠깐 멈추고, 끝나면 다시 */
-  hold(on: boolean) {
-    held = on
-    if (on) halt()
-    else run()
+  /** 다른 소리(턴테이블·알람 등)가 날 때 잠깐 멈추고, 이유가 다 풀리면 다시 */
+  hold(reason: string, on: boolean) {
+    if (on) {
+      held.add(reason)
+      halt()
+    } else if (held.delete(reason)) run()
   },
+  isHeld: () => held.size > 0,
   /** 화면이 가려지면 멈췄다가 돌아오면 다시 */
   pause: halt,
   resume: run,
