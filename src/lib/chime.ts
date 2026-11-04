@@ -11,6 +11,22 @@ function audio() {
   return ac
 }
 
+/**
+ * 아이폰은 사용자가 누르는 순간에만 소리 장치를 깨울 수 있다.
+ * 알람·타이머는 시간이 돼서 저절로 울리므로, 화면을 누를 때마다 미리 깨워 둔다 (앱 시작 때 한 번 부른다).
+ */
+let armed = false
+export function armChime() {
+  if (armed) return
+  armed = true
+  const wake = () => {
+    const c = audio()
+    if (c && c.state !== 'running') void c.resume()
+  }
+  window.addEventListener('pointerdown', wake, { passive: true })
+  window.addEventListener('keydown', wake)
+}
+
 function beep(c: AudioContext, hz: number, at: number, dur: number, vol = 0.18, wave: OscillatorType = 'square') {
   const osc = c.createOscillator()
   const g = c.createGain()
@@ -69,4 +85,4 @@ export function ring(kind: 'timer' | 'alarm'): () => void {
   }
 }
 
-export const chime = { ring }
+export const chime = { ring, arm: armChime }

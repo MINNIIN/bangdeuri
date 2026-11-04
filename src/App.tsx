@@ -6,6 +6,7 @@ import { Home } from './components/Home'
 import { ProfileScreen } from './components/ProfileScreen'
 import { RoomScreen } from './components/RoomScreen'
 import { AlarmWatcher } from './components/AlarmWatcher'
+import { armChime } from './lib/chime'
 import { TimerDock } from './components/TimerDock'
 import { backend } from './lib/backend'
 import { RETURN_KEY, roomIdFrom, roomUrl } from './lib/links'
@@ -59,6 +60,9 @@ export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [authReady, setAuthReady] = useState(false)
+
+  // 알람·타이머 소리를 첫 터치 때 미리 깨워 둔다 (아이폰)
+  useEffect(armChime, [])
 
   useEffect(() => {
     const onPop = () => setRoute(routeFromUrl())
