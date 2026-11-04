@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { addMonths, dayLabel, kstMonth } from '../../lib/calendar'
 import { timers } from '../../lib/timers'
 
 // .env에 진짜 Supabase 키가 있어도 테스트는 이 브라우저 안의 가짜 서버로
@@ -58,6 +59,18 @@ describe('가구 도구 창', () => {
     expect(screen.getByLabelText('일정 내용')).toBeTruthy()
     expect(screen.queryByText('나만 보기')).toBeNull()
     expect(await screen.findByText('아직 일정이 없어요')).toBeTruthy()
+  })
+
+  it('달력: 다음 달로 넘기면 그 달 1일을 보여 준다', async () => {
+    render(
+      <ToolSheet
+        tool="calendar"
+        onClose={noop}
+        calendar={{ roomId: 'r', owner: false, name: '고구마', anon: true, version: 0, onChanged: noop, onGuestWrote: noop, toast: noop }}
+      />,
+    )
+    fireEvent.click(screen.getByLabelText('다음달'))
+    expect(screen.getByText(dayLabel(`${addMonths(kstMonth(), 1)}-01`))).toBeTruthy()
   })
 
   it('시계: 손님은 지금 시각만', () => {

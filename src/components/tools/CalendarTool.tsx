@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { backend } from '../../lib/backend'
 import { addMonths, dayLabel, EVENT_TITLE_MAX, kstMonth, kstToday, monthGrid, WEEK } from '../../lib/calendar'
 import { clip, errorText } from '../../lib/rules'
@@ -40,17 +40,23 @@ export function CalendarTool({
   const [busy, setBusy] = useState(false)
   const key = useMemo(() => store.deviceKey(), [])
 
-  const load = useCallback(async () => {
-    try {
-      setEvents(await backend.listEvents(roomId, month, key))
-    } catch {
-      setEvents([])
-    }
-  }, [roomId, month, key])
-
   useEffect(() => {
-    void load()
-  }, [load, version])
+    // 달을 빨리 넘기면 늦게 온 앞 달 응답이 덮어쓰지 않게
+    let current = true
+    backend
+      .listEvents(roomId, month, key)
+      .then((list) => current && setEvents(list))
+      .catch(() => current && setEvents([]))
+    return () => {
+      current = false
+    }
+  }, [roomId, month, key, version])
+
+  /** 달을 넘기면 그 달 1일(이번 달이면 오늘)을 고른다 */
+  const goMonth = (next: string) => {
+    setMonth(next)
+    setDay(next === today.slice(0, 7) ? today : `${next}-01`)
+  }
 
   const grid = monthGrid(month)
   const byDay = new Map<string, CalEvent[]>()
@@ -89,13 +95,13 @@ export function CalendarTool({
   return (
     <div className="tool-body calendar-tool">
       <div className="cal-head">
-        <button className="btn btn-small" onClick={() => setMonth(addMonths(month, -1))} aria-label="지난달">
+        <button className="btn btn-small" onClick={() => goMonth(addMonths(month, -1))} aria-label="지난달">
           ‹
         </button>
         <b>
           {y}년 {m}월
         </b>
-        <button className="btn btn-small" onClick={() => setMonth(addMonths(month, 1))} aria-label="다음달">
+        <button className="btn btn-small" onClick={() => goMonth(addMonths(month, 1))} aria-label="다음달">
           ›
         </button>
       </div>
