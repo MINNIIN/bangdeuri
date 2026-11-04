@@ -2,8 +2,9 @@ import { normalizeLook } from '../art/avatar'
 import { defaultDecor, normalizeDecor } from '../art/decor'
 import type { Backend } from './backend'
 import { createLocalChannel } from './realtime'
+import { EVENTS_PER_MINUTE, MAX_EVENTS, monthRange } from './calendar'
 import { CHAT_KEEP, kstDate, MAX_DROPS } from './rules'
-import type { AuthUser, ChatMessage, Drop, Profile, Room } from './types'
+import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room } from './types'
 
 /**
  * Supabase 키가 없을 때 쓰는 가짜 서버. 같은 브라우저 localStorage에 저장한다.
@@ -20,7 +21,11 @@ interface LocalDb {
   rooms: Record<string, StoredRoom>
   drops: Drop[]
   messages: ChatMessage[]
+  events: StoredEvent[]
 }
+
+/** 서버처럼 쓴 사람 계정·기기 키를 따로 들고 있는다 (목록에는 안 나간다) */
+type StoredEvent = Omit<CalEvent, 'mine'> & { authorId: string | null; authorKey: string | null }
 
 const randomId = (len: number) =>
   Array.from(crypto.getRandomValues(new Uint8Array(len)), (b) => (b % 36).toString(36)).join('')
@@ -33,11 +38,11 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
   const read = (): LocalDb => {
     try {
       const raw = storage.getItem(DB_KEY)
-      if (raw) return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], ...JSON.parse(raw) }
+      if (raw) return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [], ...JSON.parse(raw) }
     } catch {
       // 깨진 데이터면 새로 시작
     }
-    return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [] }
+    return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [] }
   }
   const write = (db: LocalDb) => storage.setItem(DB_KEY, JSON.stringify(db))
 
@@ -64,6 +69,12 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       decor: normalizeDecor(r.decor, r.theme),
       owner: { nickname: p?.nickname ?? r.name, look: normalizeLook(p?.look) },
     }
+  }
+  const isOwner = (room: StoredRoom) => !!currentUser() && room.ownerId === currentUser()?.id
+  const toEvent = (e: StoredEvent, room: StoredRoom, key: string): CalEvent => {
+    const { authorId, authorKey, ...rest } = e
+    const uid = currentUser()?.id
+    return { ...rest, mine: isOwner(room) || (!!uid && authorId === uid) || (!!authorKey && authorKey === key) }
   }
   const ownRoom = (db: LocalDb, roomId: string) => {
     const room = db.rooms[roomId]
@@ -171,6 +182,7 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       delete db.rooms[roomId]
       db.drops = db.drops.filter((d) => d.roomId !== roomId)
       db.messages = db.messages.filter((m) => m.roomId !== roomId)
+      db.events = db.events.filter((e) => e.roomId !== roomId)
       write(db)
     },
     async resetLink(roomId) {
@@ -241,6 +253,57 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
     },
     async countMessagesSince(roomId, since) {
       return read().messages.filter((m) => m.roomId === roomId && !m.owner && m.createdAt > since).length
+    },
+
+    async listEvents(roomId, month, key) {
+      const db = read()
+      const room = db.rooms[roomId]
+      if (!room) return []
+      const { from, to } = monthRange(month)
+      return db.events
+        .filter((e) => e.roomId === roomId && e.date >= from && e.date <= to && (!e.private || isOwner(room)))
+        .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))
+        .map((e) => toEvent(e, room, key))
+    },
+    async addEvent(roomId, e, key) {
+      const db = read()
+      const room = db.rooms[roomId] ?? fail('room_not_found')
+      const owner = isOwner(room)
+      if (e.private && !owner) fail('forbidden')
+      const today = kstDate()
+      if (db.events.filter((x) => x.roomId === roomId && x.date >= today).length >= MAX_EVENTS) fail('calendar_full')
+      const uid = e.anon ? null : (currentUser()?.id ?? null)
+      const authorKey = uid ? null : key
+      const minuteAgo = new Date(Date.now() - 60_000).toISOString()
+      const recent = db.events.filter(
+        (x) => x.createdAt > minuteAgo && (uid ? x.authorId === uid : x.authorKey === authorKey),
+      )
+      if (recent.length >= EVENTS_PER_MINUTE) fail('too_fast')
+      const ev: StoredEvent = {
+        id: randomId(12),
+        roomId,
+        date: e.date,
+        time: e.time,
+        title: e.title.trim(),
+        name: e.name.trim(),
+        byOwner: owner && !e.anon,
+        private: e.private,
+        createdAt: new Date().toISOString(),
+        authorId: uid,
+        authorKey,
+      }
+      db.events.push(ev)
+      write(db)
+      return toEvent(ev, room, key)
+    },
+    async deleteEvent(roomId, id, key) {
+      const db = read()
+      const room = db.rooms[roomId] ?? fail('room_not_found')
+      const ev = db.events.find((x) => x.id === id && x.roomId === roomId)
+      if (!ev) return
+      if (!toEvent(ev, room, key).mine) fail('forbidden')
+      db.events = db.events.filter((x) => x !== ev && x.id !== id)
+      write(db)
     },
 
     joinRoom: (roomId, me) => createLocalChannel(roomId, me),

@@ -254,6 +254,59 @@ describe('로컬 모드 저장소', () => {
     expect(await guest.listDrops(other.id)).toHaveLength(1)
   })
 
+  describe('달력', () => {
+    const ev = { date: '2026-11-20', time: '19:00', title: '치킨 먹자', name: '수상한 고구마', anon: true, private: false }
+
+    it('익명 손님이 쓴 일정은 그 기기 키로만 지운다, 주인은 다 지운다', async () => {
+      const { owner, guest } = await twoTabs()
+      const room = await owner.createRoom(newRoom)
+      const e = await guest.addEvent(room.id, ev, 'key-A')
+      expect(e.mine).toBe(true)
+      expect((await guest.listEvents(room.id, '2026-11', 'key-A'))[0].mine).toBe(true)
+      expect((await guest.listEvents(room.id, '2026-11', 'key-B'))[0].mine).toBe(false)
+      expect((await owner.listEvents(room.id, '2026-11', 'key-Z'))[0].mine).toBe(true)
+      await expect(guest.deleteEvent(room.id, e.id, 'key-B')).rejects.toThrow('forbidden')
+      await guest.deleteEvent(room.id, e.id, 'key-A')
+      const e2 = await guest.addEvent(room.id, ev, 'key-A')
+      await owner.deleteEvent(room.id, e2.id, 'key-Z')
+      expect(await guest.listEvents(room.id, '2026-11', 'key-A')).toHaveLength(0)
+    })
+
+    it('주인 일정에는 주인 표시, 나만 보기 일정은 손님에게 안 보이고 손님은 못 쓴다', async () => {
+      const { owner, guest } = await twoTabs()
+      const room = await owner.createRoom(newRoom)
+      const mine = await owner.addEvent(room.id, { ...ev, name: '민수', anon: false, private: true }, 'k')
+      expect(mine.byOwner).toBe(true)
+      expect(await guest.listEvents(room.id, '2026-11', 'g')).toHaveLength(0)
+      expect(await owner.listEvents(room.id, '2026-11', 'k')).toHaveLength(1)
+      await expect(guest.addEvent(room.id, { ...ev, private: true }, 'g')).rejects.toThrow('forbidden')
+    })
+
+    it('다른 달 일정은 안 가져온다', async () => {
+      const { owner, guest } = await twoTabs()
+      const room = await owner.createRoom(newRoom)
+      await guest.addEvent(room.id, { ...ev, date: '2027-01-15' }, 'g')
+      expect(await guest.listEvents(room.id, '2026-11', 'g')).toHaveLength(0)
+      expect(await guest.listEvents(room.id, '2027-01', 'g')).toHaveLength(1)
+    })
+
+    it('같은 사람이 1분에 5개 넘게 쓰면 too_fast', async () => {
+      const { owner, guest } = await twoTabs()
+      const room = await owner.createRoom(newRoom)
+      for (let i = 0; i < 5; i++) await guest.addEvent(room.id, ev, 'g')
+      await expect(guest.addEvent(room.id, ev, 'g')).rejects.toThrow('too_fast')
+      await guest.addEvent(room.id, ev, 'other')
+    })
+
+    it('방을 지우면 일정도 사라진다', async () => {
+      const { owner, guest } = await twoTabs()
+      const room = await owner.createRoom(newRoom)
+      await guest.addEvent(room.id, ev, 'g')
+      await owner.deleteRoom(room.id)
+      expect(await guest.listEvents(room.id, '2026-11', 'g')).toHaveLength(0)
+    })
+  })
+
   it('방문자 수', async () => {
     const { owner, guest } = await twoTabs()
     const room = await owner.createRoom(newRoom)

@@ -74,6 +74,21 @@ npx supabase functions deploy notify --no-verify-jwt
 
 `functions/_middleware.ts`는 Cloudflare Pages Functions로 같이 올라간다. 카톡·SNS가 방 링크(`/?r=...`)를 읽어 갈 때 미리보기 제목을 "OO의 미니룸에 놀러 와!"로 바꿔 준다. 위 환경 변수(`VITE_SUPABASE_URL`, `VITE_SUPABASE_KEY`)를 그대로 쓴다. 로컬 확인: `npm run build && npx wrangler pages dev dist`.
 
+## 업데이트 (2026-11): 달력·턴테이블·알람
+
+이미 배포한 방들이에 새 가구 기능을 켜려면 아래를 한 번씩 한다.
+
+### 달력 (DB)
+
+1. **SQL Editor**에 `supabase/schema.sql`을 통째로 다시 붙여넣고 **Run**. 이미 있는 테이블·정책은 그대로 두고 새 것만 만든다 (`events` 테이블, `list_events`·`add_event`·`delete_event` 함수, 알림 기기 `on_event`·`on_alarm` 칸).
+2. `notify` 함수를 다시 배포한다 (달력 알림 문구가 추가됨): `npx supabase functions deploy notify --no-verify-jwt`.
+
+### 턴테이블 (노래 검색)
+
+- `functions/api/music.ts`가 Cloudflare Pages Functions로 같이 올라간다. 따로 할 일은 없다 (키 필요 없음).
+- iTunes 검색 API를 미국 스토어(`country=US`)로 부른다. 한국 스토어는 검색 API가 노래를 하나도 안 돌려준다 (2026-11 확인). K-pop도 미국 스토어에 다 있다.
+- 미리듣기(30초)만 틀고 파일은 저장하지 않는다. 앨범 아트와 "Apple Music에서 듣기" 링크를 같이 보여 준다.
+
 ## 5. 잠들지 않게 (선택)
 
 무료 Supabase 프로젝트는 **7일 동안 요청이 없으면 일시정지**된다. 데이터는 그대로이고 대시보드에서 **Restore**를 누르면 다시 살아난다.

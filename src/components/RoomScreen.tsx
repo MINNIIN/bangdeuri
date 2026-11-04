@@ -104,6 +104,8 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [chatOpen, setChatOpen] = useState(false)
   /** 미니미가 가구에 도착해서 연 도구 창 */
   const [tool, setTool] = useState<ToolId | null>(null)
+  /** 달력: 누가 일정을 바꾸면 올려서 다시 불러온다 */
+  const [calVersion, setCalVersion] = useState(0)
   /** 친구가 튼 노래를 브라우저가 막았을 때 (눌러서 같이 듣기) */
   const [songBlocked, setSongBlocked] = useState<NowPlaying | null>(null)
   const [, songBump] = useReducer((n: number) => n + 1, 0)
@@ -305,6 +307,9 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           break
         case 'song':
           hear({ by: e.by, song: e.song, at: e.at })
+          break
+        case 'cal':
+          setCalVersion((v) => v + 1)
           break
         case 'song-stop':
           turntable.stop()
@@ -986,6 +991,20 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           setSongBlocked(null)
           send({ t: 'song', cid, ...np })
         }}
+        calendar={
+          entry
+            ? {
+                roomId: room.id,
+                owner,
+                name: entry.name,
+                anon: entry.anon,
+                version: calVersion,
+                onChanged: () => send({ t: 'cal', cid }),
+                onGuestWrote: () => void backend.notify(room.id, { kind: 'event', name: entry.name }),
+                toast: ctx.toast,
+              }
+            : undefined
+        }
         onStopSong={() => {
           turntable.stop()
           send({ t: 'song-stop', cid })

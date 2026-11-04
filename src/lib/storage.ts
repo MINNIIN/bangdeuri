@@ -23,6 +23,8 @@ interface Saved {
   seen: Record<string, string>
   kicked: Record<string, number>
   visits: VisitedRoom[]
+  /** 이 기기 비밀 키: 익명으로 쓴 달력 일정을 내가 쓴 건지 서버가 확인할 때 쓴다 */
+  deviceKey?: string
 }
 
 const empty = (): Saved => ({ guest: null, dropped: [], seen: {}, kicked: {}, visits: [] })
@@ -95,6 +97,13 @@ export const store = {
     const rest = (Array.isArray(s.visits) ? s.visits : []).filter((v) => v.id !== room.id)
     s.visits = [{ ...room, at }, ...rest].slice(0, VISITS_KEEP)
     save(s)
+  },
+  deviceKey(): string {
+    const s = load()
+    if (s.deviceKey) return s.deviceKey
+    s.deviceKey = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => (b % 36).toString(36)).join('')
+    save(s)
+    return s.deviceKey
   },
   forgetVisit(roomId: string) {
     const s = load()

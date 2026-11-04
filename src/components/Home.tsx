@@ -292,6 +292,7 @@ function NotifySettings({ ctx }: { ctx: AppContext }) {
         <>
           <Toggle on={prefs.enter} disabled={busy} onClick={() => toggle('enter')} label="친구가 내 방에 들어오면" />
           <Toggle on={prefs.drop} disabled={busy} onClick={() => toggle('drop')} label="친구가 물건을 두고 가면" />
+          <Toggle on={prefs.event} disabled={busy} onClick={() => toggle('event')} label="친구가 달력에 일정을 적으면" />
           <p className="panel-tip">이 기기에서만 켜져요{isIOS() ? '' : '. 휴대폰에서 받으려면 휴대폰에서도 켜 주세요'}</p>
         </>
       )}

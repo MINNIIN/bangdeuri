@@ -47,3 +47,13 @@ describe('놀러 간 방 기록', () => {
     expect(store.visits()).toEqual([])
   })
 })
+
+describe('기기 비밀 키', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('처음 부를 때 만들고 그다음부터 같은 값', () => {
+    const k = store.deviceKey()
+    expect(k).toMatch(/^[a-z0-9]{32}$/)
+    expect(store.deviceKey()).toBe(k)
+  })
+})

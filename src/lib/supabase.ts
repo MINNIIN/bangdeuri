@@ -4,7 +4,8 @@ import { normalizeDecor } from '../art/decor'
 import type { Backend } from './backend'
 import { CHAT_KEEP } from './rules'
 import type { Peer, RoomChannel, RoomEvent } from './realtime'
-import type { AuthUser, ChatMessage, Drop, Profile, Room, ThemeId } from './types'
+import { monthRange } from './calendar'
+import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room, ThemeId } from './types'
 
 interface RoomRow {
   id: string
@@ -40,6 +41,32 @@ interface MessageRow {
   owner: boolean
   created_at: string
 }
+
+interface EventRow {
+  id: string
+  room_id: string
+  date: string
+  time: string | null
+  title: string
+  name: string
+  by_owner: boolean
+  private: boolean
+  mine: boolean
+  created_at: string
+}
+
+export const toEvent = (r: EventRow): CalEvent => ({
+  id: r.id,
+  roomId: r.room_id,
+  date: r.date,
+  time: r.time,
+  title: r.title,
+  name: r.name,
+  byOwner: r.by_owner,
+  private: r.private,
+  mine: r.mine,
+  createdAt: r.created_at,
+})
 
 const ROOM_SELECT =
   'id,slug,owner_id,name,theme,motto,total_visits,today_visits,today_date,created_at,decor,owner:profiles(nickname,look)'
@@ -84,7 +111,7 @@ const toUser = (u: User | null | undefined): AuthUser | null => (u ? { id: u.id,
 /** Supabase 에러 → 화면 문구용 코드 (rules.ts ERROR_TEXT) */
 function code(e: { message?: string; code?: string } | null): string {
   const m = e?.message ?? ''
-  const known = m.match(/room_full|room_not_found|forbidden|too_fast|profile_required|login_required|too_many_rooms/)
+  const known = m.match(/room_full|room_not_found|forbidden|too_fast|profile_required|login_required|too_many_rooms|calendar_full|too_many_alarms/)
   if (known) return known[0]
   if (/already registered|already exists/i.test(m)) return 'email_taken'
   if (/invalid login credentials/i.test(m)) return 'bad_login'
@@ -255,6 +282,30 @@ export function createSupabaseBackend(url: string, key: string): Backend {
       return res.count ?? 0
     },
 
+    async listEvents(roomId, month, key) {
+      const { from, to } = monthRange(month)
+      const rows = check(await sb.rpc('list_events', { p_room: roomId, p_from: from, p_to: to, p_key: key })) as EventRow[]
+      return rows.map(toEvent)
+    },
+    async addEvent(roomId, e, key) {
+      const row = check(
+        await sb.rpc('add_event', {
+          p_room: roomId,
+          p_date: e.date,
+          p_time: e.time ?? '',
+          p_title: e.title,
+          p_name: e.name,
+          p_anon: e.anon,
+          p_private: e.private,
+          p_key: key,
+        }),
+      ) as EventRow
+      return toEvent(row)
+    },
+    async deleteEvent(_roomId, id, key) {
+      check(await sb.rpc('delete_event', { p_id: id, p_key: key }))
+    },
+
     joinRoom(roomId, me) {
       return supabaseChannel(sb.channel(`room:${roomId}`, { config: { presence: { key: me.cid }, broadcast: { self: false } } }), me)
     },
@@ -270,6 +321,8 @@ export function createSupabaseBackend(url: string, key: string): Backend {
           auth: sub.keys.auth,
           on_enter: prefs.enter,
           on_drop: prefs.drop,
+          on_event: prefs.event,
+          on_alarm: prefs.alarm,
         }),
       )
     },

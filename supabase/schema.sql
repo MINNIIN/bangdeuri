@@ -288,3 +288,127 @@ grant execute on function public.visit_room(text) to anon, authenticated;
 -- drop function if exists public.update_decor(text, text, jsonb);
 -- drop table if exists public.drops cascade;
 -- drop table if exists public.rooms cascade;
+
+-- ═══ 2026-11 추가: 달력 ═══════════════════════════════════
+-- 이미 배포한 DB에도 이 파일을 통째로 다시 실행하면 된다 (모두 다시 돌려도 안전하게 썼다)
+
+create table if not exists public.events (
+  id          uuid primary key default gen_random_uuid(),
+  room_id     text not null references public.rooms(id) on delete cascade,
+  date        date not null,
+  time        text check (time is null or time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
+  title       text not null check (char_length(title) between 1 and 40),
+  name        text not null check (char_length(name) between 1 and 12),
+  by_owner    boolean not null default false,
+  private     boolean not null default false,
+  -- 쓴 사람: 회원 이름으로 쓰면 계정, 익명(회원이 정체를 숨긴 경우 포함)이면 그 기기 비밀 키. 둘 다 남에게 안 보인다
+  author_id   uuid,
+  author_key  text check (author_key is null or char_length(author_key) between 16 and 64),
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists events_room_idx on public.events (room_id, date);
+
+alter table public.events enable row level security;
+-- 테이블은 직접 못 읽는다. 아래 함수로만 읽고 쓴다 (쓴 사람 정보를 숨기고 나만 보기 일정을 거르려고)
+revoke all on public.events from anon, authenticated;
+
+-- 알림 종류 추가 (예전 기기는 꺼진 채로)
+alter table public.push_subscriptions add column if not exists on_event boolean not null default false;
+alter table public.push_subscriptions add column if not exists on_alarm boolean not null default false;
+
+create or replace function public.list_events(p_room text, p_from date, p_to date, p_key text)
+returns table (
+  id uuid, room_id text, date date, "time" text, title text, name text,
+  by_owner boolean, private boolean, mine boolean, created_at timestamptz
+)
+language sql stable security definer set search_path = public
+as $$
+  select e.id, e.room_id, e.date, e.time, e.title, e.name, e.by_owner, e.private,
+    coalesce(r.owner_id = auth.uid(), false)
+      or coalesce(e.author_id = auth.uid(), false)
+      or coalesce(e.author_key = nullif(p_key, ''), false),
+    e.created_at
+  from events e
+  join rooms r on r.id = e.room_id
+  where e.room_id = p_room
+    and e.date between p_from and p_to
+    and (not e.private or coalesce(r.owner_id = auth.uid(), false))
+  order by e.date, e.time nulls first
+  limit 500
+$$;
+
+create or replace function public.add_event(
+  p_room text, p_date date, p_time text, p_title text, p_name text, p_anon boolean, p_private boolean, p_key text
+)
+returns json
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_owner uuid;
+  v_is_owner boolean;
+  v_uid uuid;
+  v_key text;
+  v_row events;
+begin
+  select r.owner_id into v_owner from rooms r where r.id = p_room;
+  if v_owner is null then
+    raise exception 'room_not_found';
+  end if;
+  v_is_owner := coalesce(auth.uid() = v_owner, false);
+  if p_private and not v_is_owner then
+    raise exception 'forbidden';
+  end if;
+  if (select count(*) from events e
+      where e.room_id = p_room and e.date >= (now() at time zone 'Asia/Seoul')::date) >= 200 then
+    raise exception 'calendar_full';
+  end if;
+  v_uid := case when p_anon then null else auth.uid() end;
+  v_key := case when v_uid is null then nullif(p_key, '') else null end;
+  if v_uid is null and v_key is null then
+    raise exception 'forbidden';
+  end if;
+  -- 같은 사람이 1분에 5개까지
+  if (select count(*) from events e
+      where e.created_at > now() - interval '1 minute'
+        and (coalesce(e.author_id = v_uid, false) or coalesce(e.author_key = v_key, false))) >= 5 then
+    raise exception 'too_fast';
+  end if;
+  insert into events (room_id, date, time, title, name, by_owner, private, author_id, author_key)
+  values (p_room, p_date, nullif(p_time, ''), trim(p_title), trim(p_name), v_is_owner and not p_anon, p_private, v_uid, v_key)
+  returning * into v_row;
+  return json_build_object(
+    'id', v_row.id, 'room_id', v_row.room_id, 'date', v_row.date, 'time', v_row.time,
+    'title', v_row.title, 'name', v_row.name, 'by_owner', v_row.by_owner, 'private', v_row.private,
+    'mine', true, 'created_at', v_row.created_at
+  );
+end $$;
+
+create or replace function public.delete_event(p_id uuid, p_key text)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_ok boolean;
+begin
+  select coalesce(r.owner_id = auth.uid(), false)
+      or coalesce(e.author_id = auth.uid(), false)
+      or coalesce(e.author_key = nullif(p_key, ''), false)
+    into v_ok
+  from events e join rooms r on r.id = e.room_id
+  where e.id = p_id;
+  if not found then
+    return;
+  end if;
+  if not v_ok then
+    raise exception 'forbidden';
+  end if;
+  delete from events where id = p_id;
+end $$;
+
+revoke execute on function public.list_events(text, date, date, text) from public;
+revoke execute on function public.add_event(text, date, text, text, text, boolean, boolean, text) from public;
+revoke execute on function public.delete_event(uuid, text) from public;
+grant execute on function public.list_events(text, date, date, text) to anon, authenticated;
+grant execute on function public.add_event(text, date, text, text, text, boolean, boolean, text) to anon, authenticated;
+grant execute on function public.delete_event(uuid, text) to anon, authenticated;

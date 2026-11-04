@@ -20,15 +20,20 @@ export function pushSupport(): PushSupport {
   return 'ok'
 }
 
+const OFF: PushPrefs = { enter: false, drop: false, event: false, alarm: false }
+
 export function savedPrefs(): PushPrefs {
   try {
     const raw = localStorage.getItem(PREFS_KEY)
-    if (raw) return { enter: false, drop: false, ...JSON.parse(raw) }
+    if (raw) return { ...OFF, ...JSON.parse(raw) }
   } catch {
     // 못 읽으면 꺼진 것으로
   }
-  return { enter: false, drop: false }
+  return { ...OFF }
 }
+
+/** 다 꺼졌으면 이 기기 구독을 지운다 */
+export const allOff = (p: PushPrefs) => !p.enter && !p.drop && !p.event && !p.alarm
 
 function rememberPrefs(p: PushPrefs) {
   try {
@@ -49,14 +54,14 @@ function keyBytes(base64: string) {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0))
 }
 
-/** 알림 설정을 바꾼다. 둘 다 끄면 이 기기 구독을 지운다 */
+/** 알림 설정을 바꾼다. 다 끄면 이 기기 구독을 지운다 */
 export async function setPushPrefs(prefs: PushPrefs): Promise<PushPrefs> {
   if (pushSupport() !== 'ok') throw new Error('push_unavailable')
   const reg = (await navigator.serviceWorker.getRegistration()) ?? (await navigator.serviceWorker.register('/sw.js'))
   await navigator.serviceWorker.ready
   const current = await reg.pushManager.getSubscription()
 
-  if (!prefs.enter && !prefs.drop) {
+  if (allOff(prefs)) {
     if (current) {
       await backend.removePush(current.endpoint)
       await current.unsubscribe()

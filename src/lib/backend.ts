@@ -3,7 +3,7 @@ import type { Decor } from '../art/decor'
 import { createLocalBackend } from './localBackend'
 import type { Peer, RoomChannel } from './realtime'
 import { createSupabaseBackend } from './supabase'
-import type { AuthUser, ChatMessage, Drop, NewDrop, NewRoom, Profile, PushPrefs, Room } from './types'
+import type { AuthUser, CalEvent, ChatMessage, Drop, NewDrop, NewEvent, NewRoom, Profile, PushPrefs, Room } from './types'
 
 export type SocialProvider = 'kakao' | 'google'
 
@@ -49,6 +49,12 @@ export interface Backend {
   /** 이 시각 뒤에 손님들이 쓴 말 수 */
   countMessagesSince(roomId: string, sinceIso: string): Promise<number>
 
+  // ─── 달력 (쓰기는 누구나, 나만 보기는 주인만, 지우기는 주인과 쓴 사람) ───
+  /** key: 이 기기 비밀 키 (익명으로 쓴 일정을 내가 쓴 건지 확인) */
+  listEvents(roomId: string, month: string, key: string): Promise<CalEvent[]>
+  addEvent(roomId: string, e: NewEvent, key: string): Promise<CalEvent>
+  deleteEvent(roomId: string, id: string, key: string): Promise<void>
+
   // ─── 실시간 ───
   joinRoom(roomId: string, me: Peer): RoomChannel
 
@@ -56,7 +62,7 @@ export interface Backend {
   savePush(sub: PushSubscriptionJSON, prefs: PushPrefs): Promise<void>
   removePush(endpoint: string): Promise<void>
   /** 방 주인에게 알림을 보낸다 (주인이 켜 둔 알림만 간다) */
-  notify(roomId: string, n: { kind: 'enter' | 'drop'; name: string; item?: string }): Promise<void>
+  notify(roomId: string, n: { kind: 'enter' | 'drop' | 'event'; name: string; item?: string }): Promise<void>
 }
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined

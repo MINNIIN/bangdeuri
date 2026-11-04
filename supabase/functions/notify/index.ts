@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     return json({ error: 'bad_json' }, 400)
   }
   const roomId = String(body.room_id ?? '')
-  const kind = body.kind === 'drop' ? 'drop' : body.kind === 'enter' ? 'enter' : null
+  const kind = body.kind === 'drop' ? 'drop' : body.kind === 'enter' ? 'enter' : body.kind === 'event' ? 'event' : null
   const name = String(body.name ?? '').trim().slice(0, 10)
   const item = String(body.item ?? '').trim().slice(0, 16)
   if (!roomId || !kind || !name) return json({ error: 'bad_request' }, 400)
@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     .from('push_subscriptions')
     .select('endpoint,p256dh,auth')
     .eq('user_id', room.owner_id)
-    .eq(kind === 'enter' ? 'on_enter' : 'on_drop', true)
+    .eq(kind === 'enter' ? 'on_enter' : kind === 'drop' ? 'on_drop' : 'on_event', true)
   if (!subs?.length) return json({ sent: 0 })
 
   webpush.setVapidDetails(
@@ -95,7 +95,12 @@ Deno.serve(async (req) => {
   const siteUrl = (Deno.env.get('SITE_URL') ?? '').replace(/\/$/, '')
   const payload = JSON.stringify({
     title: `${room.name}의 미니룸`,
-    body: kind === 'enter' ? `${name}님이 들어왔어요` : `${name}님이 ${item || '선물'}을(를) 두고 갔어요`,
+    body:
+      kind === 'enter'
+        ? `${name}님이 들어왔어요`
+        : kind === 'drop'
+          ? `${name}님이 ${item || '선물'}을(를) 두고 갔어요`
+          : `${name}님이 달력에 일정을 적었어요`,
     url: siteUrl ? `${siteUrl}/?r=${room.slug}` : `/?r=${room.slug}`,
     tag: `${roomId}:${kind}`,
   })

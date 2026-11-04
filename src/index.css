@@ -2916,3 +2916,159 @@ button {
   white-space: nowrap;
   font-size: 12px;
 }
+
+/* ─── 달력 ─── */
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.cal-week {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.cal-week.is-sun {
+  color: var(--danger);
+}
+
+.cal-week.is-sat {
+  color: #4a6cd8;
+}
+
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 40px;
+  padding: 4px 0;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.cal-day.is-out {
+  opacity: 0.4;
+}
+
+.cal-day.is-today {
+  border-color: var(--accent);
+}
+
+.cal-day.is-on {
+  border-color: var(--ink);
+  background: var(--soft);
+}
+
+.cal-dots {
+  display: flex;
+  gap: 2px;
+}
+
+.cal-dots i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+
+.cal-dots i.is-owner,
+.cal-list li.is-owner::before {
+  background: var(--accent);
+}
+
+.cal-dots i.is-friend,
+.cal-list li.is-friend::before {
+  background: #6a8cff;
+}
+
+.cal-day-title {
+  margin: 0 0 6px;
+  font-weight: 700;
+}
+
+.cal-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cal-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.cal-list li::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.cal-time {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.cal-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cal-body .muted {
+  font-size: 11px;
+}
+
+.cal-del {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.cal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cal-form-row {
+  align-items: center;
+  gap: 6px;
+}
+
+.cal-time-input {
+  width: auto;
+  flex: 1;
+  padding: 8px;
+}
+
+.cal-secret {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}

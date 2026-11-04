@@ -76,4 +76,38 @@ export interface PushPrefs {
   enter: boolean
   /** 친구가 물건을 두고 가면 */
   drop: boolean
+  /** 친구가 달력에 일정을 적으면 */
+  event: boolean
+  /** 내 알람 시각이 되면 */
+  alarm: boolean
+}
+
+/** 달력 일정 */
+export interface CalEvent {
+  id: string
+  roomId: string
+  /** YYYY-MM-DD */
+  date: string
+  /** HH:MM, 없으면 하루 종일 */
+  time: string | null
+  title: string
+  /** 쓴 사람 이름 (익명이면 익명 이름) */
+  name: string
+  /** 방 주인이 쓴 일정 */
+  byOwner: boolean
+  /** 방 주인만 보는 일정 */
+  private: boolean
+  /** 내가 지울 수 있는 일정 (방 주인이거나 내가 쓴 것) */
+  mine: boolean
+  createdAt: string
+}
+
+export interface NewEvent {
+  date: string
+  time: string | null
+  title: string
+  name: string
+  /** 정체를 숨기고 썼는지 (계정을 남기지 않는다) */
+  anon: boolean
+  private: boolean
 }

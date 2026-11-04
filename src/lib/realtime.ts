@@ -36,6 +36,8 @@ export type RoomEvent =
   /** 턴테이블: 누가 곡을 틀었다 / 껐다 */
   | ({ t: 'song'; cid: string } & NowPlaying)
   | { t: 'song-stop'; cid: string }
+  /** 달력 일정이 바뀌었다 (받으면 다시 불러온다) */
+  | { t: 'cal'; cid: string }
   /** 방 주인이 내보냈다 */
   | { t: 'kick'; cid: string }
 
