@@ -25,6 +25,21 @@ describe('설비 그림', () => {
     for (const it of ITEMS) expect(INTERACTIONS[it.id], it.id).toBeTruthy()
   })
 
+  it('거실에 턴테이블·달력이 있고 미니미가 그 앞까지 갈 수 있다', () => {
+    for (const id of ['fx-turntable', 'fx-calendar']) {
+      const f = FIXTURES.find((x) => x.id === id)
+      expect(f, id).toBeTruthy()
+      expect(zoneAt(f!)).toBe('living')
+      const front = nearestFree({ u: f!.u + 0.06, v: f!.v + 0.06 })
+      expect(findPath(ZONES[0].spot, front).length, id).toBeGreaterThan(0)
+    }
+  })
+
+  it('가구끼리 겹치지 않는다', () => {
+    for (const a of FIXTURES)
+      for (const b of FIXTURES) if (a !== b) expect(Math.hypot(a.u - b.u, a.v - b.v), `${a.id}·${b.id}`).toBeGreaterThan(0.07)
+  })
+
   it('가구는 벽에 박혀 있지 않다', () => {
     for (const f of FIXTURES) expect(isBlocked(f), f.id).toBe(false)
   })

@@ -85,6 +85,8 @@ export const INTERACTIONS: Record<string, Interaction> = {
   },
   sofa: sit(4, ['소파랑 한 몸', '아 편하다~', '여기서 같이 넷플 보자'], '앉기'),
   lowtable: { verb: '엎드리기', pose: 'floor', fx: ['hearts'], lines: ['여기서 치킨 먹자', '배달 언제 와?'], ms: 2800 },
+  turntable: { verb: '노래 틀기', pose: 'dance', spot: { du: 0.05, dv: 0.07 }, fx: ['notes'], lines: ['오늘의 BGM은 내가 고른다', '이 노래 알아?', '둠칫둠칫'] },
+  calendar: { verb: '달력 보기', pose: 'back', spot: { du: 0.04, dv: 0.07 }, fx: [], lines: ['이번 주 약속이…', '주말까지 며칠 남았지?', '이날 시간 돼?'], ms: 1800 },
   lamp: { verb: '불 켜기', pose: 'stand', spot: { du: 0.05, dv: 0.04 }, fx: [], light: true, lines: ['딸깍', '분위기 있다~'], ms: 1400 },
   // ─── 침실 ───
   bed: {

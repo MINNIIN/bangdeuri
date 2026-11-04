@@ -84,6 +84,8 @@ export const FIXTURES: Fixture[] = [
   { id: 'fx-sofa', item: 'sofa', u: 0.08, v: 0.38 },
   { id: 'fx-lowtable', item: 'lowtable', u: 0.2, v: 0.42 },
   { id: 'fx-lamp', item: 'lamp', u: 0.06, v: 0.24 },
+  { id: 'fx-turntable', item: 'turntable', u: 0.3, v: 0.05 },
+  { id: 'fx-calendar', item: 'calendar', u: 0.42, v: 0.05 },
   // 안방
   { id: 'fx-bed', item: 'bed', u: 0.78, v: 0.12, scale: 1.25 },
   { id: 'fx-wardrobe', item: 'wardrobe', u: 0.96, v: 0.06 },
