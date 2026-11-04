@@ -11,6 +11,7 @@ import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MA
 import { renderStoryImage } from '../lib/shareImage'
 import { bgm, bgmEnabled } from '../lib/music'
 import { timers } from '../lib/timers'
+import { type NowPlaying, turntable } from '../lib/turntable'
 import { type ToolId, toolFor } from '../lib/tools'
 import { firstVisitThisSession, store } from '../lib/storage'
 import type { ChatMessage, Drop, Room } from '../lib/types'
@@ -103,6 +104,12 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [chatOpen, setChatOpen] = useState(false)
   /** 미니미가 가구에 도착해서 연 도구 창 */
   const [tool, setTool] = useState<ToolId | null>(null)
+  /** 친구가 튼 노래를 브라우저가 막았을 때 (눌러서 같이 듣기) */
+  const [songBlocked, setSongBlocked] = useState<NowPlaying | null>(null)
+  const [, songBump] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => turntable.subscribe(songBump), [])
+  // 방을 나가면 노래도 끈다
+  useEffect(() => () => turntable.stop(), [])
   const viewport = useVisibleViewport()
 
   const svgRef = useRef<SVGSVGElement>(null)
@@ -213,9 +220,13 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     const pending = new Map<string, Extract<RoomEvent, { t: 'hello' }>>()
     const ownerInfo = { look: room.owner.look, name: room.owner.nickname, badge: 'owner' as const }
 
+    const hear = (np: NowPlaying) =>
+      void turntable.play(np).then((r) => setSongBlocked(r === 'blocked' ? np : null))
+
     const applyHello = (e: Extract<RoomEvent, { t: 'hello' }>) => {
       const scene = sceneRef.current
       if (!scene) return
+      if (e.song && !turntable.current()) hear(e.song)
       scene.placeActor(e.cid, e.at, e.act, e.outfit)
       if (!roomApplied) {
         scene.applyRoom(e.room)
@@ -255,7 +266,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
         scene.setIdle('npc', true)
       }
       // 새로 온 사람에게 내 자리와 방 상태를 알려 준다
-      if (newcomer) ch.send({ t: 'hello', cid, ...scene.snapshot() })
+      if (newcomer) ch.send({ t: 'hello', cid, ...scene.snapshot(), song: turntable.current() })
       first = false
       setPeers(list)
     })
@@ -291,6 +302,13 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           break
         case 'room':
           setRoom((r) => r && { ...r, motto: e.motto, decor: e.decor })
+          break
+        case 'song':
+          hear({ by: e.by, song: e.song, at: e.at })
+          break
+        case 'song-stop':
+          turntable.stop()
+          setSongBlocked(null)
           break
         case 'kick':
           if (e.cid === cid) {
@@ -694,7 +712,13 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
         </button>
         <div className="hud-title">
           <b>{room.name}의 미니룸</b>
-          {room.motto && <span>{room.motto}</span>}
+          {turntable.isPlaying() ? (
+            <span className="hud-song">
+              ♪ {turntable.current()!.song.title} · {turntable.current()!.song.artist}
+            </span>
+          ) : (
+            room.motto && <span>{room.motto}</span>
+          )}
         </div>
         {/* PC에서는 꾸미기·놓고 가기 버튼을 위쪽에 (휴대폰은 아래 떠 있는 버튼) */}
         {entered && !placing && (ownerUi || canDrop) && (
@@ -944,9 +968,28 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
         </div>
       </Sheet>
 
+      {songBlocked && turntable.current() === songBlocked && (
+        <button
+          className="btn btn-primary song-prompt"
+          onClick={() => void turntable.play(songBlocked).then((r) => setSongBlocked(r === 'blocked' ? songBlocked : null))}
+        >
+          ♪ {songBlocked.by}님이 노래를 틀었어요 — 눌러서 같이 듣기
+        </button>
+      )}
+
       <ToolSheet
         tool={tool}
         onClose={() => setTool(null)}
+        onPlaySong={(song) => {
+          const np = { by: entry?.name ?? '나', song, at: Date.now() }
+          void turntable.play(np)
+          setSongBlocked(null)
+          send({ t: 'song', cid, ...np })
+        }}
+        onStopSong={() => {
+          turntable.stop()
+          send({ t: 'song-stop', cid })
+        }}
         onTimer={(label, sec) => {
           timers.start({ label, source: 'recipe', endsAt: Date.now() + sec * 1000, total: sec })
           ctx.toast(`${label} ${sec / 60}분 타이머를 맞췄어요`)

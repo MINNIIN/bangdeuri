@@ -1,6 +1,7 @@
 import type { AvatarLook } from '../art/avatar'
 import type { Decor } from '../art/decor'
 import type { UV } from './home'
+import type { NowPlaying } from './turntable'
 import type { ChatMessage, Drop } from './types'
 
 /** 방에 같이 있는 사람 한 명 (탭 하나 = 한 명) */
@@ -25,13 +26,16 @@ export type RoomEvent =
   /** 가구·아이템 쓰기 (key = 가구 id 또는 아이템 id) */
   | { t: 'act'; cid: string; key: string; from: UV }
   /** 새로 들어온 사람에게 지금 내 자리와 방 상태를 알려 준다 */
-  | { t: 'hello'; cid: string; at: UV; act: string | null; outfit: number; room: SharedRoomState }
+  | { t: 'hello'; cid: string; at: UV; act: string | null; outfit: number; room: SharedRoomState; song?: NowPlaying | null }
   | { t: 'chat'; cid: string; msg: ChatMessage }
   | { t: 'chat-del'; id: string }
   | { t: 'drop'; cid: string; drop: Drop }
   | { t: 'drop-del'; id: string }
   /** 방 주인이 한마디·꾸미기를 바꿨다 */
   | { t: 'room'; motto: string; decor: Decor }
+  /** 턴테이블: 누가 곡을 틀었다 / 껐다 */
+  | ({ t: 'song'; cid: string } & NowPlaying)
+  | { t: 'song-stop'; cid: string }
   /** 방 주인이 내보냈다 */
   | { t: 'kick'; cid: string }
 

@@ -674,6 +674,7 @@ button {
   font-size: 12px;
 }
 
+.input,
 .field input,
 .field textarea {
   width: 100%;
@@ -2832,4 +2833,86 @@ button {
 .notice .row {
   justify-content: center;
   gap: 8px;
+}
+
+/* ─── 턴테이블 ─── */
+
+.now-playing {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--soft);
+}
+
+.now-playing img,
+.song-row img {
+  flex: none;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+}
+
+.now-body,
+.song-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.now-body b,
+.song-body b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now-body .muted,
+.song-body .muted {
+  font-size: 12px;
+}
+
+.now-body .row {
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.song-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.song-link {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.song-prompt {
+  position: fixed;
+  left: 50%;
+  top: calc(64px + env(safe-area-inset-top));
+  transform: translateX(-50%);
+  z-index: 70;
+  max-width: calc(100vw - 32px);
+}
+
+.hud-song {
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }

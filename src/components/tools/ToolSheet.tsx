@@ -2,6 +2,8 @@ import type { ToolId } from '../../lib/tools'
 import { Sheet } from '../Sheet'
 import { RecipeTool } from './RecipeTool'
 import { TimerTool } from './TimerTool'
+import { TurntableTool } from './TurntableTool'
+import type { Song } from '../../lib/songs'
 
 const TITLES: Record<ToolId, string> = {
   recipe: '오늘 뭐 해 먹지?',
@@ -16,11 +18,13 @@ const TITLES: Record<ToolId, string> = {
 
 export interface ToolProps {
   onTimer?: (label: string, seconds: number) => void
+  onPlaySong?: (song: Song) => void
+  onStopSong?: () => void
 }
 
 /** 가구에 도착하면 열리는 도구 창 */
-export function ToolSheet({ tool, onClose, onTimer }: ToolProps & { tool: ToolId | null; onClose: () => void }) {
-  const body = tool ? renderTool(tool, { onTimer }) : null
+export function ToolSheet({ tool, onClose, ...props }: ToolProps & { tool: ToolId | null; onClose: () => void }) {
+  const body = tool ? renderTool(tool, props) : null
   return (
     <Sheet open={!!tool && !!body} onClose={onClose} title={tool ? TITLES[tool] : ''}>
       {body}
@@ -40,6 +44,8 @@ function renderTool(tool: ToolId, p: ToolProps) {
       return <TimerTool source="microwave" />
     case 'timer-washer':
       return <TimerTool source="washer" />
+    case 'turntable':
+      return p.onPlaySong && p.onStopSong ? <TurntableTool onPlay={p.onPlaySong} onStop={p.onStopSong} /> : null
     default:
       return null
   }
