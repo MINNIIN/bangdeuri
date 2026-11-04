@@ -307,6 +307,59 @@ describe('로컬 모드 저장소', () => {
     })
   })
 
+  describe('알람', () => {
+    const alarm = { time: '07:30', days: [], label: '기상', enabled: true }
+
+    it('알람은 내 계정 것만 보이고, 저장하면 다음 시각이 채워진다', async () => {
+      const { owner, guest } = await twoTabs()
+      const a = await owner.saveAlarm(alarm)
+      expect(a.nextAt).not.toBeNull()
+      expect(new Date(a.nextAt!).getTime()).toBeGreaterThan(Date.now())
+      expect(await owner.listAlarms()).toHaveLength(1)
+      expect(await guest.listAlarms()).toHaveLength(0)
+      await expect(guest.saveAlarm(alarm)).rejects.toThrow('login_required')
+    })
+
+    it('끄면 다음 시각이 없고, 고치면 그대로 바뀐다', async () => {
+      const { owner } = await twoTabs()
+      const a = await owner.saveAlarm(alarm)
+      const off = await owner.saveAlarm({ ...alarm, id: a.id, enabled: false })
+      expect(off.nextAt).toBeNull()
+      expect(await owner.listAlarms()).toHaveLength(1)
+    })
+
+    it('11번째는 too_many_alarms', async () => {
+      const { owner } = await twoTabs()
+      for (let i = 0; i < 10; i++) await owner.saveAlarm(alarm)
+      await expect(owner.saveAlarm(alarm)).rejects.toThrow('too_many_alarms')
+    })
+
+    it('한 번짜리는 울리고 나면 꺼지고, 반복은 다음 시각으로', async () => {
+      const { owner } = await twoTabs()
+      const once = await owner.saveAlarm(alarm)
+      expect((await owner.ackAlarm(once.id)).enabled).toBe(false)
+      const daily = await owner.saveAlarm({ ...alarm, days: [0, 1, 2, 3, 4, 5, 6] })
+      const next = await owner.ackAlarm(daily.id)
+      expect(next.enabled).toBe(true)
+      expect(next.nextAt).not.toBeNull()
+    })
+
+    it('5분 뒤 다시', async () => {
+      const { owner } = await twoTabs()
+      const a = await owner.saveAlarm(alarm)
+      const s = await owner.snoozeAlarm(a.id, 5)
+      expect(Math.abs(new Date(s.nextAt!).getTime() - (Date.now() + 5 * 60_000))).toBeLessThan(5000)
+      expect(s.enabled).toBe(true)
+    })
+
+    it('지우기', async () => {
+      const { owner } = await twoTabs()
+      const a = await owner.saveAlarm(alarm)
+      await owner.deleteAlarm(a.id)
+      expect(await owner.listAlarms()).toHaveLength(0)
+    })
+  })
+
   it('방문자 수', async () => {
     const { owner, guest } = await twoTabs()
     const room = await owner.createRoom(newRoom)

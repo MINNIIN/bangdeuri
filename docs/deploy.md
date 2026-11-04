@@ -89,6 +89,31 @@ npx supabase functions deploy notify --no-verify-jwt
 - iTunes 검색 API를 미국 스토어(`country=US`)로 부른다. 한국 스토어는 검색 API가 노래를 하나도 안 돌려준다 (2026-11 확인). K-pop도 미국 스토어에 다 있다.
 - 미리듣기(30초)만 틀고 파일은 저장하지 않는다. 앨범 아트와 "Apple Music에서 듣기" 링크를 같이 보여 준다.
 
+### 알람 (앱이 닫혀 있어도 푸시)
+
+알람 시각이 되면 앱이 열려 있으면 방에서 울리고, 닫혀 있으면 서버가 푸시를 보낸다. 서버 쪽은 1분마다 도는 예약 작업이다.
+
+1. 위 "달력"에서 `schema.sql`을 다시 실행했다면 알람 테이블·함수도 이미 만들어졌다 (`alarms`, `alarm_next`, `ack_alarm`, `snooze_alarm`, `fire_due_alarms`).
+2. **Database → Extensions**에서 `pg_cron`, `pg_net`을 켠다.
+3. 비밀값 하나를 만든다 (아무도 모르는 긴 문자열, 예: `openssl rand -hex 24`):
+   `npx supabase secrets set ALARM_CRON_SECRET=<그 문자열>`
+4. 함수 배포: `npx supabase functions deploy alarm --no-verify-jwt` (VAPID·SITE_URL 비밀값은 notify와 같이 쓴다).
+5. **SQL Editor**에서 예약 작업을 한 번 등록한다 (`<project-ref>`, `<ALARM_CRON_SECRET>`을 채워서):
+   ```sql
+   select cron.schedule('bangdeuri-alarms', '* * * * *', $$
+     select net.http_post(
+       url := 'https://<project-ref>.supabase.co/functions/v1/alarm',
+       headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-secret', '<ALARM_CRON_SECRET>'),
+       body := '{}'::jsonb
+     )
+   $$);
+   ```
+6. 확인: `select status, return_message, start_time from cron.job_run_details order by start_time desc limit 5;` 가 `succeeded`면 된다. 함수 로그(Edge Functions → alarm → Logs)에 `{"sent":0}`이 1분마다 찍힌다.
+
+- 알람 푸시는 알림 설정의 **"알람 시각이 되면"** 스위치를 켠 기기로만 간다 (기본 꺼짐).
+- 시각은 한국 시간 기준. 예약 작업이 오래 멈췄다 돌아오면 10분 넘게 지난 알람은 보내지 않고 다음 시각으로 넘긴다.
+- 예약 작업을 멈추려면: `select cron.unschedule('bangdeuri-alarms');`
+
 ## 5. 잠들지 않게 (선택)
 
 무료 Supabase 프로젝트는 **7일 동안 요청이 없으면 일시정지**된다. 데이터는 그대로이고 대시보드에서 **Restore**를 누르면 다시 살아난다.

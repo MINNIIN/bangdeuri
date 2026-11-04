@@ -1,5 +1,6 @@
 import type { AvatarLook } from '../art/avatar'
 import type { Decor } from '../art/decor'
+import type { Alarm } from './alarm'
 import { createLocalBackend } from './localBackend'
 import type { Peer, RoomChannel } from './realtime'
 import { createSupabaseBackend } from './supabase'
@@ -54,6 +55,15 @@ export interface Backend {
   listEvents(roomId: string, month: string, key: string): Promise<CalEvent[]>
   addEvent(roomId: string, e: NewEvent, key: string): Promise<CalEvent>
   deleteEvent(roomId: string, id: string, key: string): Promise<void>
+
+  // ─── 알람 (로그인한 내 것만) ───
+  listAlarms(): Promise<Alarm[]>
+  /** id가 있으면 고치고 없으면 만든다. 다음 울릴 시각은 저장소가 계산한다 */
+  saveAlarm(a: Omit<Alarm, 'id' | 'nextAt'> & { id?: string }): Promise<Alarm>
+  deleteAlarm(id: string): Promise<void>
+  /** 울린 뒤: 반복이면 다음 시각으로, 한 번짜리면 끈다 */
+  ackAlarm(id: string): Promise<Alarm>
+  snoozeAlarm(id: string, minutes: number): Promise<Alarm>
 
   // ─── 실시간 ───
   joinRoom(roomId: string, me: Peer): RoomChannel

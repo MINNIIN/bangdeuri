@@ -412,3 +412,152 @@ revoke execute on function public.delete_event(uuid, text) from public;
 grant execute on function public.list_events(text, date, date, text) to anon, authenticated;
 grant execute on function public.add_event(text, date, text, text, text, boolean, boolean, text) to anon, authenticated;
 grant execute on function public.delete_event(uuid, text) to anon, authenticated;
+
+-- ═══ 2026-11 추가: 시계 알람 ═════════════════════════════════
+-- 알람은 방 주인 계정에 딸린다. 시각은 한국 시간. 앱이 닫혀 있으면 1분마다 도는 예약 작업(pg_cron)이
+-- Edge Function 'alarm'을 불러 푸시를 보낸다 (설정은 docs/deploy.md "알람" 참고).
+
+-- p_after보다 뒤인 가장 빠른 알람 시각 (src/lib/alarm.ts nextAlarmAt과 같은 규칙)
+create or replace function public.alarm_next(p_time text, p_days int[], p_after timestamptz)
+returns timestamptz
+language plpgsql stable
+as $$
+declare
+  v_day date := (p_after at time zone 'Asia/Seoul')::date;
+  v_at timestamptz;
+begin
+  for i in 0..8 loop
+    v_at := ((v_day + i)::text || ' ' || p_time)::timestamp at time zone 'Asia/Seoul';
+    if v_at > p_after
+       and (coalesce(cardinality(p_days), 0) = 0 or extract(dow from (v_day + i))::int = any (p_days)) then
+      return v_at;
+    end if;
+  end loop;
+  return ((v_day + 1)::text || ' ' || p_time)::timestamp at time zone 'Asia/Seoul';
+end $$;
+
+create table if not exists public.alarms (
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  time        text not null check (time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
+  days        int[] not null default '{}' check (days <@ array[0, 1, 2, 3, 4, 5, 6]),
+  label       text not null default '' check (char_length(label) <= 20),
+  enabled     boolean not null default true,
+  next_at     timestamptz,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists alarms_owner_idx on public.alarms (owner_id);
+create index if not exists alarms_due_idx on public.alarms (next_at) where enabled;
+
+alter table public.alarms enable row level security;
+revoke all on public.alarms from anon, authenticated;
+-- 내 알람은 나만 보고 고친다 (다음 울릴 시각은 아래 트리거·함수가 정한다)
+grant select, delete on public.alarms to authenticated;
+grant insert (time, days, label, enabled), update (time, days, label, enabled) on public.alarms to authenticated;
+drop policy if exists "alarms own" on public.alarms;
+create policy "alarms own" on public.alarms for all to authenticated
+  using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+-- 만들거나 시각·요일·켜짐을 바꾸면 다음 울릴 시각을 다시 계산. 다음 시각을 직접 정한 경우(다시 울림·울린 뒤)는 그대로 둔다
+create or replace function public.alarms_before()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if (select count(*) from alarms a where a.owner_id = new.owner_id) >= 10 then
+      raise exception 'too_many_alarms';
+    end if;
+    new.next_at := case when new.enabled then alarm_next(new.time, new.days, now()) else null end;
+  elsif new.time is distinct from old.time
+     or new.days is distinct from old.days
+     or (new.enabled is distinct from old.enabled and new.next_at is not distinct from old.next_at) then
+    new.next_at := case when new.enabled then alarm_next(new.time, new.days, now()) else null end;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists alarms_before on public.alarms;
+create trigger alarms_before before insert or update on public.alarms
+  for each row execute function public.alarms_before();
+
+-- 울린 뒤 끄기: 반복이면 다음 시각으로, 한 번짜리면 끈다
+create or replace function public.ack_alarm(p_id uuid)
+returns public.alarms
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v alarms;
+begin
+  update alarms a set
+    next_at = case when cardinality(a.days) > 0 then alarm_next(a.time, a.days, now()) else null end,
+    enabled = cardinality(a.days) > 0
+  where a.id = p_id and a.owner_id = auth.uid()
+  returning * into v;
+  if v.id is null then
+    raise exception 'forbidden';
+  end if;
+  return v;
+end $$;
+
+-- n분 뒤 다시 울리기 (1~60분)
+create or replace function public.snooze_alarm(p_id uuid, p_min int)
+returns public.alarms
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v alarms;
+begin
+  update alarms a set
+    enabled = true,
+    next_at = now() + make_interval(mins => greatest(1, least(coalesce(p_min, 5), 60)))
+  where a.id = p_id and a.owner_id = auth.uid()
+  returning * into v;
+  if v.id is null then
+    raise exception 'forbidden';
+  end if;
+  return v;
+end $$;
+
+-- 예약 작업(Edge Function 'alarm')만 부른다: 지금 울릴 알람을 넘기고 다음 시각으로 옮긴다.
+-- fresh = 10분 안에 울렸어야 하는 것 (예약 작업이 오래 멈췄다 돌아오면 지난 알람은 푸시하지 않는다)
+create or replace function public.fire_due_alarms()
+returns table (id uuid, owner_id uuid, "time" text, label text, fresh boolean)
+language plpgsql security definer set search_path = public
+as $$
+begin
+  return query
+  with due as (
+    select a.id, a.next_at as was
+    from alarms a
+    where a.enabled and a.next_at <= now()
+    for update skip locked
+  )
+  update alarms a set
+    next_at = case when cardinality(a.days) > 0 then alarm_next(a.time, a.days, now()) else null end,
+    enabled = cardinality(a.days) > 0
+  from due
+  where a.id = due.id
+  returning a.id, a.owner_id, a.time, a.label, due.was > now() - interval '10 minutes';
+end $$;
+
+revoke execute on function public.alarm_next(text, int[], timestamptz) from public;
+revoke execute on function public.alarms_before() from public;
+revoke execute on function public.ack_alarm(uuid) from public;
+revoke execute on function public.snooze_alarm(uuid, int) from public;
+revoke execute on function public.fire_due_alarms() from public, anon, authenticated;
+grant execute on function public.ack_alarm(uuid) to authenticated;
+grant execute on function public.snooze_alarm(uuid, int) to authenticated;
+grant execute on function public.fire_due_alarms() to service_role;
+
+-- 예약 작업 등록 (한 번만, URL·비밀값을 채워서 SQL Editor에서 따로 실행. docs/deploy.md 참고):
+-- create extension if not exists pg_cron;
+-- create extension if not exists pg_net;
+-- select cron.schedule('bangdeuri-alarms', '* * * * *', $$
+--   select net.http_post(
+--     url := 'https://<project-ref>.supabase.co/functions/v1/alarm',
+--     headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-secret', '<ALARM_CRON_SECRET>'),
+--     body := '{}'::jsonb
+--   )
+-- $$);

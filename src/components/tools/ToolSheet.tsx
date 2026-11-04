@@ -2,6 +2,7 @@ import type { ToolId } from '../../lib/tools'
 import { Sheet } from '../Sheet'
 import { RecipeTool } from './RecipeTool'
 import { type ComponentProps } from 'react'
+import { AlarmTool } from './AlarmTool'
 import { CalendarTool } from './CalendarTool'
 import { TimerTool } from './TimerTool'
 import { TurntableTool } from './TurntableTool'
@@ -23,6 +24,7 @@ export interface ToolProps {
   onPlaySong?: (song: Song) => void
   onStopSong?: () => void
   calendar?: ComponentProps<typeof CalendarTool>
+  alarm?: ComponentProps<typeof AlarmTool>
 }
 
 /** 가구에 도착하면 열리는 도구 창 */
@@ -47,6 +49,8 @@ function renderTool(tool: ToolId, p: ToolProps) {
       return <TimerTool source="microwave" />
     case 'timer-washer':
       return <TimerTool source="washer" />
+    case 'alarm':
+      return p.alarm ? <AlarmTool {...p.alarm} /> : null
     case 'calendar':
       return p.calendar ? <CalendarTool {...p.calendar} /> : null
     case 'turntable':

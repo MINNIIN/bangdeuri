@@ -4,6 +4,7 @@ import { normalizeDecor } from '../art/decor'
 import type { Backend } from './backend'
 import { CHAT_KEEP } from './rules'
 import type { Peer, RoomChannel, RoomEvent } from './realtime'
+import type { Alarm } from './alarm'
 import { monthRange } from './calendar'
 import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room, ThemeId } from './types'
 
@@ -66,6 +67,26 @@ export const toEvent = (r: EventRow): CalEvent => ({
   private: r.private,
   mine: r.mine,
   createdAt: r.created_at,
+})
+
+interface AlarmRow {
+  id: string
+  time: string
+  days: number[]
+  label: string
+  enabled: boolean
+  next_at: string | null
+}
+
+const ALARM_SELECT = 'id,time,days,label,enabled,next_at'
+
+export const toAlarm = (r: AlarmRow): Alarm => ({
+  id: r.id,
+  time: r.time,
+  days: r.days ?? [],
+  label: r.label,
+  enabled: r.enabled,
+  nextAt: r.next_at,
 })
 
 const ROOM_SELECT =
@@ -304,6 +325,29 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     },
     async deleteEvent(_roomId, id, key) {
       check(await sb.rpc('delete_event', { p_id: id, p_key: key }))
+    },
+
+    async listAlarms() {
+      if (!(await uid())) return []
+      const rows = check(await sb.from('alarms').select(ALARM_SELECT).order('time')) as AlarmRow[]
+      return rows.map(toAlarm)
+    },
+    async saveAlarm(a) {
+      await needUid()
+      const fields = { time: a.time, days: [...new Set(a.days)].sort(), label: a.label.trim(), enabled: a.enabled }
+      const row = a.id
+        ? check(await sb.from('alarms').update(fields).eq('id', a.id).select(ALARM_SELECT).single<AlarmRow>())
+        : check(await sb.from('alarms').insert(fields).select(ALARM_SELECT).single<AlarmRow>())
+      return toAlarm(row)
+    },
+    async deleteAlarm(id) {
+      check(await sb.from('alarms').delete().eq('id', id))
+    },
+    async ackAlarm(id) {
+      return toAlarm(check(await sb.rpc('ack_alarm', { p_id: id }).single<AlarmRow>()))
+    },
+    async snoozeAlarm(id, minutes) {
+      return toAlarm(check(await sb.rpc('snooze_alarm', { p_id: id, p_min: minutes }).single<AlarmRow>()))
     },
 
     joinRoom(roomId, me) {

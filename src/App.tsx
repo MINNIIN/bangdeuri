@@ -5,6 +5,7 @@ import { Gallery } from './components/Gallery'
 import { Home } from './components/Home'
 import { ProfileScreen } from './components/ProfileScreen'
 import { RoomScreen } from './components/RoomScreen'
+import { AlarmWatcher } from './components/AlarmWatcher'
 import { TimerDock } from './components/TimerDock'
 import { backend } from './lib/backend'
 import { RETURN_KEY, roomIdFrom, roomUrl } from './lib/links'
@@ -138,6 +139,7 @@ export default function App() {
     <div className="app">
       {screen}
       <TimerDock />
+      {user && <AlarmWatcher key={user.id} />}
       <div className={`toast ${toastText ? 'is-on' : ''}`} role="status" aria-live="polite">
         {toastText}
       </div>

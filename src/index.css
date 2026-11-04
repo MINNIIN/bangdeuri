@@ -3072,3 +3072,75 @@ button {
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* ─── 알람 시계 ─── */
+
+.alarm-now {
+  margin: 0;
+  text-align: center;
+  font-size: 40px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.alarm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alarm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.alarm-row.is-off {
+  opacity: 0.55;
+}
+
+.alarm-time {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.alarm-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+
+.alarm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 2px dashed rgba(43, 34, 51, 0.2);
+}
+
+.alarm-warn {
+  margin: 0;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: #ffe9e9;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alarm-ring .notice-title {
+  font-size: 36px;
+  font-variant-numeric: tabular-nums;
+}

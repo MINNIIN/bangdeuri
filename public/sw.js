@@ -18,6 +18,9 @@ self.addEventListener('push', (event) => {
       badge: '/icon-192.png',
       tag: data.tag,
       renotify: !!data.tag,
+      // 알람은 누를 때까지 남겨 둔다
+      requireInteraction: !!data.sticky,
+      vibrate: data.sticky ? [400, 200, 400, 200, 400] : undefined,
       data: { url: data.url || '/' },
     }),
   )

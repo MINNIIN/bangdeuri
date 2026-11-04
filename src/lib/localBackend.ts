@@ -2,6 +2,7 @@ import { normalizeLook } from '../art/avatar'
 import { defaultDecor, normalizeDecor } from '../art/decor'
 import type { Backend } from './backend'
 import { createLocalChannel } from './realtime'
+import { type Alarm, MAX_ALARMS, nextAlarmAt } from './alarm'
 import { EVENTS_PER_MINUTE, MAX_EVENTS, monthRange } from './calendar'
 import { CHAT_KEEP, kstDate, MAX_DROPS } from './rules'
 import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room } from './types'
@@ -22,6 +23,7 @@ interface LocalDb {
   drops: Drop[]
   messages: ChatMessage[]
   events: StoredEvent[]
+  alarms: (Alarm & { ownerId: string })[]
 }
 
 /** 서버처럼 쓴 사람 계정·기기 키를 따로 들고 있는다 (목록에는 안 나간다) */
@@ -38,11 +40,11 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
   const read = (): LocalDb => {
     try {
       const raw = storage.getItem(DB_KEY)
-      if (raw) return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [], ...JSON.parse(raw) }
+      if (raw) return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [], alarms: [], ...JSON.parse(raw) }
     } catch {
       // 깨진 데이터면 새로 시작
     }
-    return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [] }
+    return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [], alarms: [] }
   }
   const write = (db: LocalDb) => storage.setItem(DB_KEY, JSON.stringify(db))
 
@@ -69,6 +71,16 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       decor: normalizeDecor(r.decor, r.theme),
       owner: { nickname: p?.nickname ?? r.name, look: normalizeLook(p?.look) },
     }
+  }
+  const updateAlarm = (id: string, f: (a: Alarm & { ownerId: string }) => Alarm & { ownerId: string }): Alarm => {
+    const u = needUser()
+    const db = read()
+    const a = db.alarms.find((x) => x.id === id && x.ownerId === u.id) ?? fail('forbidden')
+    const next = f(a)
+    db.alarms = db.alarms.map((x) => (x.id === id ? next : x))
+    write(db)
+    const { ownerId: _o, ...out } = next
+    return out
   }
   const isOwner = (room: StoredRoom) => !!currentUser() && room.ownerId === currentUser()?.id
   const toEvent = (e: StoredEvent, room: StoredRoom, key: string): CalEvent => {
@@ -304,6 +316,52 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       if (!toEvent(ev, room, key).mine) fail('forbidden')
       db.events = db.events.filter((x) => x !== ev && x.id !== id)
       write(db)
+    },
+
+    async listAlarms() {
+      const u = currentUser()
+      if (!u) return []
+      return read()
+        .alarms.filter((a) => a.ownerId === u.id)
+        .map(({ ownerId: _o, ...a }) => a)
+        .sort((a, b) => a.time.localeCompare(b.time))
+    },
+    async saveAlarm(input) {
+      const u = needUser()
+      const db = read()
+      const mine = db.alarms.filter((a) => a.ownerId === u.id)
+      const existing = input.id ? mine.find((a) => a.id === input.id) : undefined
+      if (input.id && !existing) fail('forbidden')
+      if (!existing && mine.length >= MAX_ALARMS) fail('too_many_alarms')
+      const a: Alarm & { ownerId: string } = {
+        id: existing?.id ?? randomId(12),
+        ownerId: u.id,
+        time: input.time,
+        days: [...new Set(input.days)].sort(),
+        label: input.label.trim(),
+        enabled: input.enabled,
+        nextAt: input.enabled ? new Date(nextAlarmAt(input, Date.now())).toISOString() : null,
+      }
+      db.alarms = existing ? db.alarms.map((x) => (x.id === a.id ? a : x)) : [...db.alarms, a]
+      write(db)
+      const { ownerId: _o, ...out } = a
+      return out
+    },
+    async deleteAlarm(id) {
+      const u = needUser()
+      const db = read()
+      db.alarms = db.alarms.filter((a) => !(a.id === id && a.ownerId === u.id))
+      write(db)
+    },
+    async ackAlarm(id) {
+      return updateAlarm(id, (a) =>
+        a.days.length
+          ? { ...a, nextAt: new Date(nextAlarmAt(a, Date.now())).toISOString() }
+          : { ...a, enabled: false, nextAt: null },
+      )
+    },
+    async snoozeAlarm(id, minutes) {
+      return updateAlarm(id, (a) => ({ ...a, enabled: true, nextAt: new Date(Date.now() + minutes * 60_000).toISOString() }))
     },
 
     joinRoom: (roomId, me) => createLocalChannel(roomId, me),

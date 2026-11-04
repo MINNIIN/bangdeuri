@@ -1005,6 +1005,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
               }
             : undefined
         }
+        alarm={{ owner: ownerUi, toast: ctx.toast }}
         onStopSong={() => {
           turntable.stop()
           send({ t: 'song-stop', cid })
