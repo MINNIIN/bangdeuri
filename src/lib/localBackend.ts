@@ -3,7 +3,7 @@ import { defaultDecor, normalizeDecor } from '../art/decor'
 import type { Backend } from './backend'
 import { createLocalChannel } from './realtime'
 import { type Alarm, MAX_ALARMS, nextAlarmAt } from './alarm'
-import { EVENTS_PER_MINUTE, MAX_EVENTS, monthRange } from './calendar'
+import { dateAllowed, EVENTS_PER_MINUTE, MAX_EVENTS, monthRange, ROOM_EVENTS_PER_MINUTE } from './calendar'
 import { CHAT_KEEP, kstDate, MAX_DROPS } from './rules'
 import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room } from './types'
 
@@ -283,10 +283,16 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       const owner = isOwner(room)
       if (e.private && !owner) fail('forbidden')
       const today = kstDate()
-      if (db.events.filter((x) => x.roomId === roomId && x.date >= today).length >= MAX_EVENTS) fail('calendar_full')
+      if (!dateAllowed(e.date, today)) fail('bad_date')
+      const minuteAgo = new Date(Date.now() - 60_000).toISOString()
+      // 꽉 참·도배 제한은 손님 일정에만 (주인은 자기 달력을 늘 쓸 수 있다)
+      if (!owner) {
+        const guests = db.events.filter((x) => x.roomId === roomId && !x.byOwner)
+        if (guests.filter((x) => x.date >= today).length >= MAX_EVENTS) fail('calendar_full')
+        if (guests.filter((x) => x.createdAt > minuteAgo).length >= ROOM_EVENTS_PER_MINUTE) fail('too_fast')
+      }
       const uid = e.anon ? null : (currentUser()?.id ?? null)
       const authorKey = uid ? null : key
-      const minuteAgo = new Date(Date.now() - 60_000).toISOString()
       const recent = db.events.filter(
         (x) => x.createdAt > minuteAgo && (uid ? x.authorId === uid : x.authorKey === authorKey),
       )

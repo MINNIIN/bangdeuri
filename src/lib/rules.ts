@@ -25,6 +25,7 @@ export const ERROR_TEXT: Record<string, string> = {
   push_denied: '브라우저에서 알림이 꺼져 있어요. 설정에서 허용해 주세요',
   too_fast: '조금 천천히 보내 주세요',
   too_many_rooms: '방은 5개까지 만들 수 있어요',
+  bad_date: '1년 전부터 2년 뒤까지만 적을 수 있어요',
   calendar_full: '달력이 꽉 찼어요. 지난 일정이 지나면 다시 쓸 수 있어요',
   too_many_alarms: '알람은 10개까지 맞출 수 있어요',
   confirm_email: '가입 확인 메일을 보냈어요',

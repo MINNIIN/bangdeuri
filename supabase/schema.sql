@@ -308,6 +308,8 @@ create table if not exists public.events (
 );
 
 create index if not exists events_room_idx on public.events (room_id, date);
+create index if not exists events_recent_idx on public.events (room_id, created_at);
+create index if not exists events_author_idx on public.events (author_key, created_at);
 
 alter table public.events enable row level security;
 -- 테이블은 직접 못 읽는다. 아래 함수로만 읽고 쓴다 (쓴 사람 정보를 숨기고 나만 보기 일정을 거르려고)
@@ -359,9 +361,25 @@ begin
   if p_private and not v_is_owner then
     raise exception 'forbidden';
   end if;
-  if (select count(*) from events e
-      where e.room_id = p_room and e.date >= (now() at time zone 'Asia/Seoul')::date) >= 200 then
-    raise exception 'calendar_full';
+  -- 1년 전 ~ 2년 뒤만 (지난 날짜로 저장소를 채우지 못하게)
+  if p_date is null
+     or p_date < (now() at time zone 'Asia/Seoul')::date - 365
+     or p_date > (now() at time zone 'Asia/Seoul')::date + 730 then
+    raise exception 'bad_date';
+  end if;
+  -- 꽉 참·도배 제한은 손님 일정에만 (주인은 자기 달력을 늘 쓸 수 있다)
+  if not v_is_owner then
+    if (select count(*) from events e
+        where e.room_id = p_room and not e.by_owner
+          and e.date >= (now() at time zone 'Asia/Seoul')::date) >= 200 then
+      raise exception 'calendar_full';
+    end if;
+    -- 기기 키를 바꿔 가며 도배하는 것 막기: 손님들은 한 방에 1분 20개까지
+    if (select count(*) from events e
+        where e.room_id = p_room and not e.by_owner
+          and e.created_at > now() - interval '1 minute') >= 20 then
+      raise exception 'too_fast';
+    end if;
   end if;
   v_uid := case when p_anon then null else auth.uid() end;
   v_key := case when v_uid is null then nullif(p_key, '') else null end;

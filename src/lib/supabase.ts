@@ -132,7 +132,7 @@ const toUser = (u: User | null | undefined): AuthUser | null => (u ? { id: u.id,
 /** Supabase 에러 → 화면 문구용 코드 (rules.ts ERROR_TEXT) */
 function code(e: { message?: string; code?: string } | null): string {
   const m = e?.message ?? ''
-  const known = m.match(/room_full|room_not_found|forbidden|too_fast|profile_required|login_required|too_many_rooms|calendar_full|too_many_alarms/)
+  const known = m.match(/room_full|room_not_found|forbidden|too_fast|profile_required|login_required|too_many_rooms|calendar_full|too_many_alarms|bad_date/)
   if (known) return known[0]
   if (/already registered|already exists/i.test(m)) return 'email_taken'
   if (/invalid login credentials/i.test(m)) return 'bad_login'

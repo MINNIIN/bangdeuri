@@ -7,6 +7,16 @@ export const EVENT_TITLE_MAX = 40
 export const MAX_EVENTS = 200
 /** 같은 작성자가 1분에 쓸 수 있는 일정 수 */
 export const EVENTS_PER_MINUTE = 5
+/** 손님들이 한 방에 1분 동안 쓸 수 있는 일정 수 (기기 키를 바꿔 가며 도배하는 것 막기) */
+export const ROOM_EVENTS_PER_MINUTE = 20
+
+/** 쓸 수 있는 날짜: 오늘 기준 1년 전 ~ 2년 뒤 (서버 add_event와 같은 규칙) */
+export function dateAllowed(date: string, today: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) return false
+  const d = Date.parse(`${date}T00:00:00Z`)
+  const t = Date.parse(`${today}T00:00:00Z`)
+  return d >= t - 365 * 86_400_000 && d <= t + 730 * 86_400_000
+}
 
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 const parseMonth = (month: string) => {

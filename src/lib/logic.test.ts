@@ -298,6 +298,22 @@ describe('로컬 모드 저장소', () => {
       await guest.addEvent(room.id, ev, 'other')
     })
 
+    it('키를 바꿔 가며 도배해도 방마다 1분에 20개까지, 주인은 계속 쓸 수 있다', async () => {
+      const { owner, guest } = await twoTabs()
+      const room = await owner.createRoom(newRoom)
+      for (let i = 0; i < 20; i++) await guest.addEvent(room.id, ev, `key-${i}`)
+      await expect(guest.addEvent(room.id, ev, 'key-new')).rejects.toThrow('too_fast')
+      await owner.addEvent(room.id, { ...ev, anon: false, name: '민수' }, 'k')
+    })
+
+    it('너무 먼 날짜(1년 전·2년 뒤 밖)는 못 쓴다', async () => {
+      const { owner, guest } = await twoTabs()
+      const room = await owner.createRoom(newRoom)
+      await expect(guest.addEvent(room.id, { ...ev, date: '2020-01-01' }, 'g')).rejects.toThrow('bad_date')
+      await expect(guest.addEvent(room.id, { ...ev, date: '2099-01-01' }, 'g')).rejects.toThrow('bad_date')
+      await expect(guest.addEvent(room.id, { ...ev, date: 'nope' }, 'g')).rejects.toThrow('bad_date')
+    })
+
     it('방을 지우면 일정도 사라진다', async () => {
       const { owner, guest } = await twoTabs()
       const room = await owner.createRoom(newRoom)
