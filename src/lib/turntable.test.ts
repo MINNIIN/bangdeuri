@@ -23,6 +23,19 @@ describe('턴테이블', () => {
     expect(bgm.isHeld()).toBe(false)
   })
 
+  it('막힌 곡도 30초가 지나면 잊는다 (같이 듣기 버튼이 계속 남지 않게)', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(HTMLMediaElement.prototype, 'play').mockRejectedValue(new DOMException('no', 'NotAllowedError'))
+      expect(await turntable.play({ by: '지윤', song, at: Date.now() - 20_000 })).toBe('blocked')
+      expect(turntable.current()).not.toBeNull()
+      vi.advanceTimersByTime(11_000)
+      expect(turntable.current()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('틀면 배경음악을 멈추고, 끄면 다시', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})

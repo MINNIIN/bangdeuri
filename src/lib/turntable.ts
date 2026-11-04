@@ -62,6 +62,11 @@ export const turntable = {
       await a.play()
     } catch {
       if (audio === a) audio = null
+      // 끝까지 아무도 안 눌러도 미리듣기 시간이 지나면 잊는다 (같이 듣기 버튼이 계속 남지 않게)
+      window.clearTimeout(endTimer)
+      endTimer = window.setTimeout(() => {
+        if (cur === np && !audio) turntable.stop()
+      }, (PREVIEW_SEC - offset) * 1000)
       emit()
       return 'blocked'
     }
