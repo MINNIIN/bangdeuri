@@ -25,3 +25,6 @@ dist-ssr
 
 # wrangler 로컬 실행 기록
 .wrangler/
+
+# Supabase CLI 연결 정보 (supabase link)
+supabase/.temp/

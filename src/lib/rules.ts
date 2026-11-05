@@ -36,6 +36,15 @@ export function errorText(e: unknown): string {
   return ERROR_TEXT[code] ?? '잠깐 문제가 생겼어요\n다시 해 볼래요?'
 }
 
+/** 시각·날짜 칸을 누르면 (PC에서도) 고르는 창을 바로 연다. 못 여는 브라우저는 그냥 직접 입력 */
+export function openPicker(e: { currentTarget: HTMLInputElement }) {
+  try {
+    e.currentTarget.showPicker?.()
+  } catch {
+    // 사용자 동작이 아니거나 지원 안 함
+  }
+}
+
 /** 한국 날짜 YYYY-MM-DD */
 export function kstDate(now = new Date()): string {
   const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000)

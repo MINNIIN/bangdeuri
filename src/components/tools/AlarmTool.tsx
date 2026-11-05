@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useState } from 'react'
 import { type Alarm, ALARM_LABEL_MAX, ALARM_WEEK, daysLabel, kstClock, MAX_ALARMS } from '../../lib/alarm'
 import { backend } from '../../lib/backend'
 import { pushSupport, savedPrefs, setPushPrefs } from '../../lib/push'
-import { clip, errorText } from '../../lib/rules'
+import { clip, errorText, openPicker } from '../../lib/rules'
 import { alarmsChanged } from '../AlarmWatcher'
 
 /** 알람 시계: 방 주인만 맞춘다. 손님은 지금 시각만 본다 */
@@ -74,11 +74,13 @@ function OwnerAlarms({ toast }: { toast: (t: string) => void }) {
       ? '테스트 모드에서는 앱이 열려 있을 때만 울려요'
       : support === 'ios-home'
         ? '앱을 닫으면 안 울려요. 아이폰은 Safari 공유 → "홈 화면에 추가"로 깐 앱에서 알림을 켜야 해요'
-        : support !== 'ok'
-          ? '이 브라우저는 푸시를 못 받아서, 앱을 닫으면 안 울려요'
-          : !prefs.alarm
-            ? '알람 푸시가 꺼져 있어서 앱을 닫으면 안 울려요'
-            : null
+        : support === 'no-key'
+          ? '푸시 키(VITE_VAPID_PUBLIC_KEY)가 설정되지 않아서, 앱을 닫으면 안 울려요'
+          : support !== 'ok'
+            ? '이 브라우저는 푸시를 못 받아서, 앱을 닫으면 안 울려요'
+            : !prefs.alarm
+              ? '알람 푸시가 꺼져 있어서 앱을 닫으면 안 울려요'
+              : null
 
   return (
     <>
@@ -127,7 +129,7 @@ function OwnerAlarms({ toast }: { toast: (t: string) => void }) {
       {(list?.length ?? 0) < MAX_ALARMS && (
         <div className="alarm-form">
           <div className="row cal-form-row">
-            <input className="input cal-time-input" type="time" value={time} required onChange={(e) => setTime(e.target.value)} aria-label="알람 시각" />
+            <input className="input cal-time-input" type="time" value={time} required onClick={openPicker} onChange={(e) => setTime(e.target.value)} aria-label="알람 시각" />
             <button className="btn btn-primary" disabled={busy || !/^\d{2}:\d{2}$/.test(time)} onClick={() => void add()}>
               맞추기
             </button>

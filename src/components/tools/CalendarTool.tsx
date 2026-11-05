@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { backend } from '../../lib/backend'
 import { addMonths, dayLabel, EVENT_TITLE_MAX, kstMonth, kstToday, monthGrid, WEEK } from '../../lib/calendar'
-import { clip, errorText } from '../../lib/rules'
+import { clip, errorText, openPicker } from '../../lib/rules'
 import { store } from '../../lib/storage'
 import type { CalEvent } from '../../lib/types'
 
@@ -178,7 +178,7 @@ export function CalendarTool({
             aria-label="일정 내용"
           />
           <div className="row cal-form-row">
-            <input className="input cal-time-input" type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="시각 (선택)" />
+            <input className="input cal-time-input" type="time" value={time} onClick={openPicker} onChange={(e) => setTime(e.target.value)} aria-label="시각 (선택)" />
             {owner && (
               <label className="cal-secret">
                 <input type="checkbox" checked={secret} onChange={(e) => setSecret(e.target.checked)} /> 나만 보기
