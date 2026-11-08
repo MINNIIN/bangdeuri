@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>단톡방 (홍보 촬영용)</title>
+    <link rel="stylesheet" href="./chat.css" />
+  </head>
+  <body>
+    <!-- 홍보 영상 촬영용 화면. 배포에 포함되지 않는다 (개발 서버에서 /promo/chat.html) -->
+    <div class="phone">
+      <div class="status"><span id="clock">오후 8:12</span><span class="status-r">▂▄▆ 📶 87%</span></div>
+      <header class="head">
+        <span class="back">‹</span>
+        <span class="title"><b id="room-name">우리 반 단톡</b> <em id="room-count">7</em></span>
+        <span class="icons">⌕ ☰</span>
+      </header>
+      <main id="log" class="log"></main>
+      <footer class="input">
+        <span class="plus">＋</span>
+        <span class="field" id="field"></span>
+        <span class="send">➤</span>
+      </footer>
+      <div id="tap" class="tap"></div>
+      <div id="flash" class="flash"></div>
+    </div>
+    <script type="module" src="./chat.ts"></script>
+  </body>
+</html>

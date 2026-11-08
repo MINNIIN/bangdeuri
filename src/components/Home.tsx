@@ -5,7 +5,7 @@ import { defaultDecor } from '../art/decor'
 import { ITEMS } from '../art/items'
 import { themeById } from '../art/themes'
 import { backend } from '../lib/backend'
-import { isIOS, pushSupport, savedPrefs, setPushPrefs } from '../lib/push'
+import { allOff, isIOS, needsUpgrade, prefsFor, pushSupport, savedPrefs, setPushPrefs } from '../lib/push'
 import { errorText } from '../lib/rules'
 import { store, type VisitedRoom } from '../lib/storage'
 import type { Drop, PushPrefs, Room } from '../lib/types'
@@ -258,17 +258,28 @@ function NotifySettings({ ctx }: { ctx: AppContext }) {
   const [prefs, setPrefs] = useState<PushPrefs>(savedPrefs)
   const [busy, setBusy] = useState(false)
 
-  const toggle = async (key: keyof PushPrefs) => {
+  const on = !allOff(prefs)
+
+  const toggle = async () => {
     if (busy) return
     setBusy(true)
     try {
-      setPrefs(await setPushPrefs({ ...prefs, [key]: !prefs[key] }))
+      setPrefs(await setPushPrefs(prefsFor(!on)))
     } catch (e) {
       ctx.toast(errorText(e))
     } finally {
       setBusy(false)
     }
   }
+
+  // 예전에 종류별로 일부만 켜 둔 기기는 조용히 전부 켜짐으로 (이미 알림을 허락한 경우만)
+  useEffect(() => {
+    if (support !== 'ok' || !needsUpgrade(prefs) || Notification.permission !== 'granted') return
+    setPushPrefs(prefsFor(true))
+      .then(setPrefs)
+      .catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const tip =
     support === 'local'
@@ -290,10 +301,8 @@ function NotifySettings({ ctx }: { ctx: AppContext }) {
         <p className="panel-tip">{tip}</p>
       ) : (
         <>
-          <Toggle on={prefs.enter} disabled={busy} onClick={() => toggle('enter')} label="친구가 내 방에 들어오면" />
-          <Toggle on={prefs.drop} disabled={busy} onClick={() => toggle('drop')} label="친구가 물건을 두고 가면" />
-          <Toggle on={prefs.event} disabled={busy} onClick={() => toggle('event')} label="친구가 달력에 일정을 적으면" />
-          <Toggle on={prefs.alarm} disabled={busy} onClick={() => toggle('alarm')} label="알람 시각이 되면 (앱을 닫아도)" />
+          <Toggle on={on} disabled={busy} onClick={() => void toggle()} label="알림 받기" />
+          <p className="panel-tip">친구가 놀러 오거나, 선물·일정을 남기거나, 알람 시각이 되면 알려 줘요</p>
           <p className="panel-tip">이 기기에서만 켜져요{isIOS() ? '' : '. 휴대폰에서 받으려면 휴대폰에서도 켜 주세요'}</p>
         </>
       )}

@@ -35,6 +35,15 @@ export function savedPrefs(): PushPrefs {
 /** 다 꺼졌으면 이 기기 구독을 지운다 */
 export const allOff = (p: PushPrefs) => !p.enter && !p.drop && !p.event && !p.alarm
 
+/**
+ * 화면에는 알림 스위치가 하나뿐이다: 켜면 모든 종류를 받는다.
+ * (서버는 종류별 칸을 그대로 쓴다. 새 알림 종류가 생기면 PushPrefs와 여기에만 추가하면 된다)
+ */
+export const prefsFor = (on: boolean): PushPrefs => ({ enter: on, drop: on, event: on, alarm: on })
+
+/** 예전에 일부만 켜 둔 기기: 스위치 하나로 바뀌었으니 전부 켜짐으로 올린다 */
+export const needsUpgrade = (p: PushPrefs) => !allOff(p) && Object.values(p).some((v) => !v)
+
 function rememberPrefs(p: PushPrefs) {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(p))

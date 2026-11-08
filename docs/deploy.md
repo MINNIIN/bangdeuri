@@ -110,7 +110,7 @@ npx supabase functions deploy notify --no-verify-jwt
    ```
 6. 확인: `select status, return_message, start_time from cron.job_run_details order by start_time desc limit 5;` 가 `succeeded`면 된다. 함수 로그(Edge Functions → alarm → Logs)에 `{"sent":0}`이 1분마다 찍힌다.
 
-- 알람 푸시는 알림 설정의 **"알람 시각이 되면"** 스위치를 켠 기기로만 간다 (기본 꺼짐).
+- 알림 설정은 스위치 하나("알림 받기")다. 켜면 들어옴·선물·달력·알람 알림을 모두 받는다 (기본 꺼짐). 예전에 종류별로 일부만 켜 둔 기기는 첫 화면을 열 때 전부 켜짐으로 바뀐다.
 - 시각은 한국 시간 기준. 예약 작업이 오래 멈췄다 돌아오면 10분 넘게 지난 알람은 보내지 않고 다음 시각으로 넘긴다.
 - 예약 작업을 멈추려면: `select cron.unschedule('bangdeuri-alarms');`
 

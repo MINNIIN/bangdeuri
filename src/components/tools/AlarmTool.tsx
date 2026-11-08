@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useState } from 'react'
 import { type Alarm, ALARM_LABEL_MAX, ALARM_WEEK, daysLabel, kstClock, MAX_ALARMS } from '../../lib/alarm'
 import { backend } from '../../lib/backend'
-import { pushSupport, savedPrefs, setPushPrefs } from '../../lib/push'
+import { prefsFor, pushSupport, savedPrefs, setPushPrefs } from '../../lib/push'
 import { clip, errorText, openPicker } from '../../lib/rules'
 import { alarmsChanged } from '../AlarmWatcher'
 
@@ -63,7 +63,7 @@ function OwnerAlarms({ toast }: { toast: (t: string) => void }) {
 
   const turnOnPush = async () => {
     try {
-      setPrefs(await setPushPrefs({ ...prefs, alarm: true }))
+      setPrefs(await setPushPrefs(prefsFor(true)))
     } catch (e) {
       toast(errorText(e))
     }
@@ -79,7 +79,7 @@ function OwnerAlarms({ toast }: { toast: (t: string) => void }) {
           : support !== 'ok'
             ? '이 브라우저는 푸시를 못 받아서, 앱을 닫으면 안 울려요'
             : !prefs.alarm
-              ? '알람 푸시가 꺼져 있어서 앱을 닫으면 안 울려요'
+              ? '알림이 꺼져 있어서 앱을 닫으면 안 울려요'
               : null
 
   return (
@@ -89,7 +89,7 @@ function OwnerAlarms({ toast }: { toast: (t: string) => void }) {
           {warn}
           {support === 'ok' && !prefs.alarm && (
             <button className="btn btn-small" onClick={() => void turnOnPush()}>
-              이 기기에서 알람 푸시 켜기
+              이 기기에서 알림 켜기
             </button>
           )}
         </div>
