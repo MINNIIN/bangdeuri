@@ -44,12 +44,26 @@ export function parseItunes(json: unknown): Song[] {
   )
 }
 
+/** 미국 스토어 (한국 스토어는 검색 API에서 노래를 하나도 안 돌려준다). functions/api/music.ts와 같은 조건 */
+const ITUNES_QUERY = 'country=US&entity=song&media=music&limit=20'
+
+/**
+ * 브라우저에서 iTunes를 바로 부른다 (CORS 허용됨). 우리 서버(Cloudflare)를 거치면 공용 IP 전체가
+ * iTunes 요청 제한(429)에 걸려 아무도 검색을 못 한다. 바로 부르기가 막힐 때만 /api/music로 한 번 더.
+ */
 export async function searchSongs(term: string, signal?: AbortSignal): Promise<Song[]> {
   const q = term.trim().slice(0, 60)
   if (!q) return []
-  const res = await fetch(`/api/music?term=${encodeURIComponent(q)}`, { signal })
-  if (!res.ok) throw new Error('music_failed')
-  return parseItunes(await res.json())
+  const tries = [`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&${ITUNES_QUERY}`, `/api/music?term=${encodeURIComponent(q)}`]
+  for (const url of tries) {
+    try {
+      const res = await fetch(url, { signal })
+      if (res.ok) return parseItunes(await res.json())
+    } catch (e) {
+      if (signal?.aborted) throw e
+    }
+  }
+  throw new Error('music_failed')
 }
 
 /** 같이 듣기: 시작 시각(at)에서 지금까지 지난 초. 미리듣기가 끝났으면 null */

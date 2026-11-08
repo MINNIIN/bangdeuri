@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { isSafeSong, parseItunes, PREVIEW_SEC, songOffset } from './songs'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { isSafeSong, parseItunes, PREVIEW_SEC, searchSongs, songOffset } from './songs'
 
 const song = (over: Record<string, unknown> = {}) => ({
   kind: 'song',
@@ -78,5 +78,35 @@ describe('받은 노래 확인', () => {
 
   it('앨범 아트·링크가 비어 있어도 된다', () => {
     expect(isSafeSong({ ...ok, art: '', link: '' })).toBe(true)
+  })
+})
+
+describe('노래 검색 (searchSongs)', () => {
+  const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })
+  const one = { results: [{ kind: 'song', trackId: 1, trackName: 'Ditto', artistName: 'NewJeans', previewUrl: 'https://audio-ssl.itunes.apple.com/p.m4a', artworkUrl100: 'https://is1-ssl.mzstatic.com/a.jpg', trackViewUrl: 'https://music.apple.com/x' }] }
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('브라우저에서 iTunes를 바로 부른다 (Cloudflare 공용 IP가 iTunes 요청 제한에 걸려서)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok(one))
+    vi.stubGlobal('fetch', fetchMock)
+    const songs = await searchSongs(' 뉴진스 ')
+    expect(songs).toHaveLength(1)
+    const url = new URL(fetchMock.mock.calls[0][0])
+    expect(url.origin + url.pathname).toBe('https://itunes.apple.com/search')
+    expect(url.searchParams.get('term')).toBe('뉴진스')
+    expect(url.searchParams.get('country')).toBe('US')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('바로 부르기가 실패하면 우리 서버(/api/music)로 한 번 더', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response('', { status: 429 })).mockResolvedValueOnce(ok(one))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await searchSongs('ditto')).toHaveLength(1)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/music?term=ditto')
+  })
+
+  it('둘 다 실패하면 music_failed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('net')).mockResolvedValueOnce(new Response('', { status: 429 })))
+    await expect(searchSongs('ditto')).rejects.toThrow('music_failed')
   })
 })
