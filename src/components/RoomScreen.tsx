@@ -291,10 +291,13 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
       const scene = sceneRef.current
       if (!scene) return
       switch (e.t) {
+        // 움직임이 먼저 왔으면 늦게 온 '내 자리'로 옮기지 않는다 (걷던 사람이 목적지로 순간이동한다)
         case 'move':
+          if (known.has(e.cid)) placed.add(e.cid)
           scene.moveActor(e.cid, e.from, e.to)
           break
         case 'act':
+          if (known.has(e.cid)) placed.add(e.cid)
           scene.actActor(e.cid, e.key, e.from)
           break
         case 'hello':

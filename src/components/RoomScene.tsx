@@ -489,31 +489,34 @@ export function RoomScene({
   const loop = (now: number) => {
     loopRaf.current = 0
     const camMoving = stepCam(now)
-    for (const a of all.values()) {
-      const w = a.walk
-      if (!w) continue
-      const k = Math.min(1, (now - w.start) / w.duration)
-      const d = k * w.total
-      let i = w.segs.length - 1
-      while (i > 0 && w.segs[i].start > d) i--
-      const s = w.segs[i]
-      if (i !== w.seg) {
-        w.seg = i
-        const pa = project(s.from, thetaRef.current)
-        const pb = project(s.to, thetaRef.current)
-        if (Math.abs(pb.x - pa.x) > 1) a.facing = pb.x < pa.x ? -1 : 1
-        a.heading = pb.y < pa.y - 1 ? 'back' : 'front'
-      }
-      const t = Math.min(1, (d - s.start) / s.len)
-      a.pos = { u: s.from.u + (s.to.u - s.from.u) * t, v: s.from.v + (s.to.v - s.from.v) * t }
-      if (k >= 1) {
-        a.walk = null
-        a.heading = 'front'
-        w.onArrive?.()
-      }
-    }
+    for (const a of all.values()) advance(a, now)
     bump()
     if (camMoving || [...all.values()].some((a) => a.walk)) startLoop()
+  }
+
+  /** 걷는 미니미를 지금 시각 자리로 옮긴다 (화면이 안 그려지는 동안에도 시간 기준으로 맞춘다) */
+  const advance = (a: Actor, now: number) => {
+    const w = a.walk
+    if (!w) return
+    const k = Math.min(1, (now - w.start) / w.duration)
+    const d = k * w.total
+    let i = w.segs.length - 1
+    while (i > 0 && w.segs[i].start > d) i--
+    const s = w.segs[i]
+    if (i !== w.seg) {
+      w.seg = i
+      const pa = project(s.from, thetaRef.current)
+      const pb = project(s.to, thetaRef.current)
+      if (Math.abs(pb.x - pa.x) > 1) a.facing = pb.x < pa.x ? -1 : 1
+      a.heading = pb.y < pa.y - 1 ? 'back' : 'front'
+    }
+    const t = Math.min(1, (d - s.start) / s.len)
+    a.pos = { u: s.from.u + (s.to.u - s.from.u) * t, v: s.from.v + (s.to.v - s.from.v) * t }
+    if (k >= 1) {
+      a.walk = null
+      a.heading = 'front'
+      w.onArrive?.()
+    }
   }
 
   const walkAlong = (a: Actor, points: UV[], onArrive?: () => void) => {
@@ -538,6 +541,7 @@ export function RoomScene({
   }
 
   const go = (a: Actor, dest: UV, onArrive?: () => void) => {
+    advance(a, performance.now())
     const to = nearestFree(dest)
     const path = findPath(a.pos, to)
     if (a.id === 'me') follow(to)
@@ -547,6 +551,7 @@ export function RoomScene({
 
   /** 내 미니미를 그 자리로 (누른 자리 표시, 다른 사람에게 알림) */
   const meWalk = (p: UV) => {
+    advance(me, performance.now())
     endAct(me)
     const from = me.pos
     const to = go(me, p)
@@ -662,6 +667,7 @@ export function RoomScene({
   }
 
   const meAct = (t: Target) => {
+    advance(me, performance.now())
     const from = me.pos
     if (startAct(me, t)) cb.current.onMeAct?.(t.key, from)
   }
