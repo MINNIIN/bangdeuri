@@ -220,6 +220,8 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     let first = true
     let ownerHere = owner
     let roomApplied = false
+    // 자리를 이미 받아 둔 사람 (새 사람이 올 때마다 모두가 '내 자리'를 다시 보내는데, 그때마다 옮기면 걷던 사람이 순간이동한다)
+    const placed = new Set<string>()
     const pending = new Map<string, Extract<RoomEvent, { t: 'hello' }>>()
     const ownerInfo = { look: room.owner.look, name: room.owner.nickname, badge: 'owner' as const }
 
@@ -234,7 +236,10 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
       const scene = sceneRef.current
       if (!scene) return
       if (e.song && !turntable.current()) hear(e.song)
-      scene.placeActor(e.cid, e.at, e.act, e.outfit)
+      if (!placed.has(e.cid)) {
+        placed.add(e.cid)
+        scene.placeActor(e.cid, e.at, e.act, e.outfit)
+      }
       if (!roomApplied) {
         scene.applyRoom(e.room)
         roomApplied = true
@@ -262,7 +267,11 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           }
         }
       }
-      for (const id of known) if (!others.some((p) => p.cid === id)) scene.removeActor(id)
+      for (const id of known)
+        if (!others.some((p) => p.cid === id)) {
+          scene.removeActor(id)
+          placed.delete(id)
+        }
       known = new Set(others.map((p) => p.cid))
 
       // 방 주인이 없으면 주인 미니미가 혼자 집에서 논다

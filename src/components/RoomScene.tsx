@@ -736,7 +736,8 @@ export function RoomScene({
       else window.clearTimeout(a.idleTimer)
     },
     snapshot: () => ({
-      at: me.pos,
+      // 걷는 중이면 가는 곳을 알려 준다 (지금 자리는 다른 사람 화면에서 이미 지나간 곳일 수 있다)
+      at: me.walk ? me.walk.segs[me.walk.segs.length - 1].to : me.pos,
       act: me.act?.phase === 'doing' ? me.act.key : null,
       outfit: me.outfit,
       room: { lights: [...lights.current], channel: channel.current },
