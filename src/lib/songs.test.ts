@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isSafeSong, parseItunes, PREVIEW_SEC, searchSongs, songOffset } from './songs'
+import { isSafeSong, musicUrls, parseItunes, PREVIEW_SEC, searchSongs, songOffset } from './songs'
 
 const song = (over: Record<string, unknown> = {}) => ({
   kind: 'song',
@@ -101,12 +101,30 @@ describe('노래 검색 (searchSongs)', () => {
   it('바로 부르기가 실패하면 우리 서버(/api/music)로 한 번 더', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response('', { status: 429 })).mockResolvedValueOnce(ok(one))
     vi.stubGlobal('fetch', fetchMock)
-    expect(await searchSongs('ditto')).toHaveLength(1)
+    expect(await searchSongs('ditto', undefined, '')).toHaveLength(1)
     expect(fetchMock.mock.calls[1][0]).toBe('/api/music?term=ditto')
   })
 
-  it('둘 다 실패하면 music_failed', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('net')).mockResolvedValueOnce(new Response('', { status: 429 })))
-    await expect(searchSongs('ditto')).rejects.toThrow('music_failed')
+  it('아이폰처럼 바로 부르기가 막히면 Supabase 함수 → Cloudflare 순서로', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Load failed'))
+      .mockResolvedValueOnce(ok(one))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await searchSongs('ditto', undefined, 'https://x.supabase.co/')).toHaveLength(1)
+    expect(fetchMock.mock.calls[1][0]).toBe('https://x.supabase.co/functions/v1/music?term=ditto')
+    expect(musicUrls('ditto', 'https://x.supabase.co').at(-1)).toBe('/api/music?term=ditto')
+  })
+
+  it('모두 실패하면 music_failed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError('net'))
+        .mockResolvedValueOnce(new Response('', { status: 500 }))
+        .mockResolvedValueOnce(new Response('', { status: 429 })),
+    )
+    await expect(searchSongs('ditto', undefined, 'https://x.supabase.co')).rejects.toThrow('music_failed')
   })
 })

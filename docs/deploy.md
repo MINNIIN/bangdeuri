@@ -135,3 +135,12 @@ npx supabase functions deploy notify --no-verify-jwt
 - **내보내기·방 주인 표시는 화면(클라이언트) 기준**이다. 실시간 채널에서 보내는 신호라, 마음먹고 코드를 고친 사람이 흉내 낼 수 있다. 방 주인이 아닌 사람이 DB의 아이템·채팅을 지우거나 방을 고치는 것은 RLS로 막혀 있다.
 - 내보낸 손님은 같은 브라우저로 10분 동안 못 들어온다. 다른 브라우저로 오면 막을 수 없다 → 그럴 땐 **링크 새로 만들기**.
 - 가입 안 한 손님은 아무 닉네임이나 쓸 수 있다.
+
+## 턴테이블 노래 검색 (아이폰)
+
+아이폰 브라우저에서 iTunes 검색을 부르면 애플이 음악 앱 주소(`musics://`)로 넘겨 버려서 결과를 못 받는다.
+Cloudflare 함수(`/api/music`)는 공용 IP라 iTunes 요청 제한(429)에 자주 걸린다. 그래서 Supabase 함수를 중간에 둔다.
+
+- 배포: `npx supabase functions deploy music --no-verify-jwt` (비밀값 없음)
+- 순서: 브라우저에서 바로 → Supabase `music` → Cloudflare `/api/music` (`src/lib/songs.ts`의 `musicUrls`)
+- 확인: `https://<project-ref>.supabase.co/functions/v1/music?term=lofi` 가 JSON을 돌려주면 된다.

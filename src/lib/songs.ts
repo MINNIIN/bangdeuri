@@ -1,7 +1,7 @@
 /**
  * 턴테이블 노래: iTunes 검색 → 30초 미리듣기.
  * Apple 규칙대로 앨범 아트와 "Apple Music에서 듣기" 링크를 같이 보여 주고, 미리듣기 파일은 저장하지 않는다.
- * 브라우저에서 직접 부르지 않고 /api/music(배포: Cloudflare Pages 함수, 개발: Vite 프록시)을 거친다.
+ * 브라우저에서 바로 부르고, 막히면 서버(Supabase 함수 → Cloudflare /api/music)를 거친다 (musicUrls 참고).
  */
 export interface Song {
   id: number
@@ -48,14 +48,28 @@ export function parseItunes(json: unknown): Song[] {
 const ITUNES_QUERY = 'country=US&entity=song&media=music&limit=20'
 
 /**
- * 브라우저에서 iTunes를 바로 부른다 (CORS 허용됨). 우리 서버(Cloudflare)를 거치면 공용 IP 전체가
- * iTunes 요청 제한(429)에 걸려 아무도 검색을 못 한다. 바로 부르기가 막힐 때만 /api/music로 한 번 더.
+ * 검색을 시도할 주소들 (앞에서부터).
+ * 1. 브라우저에서 iTunes를 바로 (CORS 허용). PC·안드로이드는 이걸로 끝난다.
+ * 2. Supabase 함수 music: 아이폰 브라우저는 iTunes가 음악 앱 주소(musics://)로 넘겨 버려서 서버가 대신 받아 온다.
+ * 3. /api/music (Cloudflare): 공용 IP라 iTunes 요청 제한(429)에 자주 걸려서 마지막에.
  */
-export async function searchSongs(term: string, signal?: AbortSignal): Promise<Song[]> {
+export function musicUrls(term: string, supabaseUrl?: string): string[] {
+  const t = encodeURIComponent(term)
+  return [
+    `https://itunes.apple.com/search?term=${t}&${ITUNES_QUERY}`,
+    ...(supabaseUrl ? [`${supabaseUrl.replace(/\/+$/, '')}/functions/v1/music?term=${t}`] : []),
+    `/api/music?term=${t}`,
+  ]
+}
+
+export async function searchSongs(
+  term: string,
+  signal?: AbortSignal,
+  supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined,
+): Promise<Song[]> {
   const q = term.trim().slice(0, 60)
   if (!q) return []
-  const tries = [`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&${ITUNES_QUERY}`, `/api/music?term=${encodeURIComponent(q)}`]
-  for (const url of tries) {
+  for (const url of musicUrls(q, supabaseUrl)) {
     try {
       const res = await fetch(url, { signal })
       if (res.ok) return parseItunes(await res.json())
