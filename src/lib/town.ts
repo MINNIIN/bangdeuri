@@ -11,7 +11,7 @@
  * 단위는 m. x가 동쪽, z가 남쪽(화면 앞쪽). 집 안은 따로 떨어진 공간(area)이다.
  */
 
-import { findPath as findHousePath, nearestFree as nearestHouseFree, type UV } from './home'
+import { type Blocker, findPath as findHousePath, nearestFree as nearestHouseFree, type UV } from './home'
 
 export type Vec2 = { x: number; z: number }
 
@@ -363,10 +363,37 @@ export const HOUSE_ENTRANCE: UV = { u: 0.54, v: 0.9 }
 /** 집 안 현관문 (누르면 밖으로) */
 export const HOUSE_EXIT: UV = { u: 0.54, v: 0.985 }
 
-export function findHouseWorldPath(from: Vec2, to: Vec2): Vec2[] {
-  return findHousePath(houseToUv(from), houseToUv(to)).map(uvToHouse)
+/** 집 안에서 피해 갈 물건: 가운데·반너비·반깊이·돌린 각 (m) */
+export interface Obstacle {
+  x: number
+  z: number
+  hw: number
+  hd: number
+  yaw: number
 }
-export const nearestHouseOpen = (p: Vec2): Vec2 => uvToHouse(nearestHouseFree(houseToUv(p)))
+
+/** 물건 자리를 집 안 길찾기가 쓰는 막힘 검사로. pad만큼 넉넉히 비켜 간다 */
+export function obstacleBlocker(list: Obstacle[], pad = 0.12): Blocker {
+  return (uv) => {
+    const p = uvToHouse(uv)
+    for (const o of list) {
+      const dx = p.x - o.x
+      const dz = p.z - o.z
+      const c = Math.cos(o.yaw)
+      const s = Math.sin(o.yaw)
+      // 물건 기준 좌표로 돌려서 사각형 안인지 본다
+      const lx = dx * c - dz * s
+      const lz = dx * s + dz * c
+      if (Math.abs(lx) < o.hw + pad && Math.abs(lz) < o.hd + pad) return true
+    }
+    return false
+  }
+}
+
+export function findHouseWorldPath(from: Vec2, to: Vec2, extra?: Blocker): Vec2[] {
+  return findHousePath(houseToUv(from), houseToUv(to), extra).map(uvToHouse)
+}
+export const nearestHouseOpen = (p: Vec2, extra?: Blocker): Vec2 => uvToHouse(nearestHouseFree(houseToUv(p), extra))
 
 /** 실시간으로 받은 자리 값이 멀쩡한지 */
 export function safeVec(p: unknown): Vec2 | null {

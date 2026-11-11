@@ -14,6 +14,7 @@ import { FIXTURES, ZONES } from '../lib/home'
 import { ROTATE_GAIN, twist } from '../lib/gesture'
 import { clampTilt, rubberTilt } from '../lib/iso'
 import { type Fx, type Interaction, interactionFor, pickLine, TV_CHANNELS } from '../lib/interactions'
+import type { Blocker } from '../lib/home'
 import type { SharedRoomState } from '../lib/realtime'
 import { toolFor } from '../lib/tools'
 import {
@@ -29,6 +30,8 @@ import {
   mailboxSpot,
   nearestHouseOpen,
   nearestOpen,
+  type Obstacle,
+  obstacleBlocker,
   roomOfArea,
   TOWN,
   type TownMap,
@@ -377,6 +380,8 @@ function createWorld(
   const dropGroup = new THREE.Group()
   scene.add(dropGroup)
   const dropMeshes = new Map<string, THREE.Group>()
+  /** 집 안 길찾기가 피해 갈 물건 (집이 바뀌거나 아이템이 바뀌면 다시 잰다) */
+  let blocker: { roomId: string; fn: Blocker } | null = null
   let ghostMesh: THREE.Group | null = null
   let ghostKey = ''
   const lightObjs = new Map<string, THREE.PointLight>()
@@ -617,6 +622,7 @@ function createWorld(
         disposeTree(m)
         dropMeshes.delete(id)
       }
+    blocker = null
     // 고스트
     const g = props.current.ghost
     const gk = g ? `${g.item}` : ''
@@ -685,8 +691,46 @@ function createWorld(
 
   // ─── 걷기 ───
   const walkSpeed = (a: Actor) => (a.area === TOWN ? WALK_TOWN : WALK_HOUSE)
-  const open = (area: AreaId, p: Vec2) => (area === TOWN ? nearestOpen(map, p) : nearestHouseOpen(p))
-  const pathIn = (area: AreaId, from: Vec2, to: Vec2) => (area === TOWN ? findTownPath(map, from, to) : findHouseWorldPath(from, to))
+  // 집 안 가구·놓인 아이템은 뚫고 지나가지 않게 돌아간다 (지금 그려진 집만 안다)
+  const blockerFor = (area: AreaId): Blocker | undefined => {
+    const rid = roomOfArea(area)
+    if (!rid || !house || house.roomId !== rid) return undefined
+    if (blocker?.roomId !== rid) blocker = { roomId: rid, fn: obstacleBlocker(collectObstacles()) }
+    return blocker.fn
+  }
+  const collectObstacles = () => {
+    const list: Obstacle[] = []
+    const box = new THREE.Box3()
+    const add = (o: THREE.Object3D) => {
+      // 돌리기 전 크기로 재고, 그 각도만큼 돌린 사각형으로 둔다
+      const yaw = o.rotation.y
+      const scale = o.scale.x
+      o.rotation.y = 0
+      o.scale.setScalar((o.userData.size as number | undefined) ?? 1)
+      o.updateMatrixWorld(true)
+      box.setFromObject(o)
+      o.rotation.y = yaw
+      o.scale.setScalar(scale)
+      o.updateMatrixWorld(true)
+      // 러그·매트처럼 납작한 건 밟고 지나간다
+      if (box.isEmpty() || box.max.y < 0.12) return
+      const cx = (box.min.x + box.max.x) / 2 - o.position.x
+      const cz = (box.min.z + box.max.z) / 2 - o.position.z
+      list.push({
+        x: o.position.x + cx * Math.cos(yaw) + cz * Math.sin(yaw),
+        z: o.position.z - cx * Math.sin(yaw) + cz * Math.cos(yaw),
+        hw: (box.max.x - box.min.x) / 2,
+        hd: (box.max.z - box.min.z) / 2,
+        yaw,
+      })
+    }
+    if (house) for (const g of house.h.fixtures.values()) add(g)
+    for (const m of dropMeshes.values()) if (me.area !== TOWN) add(m)
+    return list
+  }
+  const open = (area: AreaId, p: Vec2) => (area === TOWN ? nearestOpen(map, p) : nearestHouseOpen(p, blockerFor(area)))
+  const pathIn = (area: AreaId, from: Vec2, to: Vec2) =>
+    area === TOWN ? findTownPath(map, from, to) : findHouseWorldPath(from, to, blockerFor(area))
 
   const go = (a: Actor, dest: Vec2, onArrive?: () => void) => {
     const to = open(a.area, dest)
@@ -1563,7 +1607,7 @@ function createWorld(
   }
 
   // 개발 중 확인용 (자동 스크린샷에서 상태를 본다)
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), screen: (x: number, z: number) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, 0, z)); return { x: r.left + s.x, y: r.top + s.y } } }
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), screen: (x: number, z: number) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, 0, z)); return { x: r.left + s.x, y: r.top + s.y } } }
 
   function gateOfHost() {
     const lot = map.lots[0]

@@ -86,7 +86,8 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [drops, setDrops] = useState<Drop[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [status, setStatus] = useState<Status>('loading')
-  const [entry, setEntry] = useState<Entry | null>(null)
+  /** 손님이 입장 화면에서 고른 이름 (방 주인은 고를 것 없이 바로 내 미니미) */
+  const [chosen, setEntry] = useState<Entry | null>(null)
   const [peers, setPeers] = useState<Peer[]>([])
   const [unread, setUnread] = useState<{ since: string; until: string } | null>(null)
   /** 지금 내가 있는 곳 (골목 또는 어느 집 안) */
@@ -177,14 +178,21 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     }
   }, [slug, loadDrops])
 
-  // 방 주인은 바로 내 미니미로 들어간다
+  // 방 주인은 입장 화면 없이 바로 내 미니미로 들어간다 (첫 화면부터 — 입장 화면이 깜빡 보이지 않게)
+  const ownerEntry = useMemo<Entry | null>(
+    () => (room && owner && ctx.profile ? { name: ctx.profile.nickname, look: ctx.profile.look, anon: false } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [room?.id, owner, ctx.profile],
+  )
+  const entry = chosen ?? ownerEntry
+  // 없는 동안 쌓인 대화 표시하고, 이제 본 것으로
+  const seenRoom = useRef<string | null>(null)
   useEffect(() => {
-    if (!room || entry || !owner || !ctx.profile) return
-    setEntry({ name: ctx.profile.nickname, look: ctx.profile.look, anon: false })
-    // 없는 동안 쌓인 대화 표시하고, 이제 본 것으로
+    if (!room || !ownerEntry || seenRoom.current === room.id) return
+    seenRoom.current = room.id
     setUnread({ since: store.seenAt(room.id) ?? room.createdAt, until: new Date().toISOString() })
     store.markSeen(room.id)
-  }, [room, entry, owner, ctx.profile])
+  }, [room, ownerEntry])
 
   // 들어갈 때 어디에 서는지: 방 주인은 거실, 손님은 그 집 대문 앞 골목
   const spawn = useMemo(

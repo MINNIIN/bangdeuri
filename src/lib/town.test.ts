@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildTown,
   doorStep,
+  findHouseWorldPath,
   findTownPath,
   houseToUv,
   isArea,
@@ -9,6 +10,7 @@ import {
   layoutLots,
   lotAtYard,
   MAX_HOUSES,
+  obstacleBlocker,
   roomOfArea,
   safeVec,
   slotX,
@@ -92,5 +94,32 @@ describe('받은 값 검사', () => {
     expect(safeVec('x')).toBeNull()
     expect(isPlace('yard')).toBe(true)
     expect(isPlace('roof')).toBe(false)
+  })
+})
+
+describe('집 안 길찾기', () => {
+  it('가구가 있으면 뚫고 가지 않고 돌아간다', () => {
+    // 거실 한가운데 탁자 (가로 2m, 돌려 놓음)
+    const table = { x: -2, z: -1.5, hw: 1, hd: 0.4, yaw: 0.3 }
+    const block = obstacleBlocker([table])
+    const from = { x: -2, z: -0.6 }
+    const to = { x: -2, z: -2.4 }
+    const path = findHouseWorldPath(from, to, block)
+    expect(path.length).toBeGreaterThan(1)
+    let cur = from
+    for (const p of path) {
+      for (let k = 1; k < 20; k++) {
+        const t = k / 20
+        const q = { x: cur.x + (p.x - cur.x) * t, z: cur.z + (p.z - cur.z) * t }
+        const c = Math.cos(table.yaw)
+        const s = Math.sin(table.yaw)
+        const lx = (q.x - table.x) * c - (q.z - table.z) * s
+        const lz = (q.x - table.x) * s + (q.z - table.z) * c
+        expect(Math.abs(lx) < table.hw && Math.abs(lz) < table.hd).toBe(false)
+      }
+      cur = p
+    }
+    // 가구가 없으면 곧장 간다
+    expect(findHouseWorldPath(from, to)).toHaveLength(1)
   })
 })
