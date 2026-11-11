@@ -11,6 +11,8 @@ import * as THREE from 'three'
 import type { AvatarLook } from '../art/avatar'
 import { OUTFITS } from '../art/poses'
 import { FIXTURES, ZONES } from '../lib/home'
+import { ROTATE_GAIN, twist } from '../lib/gesture'
+import { clampTilt, rubberTilt } from '../lib/iso'
 import { type Fx, type Interaction, interactionFor, pickLine, TV_CHANNELS } from '../lib/interactions'
 import type { SharedRoomState } from '../lib/realtime'
 import { toolFor } from '../lib/tools'
@@ -36,7 +38,7 @@ import {
 } from '../lib/town'
 import type { Drop, Room } from '../lib/types'
 import { type Avatar3D, buildAvatar3D } from './avatar3d'
-import { buildItem3D, BULB, COVER, itemDepth, SCREEN, SEAT } from './furniture3d'
+import { buildItem3D, BULB, COVER, itemDepth, LIE_FORWARD, SCREEN, SEAT, SEAT_FORWARD, SEAT_KNEE } from './furniture3d'
 import { FxLayer, glowTexture, ON_HEAD } from './fx3d'
 import { buildHouse3D, fixtureFacing, fixtureWorld, type House3D } from './house3d'
 import { disposeTree, mat, part, torus } from './kit'
@@ -187,7 +189,10 @@ const camDefault = (area: AreaId, at: Vec2, k = 1): Cam =>
     ? { target: new THREE.Vector3(at.x, 0.6, at.z + 1), yaw: 0.22, pitch: 0.86, dist: 20 * k }
     : { target: new THREE.Vector3(0.3, 0.4, 0.6), yaw: Math.PI / 4, pitch: 0.9, dist: 19 * k }
 
-const YAW_LIMIT = { town: [-1.1, 1.1], house: [Math.PI / 4 - 0.75, Math.PI / 4 + 0.75] } as const
+/** 돌릴 수 있는 범위: 2D 때와 같이 기본 각도에서 좌우 30° (넘기면 고무줄처럼 버티다 놓으면 돌아온다) */
+const YAW_CENTER = { town: 0.22, house: Math.PI / 4 } as const
+/** 2D 때 좌우로 끌 때 돌던 빠르기 (px당 라디안) */
+const DRAG_TURN = 0.005
 const DIST_LIMIT = { town: [7, 40], house: [7, 34] } as const
 
 export function World({
@@ -473,9 +478,10 @@ function createWorld(
   let camAnim: { from: Cam; to: Cam; start: number; ms: number } | null = null
 
   const limits = () => (me.area === TOWN ? 'town' : 'house') as 'town' | 'house'
-  const clampCam = (c: Cam) => {
+  const clampCam = (c: Cam, rubber = false) => {
     const l = limits()
-    c.yaw = Math.min(YAW_LIMIT[l][1], Math.max(YAW_LIMIT[l][0], c.yaw))
+    const off = c.yaw - YAW_CENTER[l]
+    c.yaw = YAW_CENTER[l] + (rubber ? rubberTilt(off) : clampTilt(off))
     c.dist = Math.min(DIST_LIMIT[l][1], Math.max(DIST_LIMIT[l][0], c.dist))
     if (l === 'town') {
       c.target.x = Math.min(map.bounds.maxX - 4, Math.max(map.bounds.minX + 4, c.target.x))
@@ -661,7 +667,7 @@ function createWorld(
   const headPos = (a: Actor) => {
     const o = a.avatar.root
     const v = new THREE.Vector3(0, a.avatar.height, 0)
-    if (a.act?.phase === 'doing' && a.act.inter.pose === 'lie') v.set(0, 0.3, -0.9)
+    if (a.act?.phase === 'doing' && a.act.inter.pose === 'lie') v.set(0, 0.85, -0.95)
     return o.localToWorld(v)
   }
   const itemTop = (t: Target) => {
@@ -1009,8 +1015,8 @@ function createWorld(
       const d = Math.hypot(a.x - b.x, a.y - b.y)
       const ang = Math.atan2(b.y - a.y, b.x - a.x)
       cam.dist = pinch.cam.dist * (pinch.d / Math.max(10, d))
-      cam.yaw = pinch.cam.yaw - (ang - pinch.angle)
-      clampCam(cam)
+      cam.yaw = pinch.cam.yaw - twist(pinch.angle, ang) * ROTATE_GAIN
+      clampCam(cam, true)
       follow = false
       return
     }
@@ -1024,9 +1030,9 @@ function createWorld(
     }
     follow = false
     if (p.right) {
-      cam.yaw = p.cam.yaw - dx * 0.006
-      cam.pitch = Math.min(1.25, Math.max(0.45, p.cam.pitch + dy * 0.004))
-      clampCam(cam)
+      // 우클릭 드래그: 좌우로 끌면 2D 때처럼 일정 범위 안에서 돈다
+      cam.yaw = p.cam.yaw - dx * DRAG_TURN
+      clampCam(cam, true)
       return
     }
     // 바닥을 잡고 끄는 느낌: 처음 잡은 바닥 점이 손가락을 따라온다
@@ -1039,19 +1045,32 @@ function createWorld(
   const onUp = (e: PointerEvent) => {
     pointers.delete(e.pointerId)
     if (pinch) {
-      if (pointers.size < 2) pinch = null
+      if (pointers.size < 2) {
+        pinch = null
+        settleYaw()
+      }
       press = null
       return
     }
     const p = press
     press = null
-    if (!p || p.dragging) return
+    if (!p) return
+    if (p.dragging) {
+      if (p.right) settleYaw()
+      return
+    }
     tap(e.clientX, e.clientY, p.right)
   }
   const onCancel = (e: PointerEvent) => {
     pointers.delete(e.pointerId)
     pinch = null
     press = null
+    settleYaw()
+  }
+  /** 범위를 넘겨 돌린 채 놓으면 끝 각도로 부드럽게 돌아온다 */
+  const settleYaw = () => {
+    const to = clampCam({ ...cam, target: cam.target.clone() })
+    if (Math.abs(to.yaw - cam.yaw) > 1e-4) animateCam(to, 260)
   }
   const onWheel = (e: WheelEvent) => {
     e.preventDefault()
@@ -1152,24 +1171,20 @@ function createWorld(
       let px = a.pos.x
       let pz = a.pos.z
       root.rotation.set(0, a.yaw, 0, 'YXZ')
+      let knee: number | undefined
       if (doing && (pose === 'sit' || pose === 'lie' || pose === 'bath')) {
-        const seat = SEAT[doing.item] ?? 0.4
+        // 미니미는 앉으면 엉덩이, 누우면 등이 발밑 높이에 오게 자세를 잡는다 → 닿는 면 높이에 그대로 둔다
+        const seat = SEAT[doing.item] ?? 0.45
         const fwd = { x: Math.sin(doing.yaw), z: Math.cos(doing.yaw) }
-        if (pose === 'lie') {
-          px = doing.pos.x + fwd.x * 0.5
-          pz = doing.pos.z + fwd.z * 0.5
-          y = seat + 0.14
-          root.rotation.set(-Math.PI / 2, doing.yaw, 0, 'YXZ')
-        } else {
-          const off = doing.item === 'sofa' ? 0.05 : doing.item === 'toilet' ? 0.08 : 0
-          px = doing.pos.x + fwd.x * off
-          pz = doing.pos.z + fwd.z * off
-          y = seat - 0.06
-        }
-      } else if (doing && (pose === 'watch' || pose === 'floor')) y = 0.02
+        const off = pose === 'lie' ? LIE_FORWARD : (SEAT_FORWARD[doing.item] ?? 0)
+        px = doing.pos.x + fwd.x * off
+        pz = doing.pos.z + fwd.z * off
+        y = seat
+        knee = SEAT_KNEE[doing.item]
+      }
       if (doing?.inter.flee) y += Math.abs(Math.sin(clock * 14)) * 0.25
       root.position.set(px, y, pz)
-      a.avatar.animate({ walking: !!a.walk, pose: a.walk ? null : pose, t: clock + a.id.length })
+      a.avatar.animate({ walking: !!a.walk, pose: a.walk ? null : pose, t: clock + a.id.length, knee })
       // 효과
       if (doing && a.area === me.area && clock >= doing.fxAt) {
         doing.fxAt = clock + 1.1
@@ -1194,6 +1209,8 @@ function createWorld(
       const act = users[0]?.act
       o.traverse((n) => {
         if (n.name === COVER) n.visible = users.some((u) => u.act?.inter.pose === 'lie' || u.act?.inter.pose === 'bath')
+        // 누우면 발치에 개어 둔 이불을 펴서 덮는다
+        if (n.name === 'blanket') n.visible = !users.some((u) => u.act?.inter.pose === 'lie')
         if (n.name === SCREEN) {
           const m = (n as THREE.Mesh).material as THREE.MeshStandardMaterial
           const on = users.length > 0
@@ -1546,7 +1563,7 @@ function createWorld(
   }
 
   // 개발 중 확인용 (자동 스크린샷에서 상태를 본다)
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), screen: (x: number, z: number) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, 0, z)); return { x: r.left + s.x, y: r.top + s.y } } }
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), screen: (x: number, z: number) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, 0, z)); return { x: r.left + s.x, y: r.top + s.y } } }
 
   function gateOfHost() {
     const lot = map.lots[0]

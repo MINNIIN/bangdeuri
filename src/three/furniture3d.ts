@@ -13,15 +13,22 @@ const WOOD_D = '#a8703f'
 const GREY = '#c9cbd6'
 const DARK = '#3b3646'
 
-/** 앉기·눕기·목욕할 때 몸을 얹는 높이 (m) */
+/** 앉기·눕기·목욕할 때 엉덩이(누우면 등)가 닿는 면의 높이 (m). 빈백은 푹 꺼지게 낮춘다 */
 export const SEAT: Record<string, number> = {
-  sofa: 0.44,
-  chair: 0.48,
-  beanbag: 0.28,
-  toilet: 0.42,
-  bed: 0.56,
-  bathtub: 0.1,
+  sofa: 0.49,
+  chair: 0.5,
+  beanbag: 0.4,
+  toilet: 0.45,
+  bed: 0.5,
+  bathtub: 0.08,
 }
+
+/** 앉을 때 가구 가운데에서 앞으로 얼마나 나와 앉나 (등받이에 등이 닿게) */
+export const SEAT_FORWARD: Record<string, number> = { sofa: -0.02, chair: 0.03, toilet: 0.07, beanbag: 0.02 }
+/** 앉을 때 무릎을 굽히는 정도: 깊은 소파는 다리를 앞으로 쭉, 의자·변기는 아래로 */
+export const SEAT_KNEE: Record<string, number> = { sofa: 0.25, beanbag: 0.45, chair: 1.25, toilet: 1.3 }
+/** 누울 때 발밑이 침대 가운데에서 얼마나 떨어지나 (머리가 베개에 오게) */
+export const LIE_FORWARD = 0.2
 
 /** 미니미가 눕거나 들어갈 때 덮는 부분 (이불·욕조 물) — 이 이름의 메시는 사람이 있으면 보인다 */
 export const COVER = 'cover'
@@ -118,9 +125,10 @@ const BUILDERS: Record<string, Build> = {
       part(roundBox(1.5, 0.16, 2.0, 0.08), mat(sheet), [0, 0.43, 0.02]),
       part(roundBox(0.62, 0.16, 0.36, 0.08), mat('#fff6e5'), [-0.36, 0.56, -0.75]),
       part(roundBox(0.62, 0.16, 0.36, 0.08), mat('#fff6e5'), [0.36, 0.56, -0.75]),
-      // 이불: 누우면 몸을 덮는다
+      // 이불: 평소엔 발치에 개어 두고, 누우면 어깨까지 폭신하게 덮는다
       part(roundBox(1.56, 0.12, 1.3, 0.06), mat(blanket), [0, 0.56, 0.38], { name: 'blanket' }),
-      part(roundBox(1.56, 0.12, 1.3, 0.06), mat(blanket), [0, 0.68, 0.3], { name: COVER }),
+      part(roundBox(1.6, 0.3, 1.42, 0.14), mat(blanket, { rough: 0.95 }), [0, 0.64, 0.33], { name: COVER }),
+      part(roundBox(1.58, 0.1, 0.16, 0.05), mat('#ffffff', { rough: 0.95 }), [0, 0.77, -0.34], { name: COVER, rot: [0.2, 0, 0] }),
     )
   },
   wardrobe: () =>
