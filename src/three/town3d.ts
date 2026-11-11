@@ -5,6 +5,7 @@
 import * as THREE from 'three'
 import type { Room } from '../lib/types'
 import {
+  CROSSWALK_HALF,
   FENCE_Z,
   GATE_HALF,
   HOUSE_BACK_Z,
@@ -128,19 +129,52 @@ function bench() {
 }
 
 function swing() {
-  const frame = mat('#ff7f2a')
-  const g = group(
-    part(cyl(0.06, 0.06, 2.6, 10), frame, [0, 2.2, 0], { rot: [0, 0, Math.PI / 2] }),
-    ...[-1.25, 1.25].flatMap((x) => [
-      part(cyl(0.05, 0.05, 2.4, 8), frame, [x, 1.1, 0.45], { rot: [0.35, 0, 0] }),
-      part(cyl(0.05, 0.05, 2.4, 8), frame, [x, 1.1, -0.45], { rot: [-0.35, 0, 0] }),
-    ]),
-  )
-  for (const x of [-0.55, 0.55]) {
-    g.add(part(cyl(0.01, 0.01, 1.6, 4), mat('#c9cbd6'), [x - 0.2, 1.4, 0]))
-    g.add(part(cyl(0.01, 0.01, 1.6, 4), mat('#c9cbd6'), [x + 0.2, 1.4, 0]))
-    g.add(part(roundBox(0.5, 0.05, 0.25, 0.02), mat('#7fc8ff'), [x, 0.6, 0]))
+  // 나무 A자 틀: 양쪽 다리 둘이 위에서 만나 가로대를 받친다 (아래로 벌어져 선다)
+  const wood = mat('#b5713f', { rough: 0.85 })
+  const dark = mat('#8a5230', { rough: 0.85 })
+  const metal = mat('#9aa0ad', { metal: 0.6, rough: 0.35 })
+  const H = 2.2
+  const SPREAD = 0.75
+  const legLen = Math.hypot(H, SPREAD)
+  const tilt = Math.atan2(SPREAD, H)
+  const g = group(part(cyl(0.075, 0.075, 2.9, 12), wood, [0, H + 0.02, 0], { rot: [0, 0, Math.PI / 2] }))
+  for (const x of [-1.3, 1.3]) {
+    // 다리: 위 끝이 가로대 바로 밑(z=0)에서 만난다
+    for (const s of [1, -1]) g.add(part(cyl(0.06, 0.07, legLen, 10), wood, [x, H / 2, (s * SPREAD) / 2], { rot: [-s * tilt, 0, 0] }))
+    // 다리 사이 버팀목 · 꼭대기 쇠 이음쇠 · 땅에 박힌 받침
+    g.add(part(cyl(0.035, 0.035, SPREAD * 0.95, 8), dark, [x, 0.75, 0], { rot: [Math.PI / 2, 0, 0] }))
+    g.add(part(roundBox(0.2, 0.22, 0.24, 0.04), metal, [x, H, 0]))
+    for (const s of [1, -1]) g.add(part(cyl(0.1, 0.12, 0.08, 10), dark, [x, 0.04, s * SPREAD]))
   }
+  // 가로대 양끝 마개
+  for (const x of [-1.47, 1.47]) g.add(part(sphere(0.085, 10, 8), dark, [x, H + 0.02, 0]))
+  for (const x of [-0.6, 0.6]) {
+    for (const dx of [-0.21, 0.21]) {
+      g.add(part(cyl(0.012, 0.012, 1.5, 5), metal, [x + dx, 1.38, 0]))
+      g.add(part(cyl(0.035, 0.035, 0.03, 8), metal, [x + dx, H - 0.06, 0], { rot: [0, 0, Math.PI / 2] }))
+    }
+    g.add(part(roundBox(0.52, 0.06, 0.24, 0.025), mat('#5aa9e6', { rough: 0.5 }), [x, 0.6, 0]))
+  }
+  return g
+}
+
+/** 보행 신호등: 기둥 + 빨간불(켜짐)·초록불 상자. 앞(+z)을 본다 */
+function signal() {
+  const pole = mat('#3b3646', { rough: 0.6 })
+  const g = group(
+    part(cyl(0.11, 0.13, 0.12, 10), pole, [0, 0.06, 0]),
+    part(cyl(0.05, 0.05, 2.5, 10), pole, [0, 1.25, 0]),
+    part(roundBox(0.34, 0.74, 0.22, 0.04), pole, [0, 2.3, 0.1]),
+    // 빨간 사람 (서 있다) — 켜짐
+    part(roundBox(0.24, 0.26, 0.04, 0.03), mat('#ff5a4f', { emissive: '#ff3b30', glow: 1.3, rough: 0.4 }), [0, 2.48, 0.21]),
+    // 초록 사람 — 꺼짐
+    part(roundBox(0.24, 0.26, 0.04, 0.03), mat('#2f5c46', { rough: 0.4 }), [0, 2.13, 0.21]),
+    // 차양
+    part(box(0.34, 0.03, 0.12), pole, [0, 2.63, 0.27]),
+    part(box(0.34, 0.03, 0.12), pole, [0, 2.28, 0.27]),
+    // 보행 버튼
+    part(roundBox(0.12, 0.18, 0.08, 0.02), mat('#ffd94a'), [0, 1.05, 0.07]),
+  )
   return g
 }
 
@@ -174,6 +208,9 @@ function buildProp(p: Prop, i: number, heads: THREE.Vector3[], lampMat: THREE.Me
       break
     case 'slide':
       o = slide()
+      break
+    case 'signal':
+      o = signal()
       break
   }
   o.position.set(p.x, 0, p.z)
@@ -241,7 +278,14 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   road.receiveShadow = true
   road.userData.ground = true
   g.add(road)
-  for (let k = -4; k <= 4; k++) g.add(part(box(0.45, 0.012, 2.6), mat('#ffffff', { rough: 0.6 }), [k * 0.8 + 0, 0.01, 0], { shadow: false }))
+  // 횡단보도: 흰 줄은 차가 다니는 방향(x)으로 길고, 건너는 방향(z)으로 차례차례 놓인다 (길 끝에서 끝까지)
+  const stripes = 7
+  const pitch = (ROAD_S - ROAD_N - 0.7) / (stripes - 1)
+  for (let k = 0; k < stripes; k++)
+    g.add(part(box(CROSSWALK_HALF * 2, 0.012, 0.45), mat('#ffffff', { rough: 0.6 }), [0, 0.01, ROAD_N + 0.35 + k * pitch], { shadow: false }))
+  // 정지선: 차는 오른쪽으로 다닌다 → 동쪽으로 가는 차선(남쪽 절반)은 서쪽에, 서쪽으로 가는 차선(북쪽 절반)은 동쪽에
+  for (const side of [-1, 1])
+    g.add(part(box(0.16, 0.012, ROAD_S - 0.15), mat('#ffffff', { rough: 0.6 }), [side * (CROSSWALK_HALF + 1.1), 0.01, (-side * ROAD_S) / 2], { shadow: false }))
 
   // 인도 (보도블록) + 연석
   const walkTex = canvasTexture(

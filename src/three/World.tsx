@@ -11,7 +11,7 @@ import * as THREE from 'three'
 import type { AvatarLook } from '../art/avatar'
 import { OUTFITS } from '../art/poses'
 import { FIXTURES, ZONES } from '../lib/home'
-import { ROTATE_GAIN, twist } from '../lib/gesture'
+import { type PinchMode, pinchMode, ROTATE_GAIN, twist } from '../lib/gesture'
 import { clampTilt, rubberTilt } from '../lib/iso'
 import { type Fx, type Interaction, interactionFor, pickLine, TV_CHANNELS } from '../lib/interactions'
 import { type Blocker, hitsWall } from '../lib/home'
@@ -464,13 +464,16 @@ function createWorld(
   const applySky = (area: AreaId, dim: boolean) => {
     const dark = night || dim
     const inside = area !== TOWN
+    // 밤이어도 집 안은 불을 켜 둔다 (따뜻한 실내등). 불을 끄고 자는 중일 때만 어둡게
+    const lampOn = inside && night && !dim
     scene.background = new THREE.Color(dark ? (inside ? '#262a4a' : '#1d2147') : inside ? '#f6e7d7' : '#bfe4ff')
     scene.fog = inside ? null : new THREE.Fog(dark ? '#1d2147' : '#cfeaff', 45, 110)
-    hemi.intensity = dark ? 0.55 : 1.5
-    hemi.color.set(dark ? '#8f9cff' : '#e6f4ff')
-    sun.intensity = dark ? 0.55 : 2.6
-    sun.color.set(dark ? '#a9b6ff' : '#fff0d8')
-    fill.intensity = dark ? 0.15 : 0.45
+    hemi.intensity = lampOn ? 1.25 : dark ? 0.55 : 1.5
+    hemi.color.set(lampOn ? '#fff0dc' : dark ? '#8f9cff' : '#e6f4ff')
+    hemi.groundColor.set(lampOn ? '#c9a27e' : '#d8c3a5')
+    sun.intensity = lampOn ? 1.9 : dark ? 0.55 : 2.6
+    sun.color.set(lampOn ? '#ffdcae' : dark ? '#a9b6ff' : '#fff0d8')
+    fill.intensity = lampOn ? 0.3 : dark ? 0.15 : 0.45
     clouds.visible = !dark && !inside
     stars.visible = dark && !inside
     town?.setNight(dark)
@@ -1299,7 +1302,13 @@ function createWorld(
   type Press = { x: number; y: number; cam: Cam; dragging: boolean; right: boolean }
   let press: Press | null = null
   const pointers = new Map<number, { x: number; y: number }>()
-  let pinch: { d: number; angle: number; cam: Cam } | null = null
+  /** 두 손가락: 처음 거리·각도·가운데 점, 그때 카메라, 무엇으로 잠겼는지 */
+  type Pinch = { d: number; angle: number; mx: number; my: number; cam: Cam; mode: PinchMode }
+  let pinch: Pinch | null = null
+  const pinchFrom = (mode: PinchMode): Pinch => {
+    const [a, b] = [...pointers.values()]
+    return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, angle: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, cam: { ...cam, target: cam.target.clone() }, mode }
+  }
   const el = renderer.domElement
   el.style.touchAction = 'none'
 
@@ -1330,8 +1339,7 @@ function createWorld(
       }
     }
     if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()]
-      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, angle: Math.atan2(b.y - a.y, b.x - a.x), cam: { ...cam, target: cam.target.clone() } }
+      pinch = pinchFrom('wait')
       if (press) press.dragging = true
       return
     }
@@ -1352,11 +1360,22 @@ function createWorld(
       return
     }
     if (pinch && pointers.size >= 2) {
+      // 먼저 뚜렷하게 한 동작으로 잠근다: 벌리기=확대, 비틀기·나란히 옆으로=회전, 나란히 위아래=기울이기
       const [a, b] = [...pointers.values()]
-      const d = Math.hypot(a.x - b.x, a.y - b.y)
+      const d = Math.max(10, Math.hypot(a.x - b.x, a.y - b.y))
       const ang = Math.atan2(b.y - a.y, b.x - a.x)
-      cam.dist = pinch.cam.dist * (pinch.d / Math.max(10, d))
-      cam.yaw = pinch.cam.yaw - twist(pinch.angle, ang) * ROTATE_GAIN
+      const slide = { dx: (a.x + b.x) / 2 - pinch.mx, dy: (a.y + b.y) / 2 - pinch.my }
+      const mode = pinchMode(pinch.mode, d / pinch.d, twist(pinch.angle, ang), slide)
+      if (mode !== pinch.mode) {
+        // 잠기는 순간부터 잰다 (정해지기 전 흔들림만큼 튀지 않게)
+        if (pinch.mode === 'wait') pinch = pinchFrom(mode)
+        else pinch = { ...pinch, angle: ang, cam: { ...pinch.cam, yaw: cam.yaw }, mode }
+        return
+      }
+      if (mode === 'wait') return
+      if (mode === 'zoom' || mode === 'both') cam.dist = pinch.cam.dist * (pinch.d / d)
+      if (mode === 'rotate' || mode === 'both') cam.yaw = pinch.cam.yaw - twist(pinch.angle, ang) * ROTATE_GAIN - (mode === 'rotate' ? slide.dx * DRAG_TURN * 1.4 : 0)
+      if (mode === 'tilt') cam.pitch = pinch.cam.pitch + slide.dy * DRAG_TURN * 1.4
       clampCam(cam, true)
       follow = false
       return

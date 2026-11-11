@@ -46,6 +46,8 @@ export const SIDEWALK_S = 5
 /** 공원 남쪽 끝 */
 export const PARK_S = 16
 export const GATE_HALF = 1.3
+/** 횡단보도 폭의 절반 (골목 가운데 x=0에서 길을 가로지른다) */
+export const CROSSWALK_HALF = 1.6
 
 export interface Lot {
   /** 그 집 방 번호 */
@@ -124,7 +126,7 @@ export function lotAtYard(lots: Lot[], p: Vec2): { lot: Lot; uv: UV } | null {
 // ─── 공원 장식 (자리가 매번 같게 x로 정한다) ───
 
 export interface Prop {
-  kind: 'tree' | 'bench' | 'lamp' | 'flower' | 'swing' | 'slide' | 'bush'
+  kind: 'tree' | 'bench' | 'lamp' | 'flower' | 'swing' | 'slide' | 'bush' | 'signal'
   x: number
   z: number
   /** 지나가지 못하는 반지름 (0이면 지나갈 수 있다) */
@@ -145,6 +147,9 @@ export function townProps(lots: Lot[]): Prop[] {
   for (let x = Math.ceil(b.minX / 9) * 9; x <= b.maxX; x += 9) {
     out.push({ kind: 'lamp', x: x + 4.5, z: SIDEWALK_S - 0.5, r: 0.25 })
   }
+  // 횡단보도(x=0) 양끝 보행 신호등: 길 건너편 사람이 보도록 서로 마주 본다
+  out.push({ kind: 'signal', x: CROSSWALK_HALF + 0.35, z: ROAD_N - 0.35, r: 0.2, rot: 0 })
+  out.push({ kind: 'signal', x: -CROSSWALK_HALF - 0.35, z: ROAD_S + 0.35, r: 0.2, rot: Math.PI })
   // 집 사이 나무, 마당 꽃
   for (const lot of lots) {
     out.push({ kind: 'tree', x: lot.x + LOT_W / 2, z: HOUSE_BACK_Z + 1.5, r: 0.7 })

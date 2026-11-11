@@ -860,6 +860,11 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   // ─── 가구 배치 바꾸기 (방 주인: 내 집 안 가구·아이템, 골목에서는 내 마당 아이템) ───
   const canArrange = ownerUi && entered && !placing && (inMyHouse || area === TOWN)
   const startArrange = () => {
+    // 마당에서 옮길 수 있는 건 내 마당에 놓인 아이템(선물)뿐이다
+    if (!inMyHouse && !drops.some((d) => d.roomId === room.id && d.place === 'yard')) {
+      setMenuOpen(false)
+      return ctx.toast('아직 마당에 놓인 아이템이 없어요. 마당에 선물이 놓이면 옮길 수 있어요')
+    }
     select(null)
     setMenuOpen(false)
     setChatOpen(false)

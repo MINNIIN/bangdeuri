@@ -21,6 +21,19 @@ describe('두 손가락 제스처', () => {
     expect(pinchMode('zoom', 1.4, 0.5)).toBe('both')
   })
 
+  it('두 손가락을 나란히 옆으로 밀면 회전, 위아래로 밀면 기울이기로 잠긴다', () => {
+    expect(pinchMode('wait', 1.01, 0.02, { dx: 10, dy: 4 })).toBe('wait')
+    expect(pinchMode('wait', 1.01, 0.02, { dx: 40, dy: 8 })).toBe('rotate')
+    expect(pinchMode('wait', 1.01, 0.02, { dx: -6, dy: 40 })).toBe('tilt')
+    // 잠긴 뒤에는 손가락 거리가 바뀌어도 확대하지 않는다
+    expect(pinchMode('rotate', 1.3, 0.02, { dx: 60, dy: 0 })).toBe('rotate')
+    expect(pinchMode('tilt', 0.7, 0.02, { dx: 0, dy: 60 })).toBe('tilt')
+  })
+
+  it('벌리면서 가운데가 조금 움직여도 확대다', () => {
+    expect(pinchMode('wait', 1.25, 0.02, { dx: 30, dy: 10 })).toBe('zoom')
+  })
+
   it('회전은 손가락보다 조금 더 크게 돈다', () => {
     expect(ROTATE_GAIN).toBeGreaterThan(1)
   })
