@@ -4,6 +4,7 @@ import {
   doorStep,
   findHouseWorldPath,
   findTownPath,
+  guestSpot,
   houseToUv,
   isArea,
   isPlace,
@@ -121,5 +122,22 @@ describe('집 안 길찾기', () => {
     }
     // 가구가 없으면 곧장 간다
     expect(findHouseWorldPath(from, to)).toHaveLength(1)
+  })
+})
+
+describe('손님이 처음 서는 자리', () => {
+  it('같은 접속 id면 어느 화면에서나 같은 자리, 다른 사람은 다른 자리', () => {
+    expect(guestSpot('abc123')).toEqual(guestSpot('abc123'))
+    expect(guestSpot('abc123')).not.toEqual(guestSpot('zzz999'))
+  })
+  it('방 주인 대문 앞 인도 위, 막힌 곳이 아니다', () => {
+    const map = buildTown(['host'])
+    for (const id of ['a', 'b7', 'cid-01', 'x9y8z7', 'promo']) {
+      const p = guestSpot(id)
+      expect(Math.abs(p.x)).toBeLessThanOrEqual(1.2)
+      expect(p.z).toBeLessThanOrEqual(-3.6)
+      expect(p.z).toBeGreaterThanOrEqual(-4.4)
+      expect(map.blocked(p)).toBe(false)
+    }
   })
 })

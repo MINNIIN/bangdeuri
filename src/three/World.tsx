@@ -23,8 +23,11 @@ import {
   doorStep,
   findHouseWorldPath,
   findTownPath,
+  guestSpot,
   houseArea,
+  HOUSE_BACK_Z,
   HOUSE_ENTRANCE,
+  HOUSE_FRONT_Z,
   HOUSE_EXIT,
   HOUSE_SIZE,
   lotAtYard,
@@ -282,7 +285,12 @@ export function World({
       world.destroy()
       w.current = null
     }
-    // 동네가 바뀌면(이웃이 늘면) 새로 짓는다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 동네가 바뀌면(이웃이 늘면) 골목만 새로 짓는다 — 사람·카메라는 그대로
+  useEffect(() => {
+    w.current?.setTown(map, rooms)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map])
 
@@ -367,7 +375,7 @@ type CbRef = {
 
 function createWorld(
   host: HTMLDivElement,
-  map: TownMap,
+  mapInit: TownMap,
   roomsInit: Map<string, Room>,
   spawn: { area: AreaId; at: Vec2 },
   meInfo: ActorInfo,
@@ -378,6 +386,8 @@ function createWorld(
   bubbleEl: { current: HTMLDivElement | null },
 ) {
   let rooms = roomsInit
+  /** 이웃이 늘면 바뀐다 (setTown) */
+  let map = mapInit
   const lotOf = (roomId: string) => map.lots.find((l) => l.roomId === roomId)
 
   // ─── 렌더러 ───
@@ -597,7 +607,6 @@ function createWorld(
         house = { roomId: rid, h }
       }
     }
-    for (const [k, l] of lightObjs) l.visible = keyArea(k) === area
     applySky(area, false)
     syncDrops()
   }
@@ -1467,6 +1476,7 @@ function createWorld(
     return { x: (tmp.x * 0.5 + 0.5) * width, y: (-tmp.y * 0.5 + 0.5) * height, behind: tmp.z > 1 }
   }
 
+  const rising = new Set<{ obj: THREE.Object3D; start: number }>()
   const frame = (now: number) => {
     raf = 0
     if (!running) return
@@ -1588,25 +1598,25 @@ function createWorld(
     }
 
     // 스탠드 불빛 · TV 불빛 · 디스코
+    // 스탠드 불빛은 미리 만들어 둔 빛을 빌려 쓴다 (빛 수가 바뀌면 재질을 다시 컴파일해서 화면이 멈춘다)
+    for (const [key, l] of lightObjs)
+      if (!lights.has(key) || keyArea(key) !== me.area) {
+        l.intensity = 0
+        lightObjs.delete(key)
+      }
     for (const key of lights) {
       if (keyArea(key) !== me.area) continue
       const t = targetOf(key)
       if (!t) continue
       let l = lightObjs.get(key)
       if (!l) {
-        l = new THREE.PointLight('#ffd27a', 6, 7, 1.6)
+        l = lampPool.find((x) => ![...lightObjs.values()].includes(x))
+        if (!l) continue
         lightObjs.set(key, l)
-        scene.add(l)
       }
+      l.intensity = 6
       l.position.set(t.pos.x, 1.5, t.pos.z)
-      l.visible = true
     }
-    for (const [key, l] of lightObjs)
-      if (!lights.has(key) || keyArea(key) !== me.area) {
-        scene.remove(l)
-        l.dispose()
-        lightObjs.delete(key)
-      }
     const tvGlowKeys = new Set<string>()
     for (const [key, users] of doingOn) {
       if (!users[0].act?.inter.fx.includes('tv') || users[0].area !== me.area) continue
@@ -1629,25 +1639,14 @@ function createWorld(
         s.material.dispose()
         glowSprites.delete(key)
       }
+    // 조명 수가 바뀌면 모든 재질을 다시 컴파일해서 화면이 잠깐 멈춘다 → 빛은 늘 두고 세기만 바꾼다
     if (discoAt) {
-      if (!disco) {
-        disco = [0, 1, 2].map((i) => {
-          const l = new THREE.PointLight(['#ff5c8a', '#7fc8ff', '#ffd94a'][i], 10, 9, 1.4)
-          scene.add(l)
-          return l
-        })
-      }
       disco.forEach((l, i) => {
         const a = clock * 2.4 + (i * Math.PI * 2) / 3
+        l.intensity = 10
         l.position.set(discoAt!.x + Math.cos(a) * 2, 2.2, discoAt!.z + Math.sin(a) * 2)
       })
-    } else if (disco) {
-      for (const l of disco) {
-        scene.remove(l)
-        l.dispose()
-      }
-      disco = null
-    }
+    } else for (const l of disco) l.intensity = 0
 
     // 밤 (누가 자면 집 안 불이 꺼진다)
     if (dim !== dimmed || night !== lastNight) {
@@ -1673,6 +1672,13 @@ function createWorld(
       if (c.position.x > map.bounds.maxX + 30) c.position.x = map.bounds.minX - 30
     })
 
+    // 새로 생긴 집: 땅에서 솟아오른다 (살짝 튕기며)
+    for (const r of rising) {
+      const k = Math.min(1, (now - r.start) / 900)
+      const e = k < 1 ? 1 + 2.2 * (k - 1) ** 3 + 1.2 * (k - 1) ** 2 : 1
+      r.obj.scale.set(0.6 + 0.4 * Math.min(1, k * 1.6), Math.max(0.001, e), 0.6 + 0.4 * Math.min(1, k * 1.6))
+      if (k >= 1) rising.delete(r)
+    }
     fx.update(clock, dt)
     renderer.render(scene, camera)
 
@@ -1714,7 +1720,18 @@ function createWorld(
 
     raf = requestAnimationFrame(frame)
   }
-  let disco: THREE.PointLight[] | null = null
+  const lampPool = [0, 1, 2, 3].map(() => {
+    const l = new THREE.PointLight('#ffd27a', 0, 7, 1.6)
+    l.position.set(0, -50, 0)
+    scene.add(l)
+    return l
+  })
+  const disco = [0, 1, 2].map((i) => {
+    const l = new THREE.PointLight(['#ff5c8a', '#7fc8ff', '#ffd94a'][i], 0, 9, 1.4)
+    l.position.set(0, -50, 0)
+    scene.add(l)
+    return l
+  })
   let dimmed = false
   let lastNight = night
 
@@ -1724,14 +1741,21 @@ function createWorld(
   }, 60000)
 
   // 가로등 (밤에만): 몇 개만 진짜 빛을 단다
-  if (town)
-    for (const h of town.lampHeads.slice(0, 8)) {
-      const l = new THREE.PointLight('#ffcf7a', 14, 10, 1.5)
-      l.position.copy(h)
-      l.visible = false
-      streetLights.push(l)
-      scene.add(l)
+  const makeStreetLights = () => {
+    for (const l of streetLights.splice(0)) {
+      scene.remove(l)
+      l.dispose()
     }
+    if (town)
+      for (const h of town.lampHeads.slice(0, 8)) {
+        const l = new THREE.PointLight('#ffcf7a', 14, 10, 1.5)
+        l.position.copy(h)
+        l.visible = false
+        streetLights.push(l)
+        scene.add(l)
+      }
+  }
+  makeStreetLights()
 
   const onVis = () => {
     if (document.hidden) {
@@ -1770,7 +1794,7 @@ function createWorld(
         rebuildAvatar(a)
       } else {
         const ar = area ?? TOWN
-        const p = at ?? (ar === TOWN ? gateOfHost() : uvToHouse(HOUSE_ENTRANCE))
+        const p = at ?? (ar === TOWN ? guestSpot(id) : uvToHouse(HOUSE_ENTRANCE))
         actors.set(id, newActor(id, info, ar, open(ar, p)))
       }
       rerender()
@@ -1920,12 +1944,8 @@ function createWorld(
   }
 
   // 개발 중 확인용 (자동 스크린샷에서 상태를 본다)
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), screen: (x: number, z: number) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, 0, z)); return { x: r.left + s.x, y: r.top + s.y } } }
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), tapWalk: (x: number, z: number) => meWalk({ x, z }), tapWorld: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y) }, tapFixture: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) meAct(t); return !!t }, tapDrop: (id: string) => { const t = targetOf(id); if (t && t.area === me.area) meAct(t); return !!t }, lens: (o: { x?: number; z?: number; dist?: number; yaw?: number; pitch?: number; follow?: boolean; ms?: number }) => { follow = o.follow ?? false; animateCam({ ...cam, target: new THREE.Vector3(o.x ?? cam.target.x, cam.target.y, o.z ?? cam.target.z), dist: o.dist ?? cam.dist, yaw: o.yaw ?? cam.yaw, pitch: o.pitch ?? cam.pitch }, o.ms ?? 900) }, use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), screen: (x: number, z: number) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, 0, z)); return { x: r.left + s.x, y: r.top + s.y } } }
 
-  function gateOfHost() {
-    const lot = map.lots[0]
-    return lot ? { x: lot.x, z: -3.8 } : { x: 0, z: 0 }
-  }
 
   return {
     control,
@@ -1940,6 +1960,40 @@ function createWorld(
       if (rid) {
         me.walk = null
         follow = false
+      }
+      applyLayout()
+    },
+    /** 이웃이 늘었다: 골목을 새로 짓되 사람·카메라는 그대로, 새 집은 솟아오른다 */
+    setTown(next: TownMap, nextRooms: Map<string, Room>) {
+      if (next === map) return
+      const before = new Set(map.lots.map((l) => l.roomId))
+      const added = new Set(next.lots.map((l) => l.roomId).filter((id) => !before.has(id)))
+      map = next
+      rooms = nextRooms
+      const visible = town?.group.visible ?? true
+      if (town) {
+        scene.remove(town.group)
+        disposeTree(town.group)
+        town.dispose()
+      }
+      town = buildTown3D(map, rooms, added)
+      town.group.visible = visible
+      scene.add(town.group)
+      makeStreetLights()
+      applySky(me.area, false)
+      syncDrops()
+      const t0 = performance.now()
+      for (const [rid, obj] of town.risers) {
+        obj.scale.set(0.6, 0.001, 0.6)
+        rising.add({ obj, start: t0 })
+        const lot = map.lots.find((l) => l.roomId === rid)
+        if (lot && me.area === TOWN) {
+          const at = new THREE.Vector3(lot.x, 4.2, (HOUSE_FRONT_Z + HOUSE_BACK_Z) / 2)
+          window.setTimeout(() => {
+            fx.burst('confetti', at, clock, 8)
+            fx.burst('sparkle', at.clone().add(new THREE.Vector3(0, 1, 1)), clock, 6)
+          }, 450)
+        }
       }
       applyLayout()
     },

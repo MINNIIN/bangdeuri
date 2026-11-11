@@ -7,7 +7,7 @@ import { FIXTURES } from '../lib/home'
 import { interactionFor } from '../lib/interactions'
 import { mergeLayout } from '../lib/layout'
 import { CHARACTER_SPOT } from '../lib/iso'
-import { type AreaId, buildTown, houseArea, isArea, roomOfArea, safeVec, TOWN, uvToHouse, type Vec2 } from '../lib/town'
+import { type AreaId, buildTown, guestSpot, houseArea, isArea, roomOfArea, safeVec, TOWN, uvToHouse } from '../lib/town'
 import { RETURN_KEY, roomUrl } from '../lib/links'
 import { MAX_GUESTS, newCid, type Peer, type RoomChannel, type RoomEvent } from '../lib/realtime'
 import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, todayCount } from '../lib/rules'
@@ -168,7 +168,12 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const ownerUi = owner && !guestView
 
   // ─── 동네: 방 주인 집 + 이웃 집 ───
-  const townRooms = useMemo(() => (room ? [room, ...neighbors] : []), [room, neighbors])
+  // 이웃 집 순서는 누구 화면에서나 같아야 한다 (같은 자리에 같은 집 — 친구가 걸어가는 곳이 어긋나지 않게).
+  // 집을 만든 순서로 놓으면 나중에 생긴 집이 골목 끝에 붙는다
+  const townRooms = useMemo(
+    () => (room ? [room, ...[...neighbors].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))] : []),
+    [room, neighbors],
+  )
   const roomsById = useMemo(() => new Map(townRooms.map((r) => [r.id, r])), [townRooms])
   const townKey = townRooms.map((r) => r.id).join(',')
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,8 +233,9 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     () =>
       owner && room
         ? { area: houseArea(room.id), at: uvToHouse(CHARACTER_SPOT) }
-        : { area: TOWN, at: { x: 0, z: -3.6 } as Vec2 },
-    [owner, room],
+        : // 여럿이 한꺼번에 들어와도 한 자리에 겹쳐 서지 않게 대문 앞에서 조금씩 흩어 선다
+          { area: TOWN, at: guestSpot(cid) },
+    [owner, room, cid],
   )
   useEffect(() => setArea(spawn.area), [spawn])
 
@@ -252,6 +258,38 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     if (!room || !entry || owner || entry.anon || !ctx.user) return
     void backend.becomeNeighbor(room.id).catch(() => undefined)
   }, [room?.id, entry, owner, ctx.user]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 이름을 밝히고 놀러 온 친구의 집이 아직 골목에 없으면 바로 다시 불러온다 (친구가 들어오면 골목에 집이 생긴다)
+  // 이미 있던 집은 그대로 두고 새 집만 더한다 (자리 순서는 위 townRooms가 정한다)
+  const missingKey = useMemo(() => {
+    if (!room) return ''
+    const have = new Set(townRooms.map((r) => r.id))
+    const want = new Set<string>()
+    for (const p of peers) for (const h of p.homes ?? []) if (!have.has(h)) want.add(h)
+    for (const h of homes ?? []) if (!have.has(h)) want.add(h)
+    return [...want].sort().join(',')
+  }, [room, townRooms, peers, homes])
+  const triedKey = useRef('')
+  useEffect(() => {
+    if (!room || !missingKey || triedKey.current === missingKey) return
+    let alive = true
+    // 친구 쪽에서 '이웃 되기'를 저장할 시간을 조금 준다
+    const t = window.setTimeout(async () => {
+      const nb = await backend.neighbors(room.id).catch(() => null)
+      if (!alive || !nb) return
+      triedKey.current = missingKey
+      const fresh = nb.filter((r) => !townRef.current.some((x) => x.id === r.id))
+      if (!fresh.length) return
+      const d = await loadDrops(fresh.map((r) => r.id))
+      if (!alive) return
+      setNeighbors((prev) => [...prev, ...fresh.filter((r) => !prev.some((x) => x.id === r.id))])
+      setDrops((cur) => [...cur, ...d.filter((x) => !cur.some((y) => y.id === x.id))])
+    }, 900)
+    return () => {
+      alive = false
+      window.clearTimeout(t)
+    }
+  }, [room, missingKey, loadDrops])
 
   // ─── 배경음악: 첫 터치 때 시작 (브라우저가 그 전엔 소리를 막는다), 화면이 가려지면 멈춘다 ───
   const [, bgmBump] = useReducer((n: number) => n + 1, 0)
@@ -372,13 +410,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
         }
       known = new Set(others.map((p) => p.cid))
 
-      // 주인이 없는 집은 주인 미니미가 혼자 집에서 논다
       ownerHere = owner || others.some((p) => p.owner)
-      const present = new Set<string>()
-      for (const p of list) for (const h of p.homes ?? []) present.add(h)
-      if (ownerHere) present.add(room.id)
-      for (const r of townRef.current)
-        w.setNpc(r.id, present.has(r.id) ? null : { look: r.owner.look, name: r.owner.nickname, badge: 'owner' })
       // 새로 온 사람에게 내 자리와 동네 상태를 알려 준다
       if (newcomer) ch.send({ t: 'hello', cid, ...w.snapshot(), song: turntable.current() })
       first = false
@@ -458,7 +490,17 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     }
     // 방 정보(한마디·꾸미기)가 바뀌어도 다시 들어가지 않는다
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, entry, status, cid, owner, homesKey, townKey])
+  }, [roomId, entry, status, cid, owner, homesKey])
+
+  // 주인이 없는 집은 주인 미니미가 혼자 집에서 논다 (사람이 오가거나 골목에 집이 늘 때마다)
+  useEffect(() => {
+    const w = worldRef.current
+    if (!w || !room || !entry || status !== 'ready') return
+    const present = new Set<string>()
+    for (const p of peers) for (const h of p.homes ?? []) present.add(h)
+    if (owner || peers.some((p) => p.owner && p.cid !== cid)) present.add(room.id)
+    for (const r of townRooms) w.setNpc(r.id, present.has(r.id) ? null : { look: r.owner.look, name: r.owner.nickname, badge: 'owner' })
+  }, [peers, townRooms, room, entry, status, owner, cid])
 
   const send = (e: RoomEvent) => chRef.current?.send(e)
 
