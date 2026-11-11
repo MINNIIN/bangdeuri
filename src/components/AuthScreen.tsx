@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { AppContext } from '../App'
 import { backend, type SocialProvider } from '../lib/backend'
+import { inKakaoTalk, openOutsideKakao } from '../lib/install'
+import { RETURN_KEY, roomUrl } from '../lib/links'
 import { errorText, PASSWORD_MIN } from '../lib/rules'
 import { GoogleLogo, KakaoSymbol } from './BrandLogos'
 
@@ -12,8 +14,25 @@ export function AuthScreen({ ctx, reason }: { ctx: AppContext; reason?: string }
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
 
+  const kakaoApp = inKakaoTalk()
+  /** 카톡 밖(기본 브라우저)에서 열기: 친구 방에서 왔으면 그 방 주소로 */
+  const openOutside = () => {
+    let back: string | null = null
+    try {
+      back = sessionStorage.getItem(RETURN_KEY)
+    } catch {
+      // 못 읽으면 지금 주소로
+    }
+    openOutsideKakao(back ? roomUrl(window.location.href, back) : window.location.href)
+  }
+
   const social = async (p: SocialProvider) => {
     if (busy) return
+    // 구글은 카톡 안 브라우저에서 로그인을 막는다 → 기본 브라우저로 열어서 하게
+    if (p === 'google' && kakaoApp) {
+      ctx.toast('구글 로그인은 카카오톡 안에서 안 돼요. 다른 브라우저로 열게요')
+      return openOutside()
+    }
     setBusy(true)
     try {
       await backend.signInWith(p)
@@ -62,6 +81,17 @@ export function AuthScreen({ ctx, reason }: { ctx: AppContext; reason?: string }
         <h1 className="logo">방들이</h1>
         <p className="lead">{reason ?? '내 방을 만들고 친구들을 불러 봐요'}</p>
       </header>
+
+      {kakaoApp && (
+        <div className="owner-tip">
+          <p>
+            카카오톡 안에서 열었어요. 여기 로그인은 크롬·사파리 같은 다른 브라우저와 따로라서, 다른 브라우저에서 만든 방도 여기서 한 번 더 로그인해야 보여요.
+          </p>
+          <button type="button" className="btn btn-small" onClick={openOutside}>
+            다른 브라우저로 열기
+          </button>
+        </div>
+      )}
 
       {backend.local && (
         <p className="owner-tip">테스트 모드예요. 로그인은 이 탭에서만 유지되고, 저장은 이 브라우저에만 돼요.</p>

@@ -34,7 +34,7 @@ export function InstallCard({ reason }: { reason: string }) {
             </button>
           )}
           {way === 'kakao' && (
-            <button className="btn btn-small btn-primary" onClick={openOutsideKakao}>
+            <button className="btn btn-small btn-primary" onClick={() => openOutsideKakao()}>
               다른 브라우저로 열기
             </button>
           )}

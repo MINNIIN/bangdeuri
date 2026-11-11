@@ -33,6 +33,9 @@ export type InstallWay = 'installed' | 'prompt' | 'ios' | 'kakao' | 'inapp' | 'o
 
 const ua = () => navigator.userAgent
 
+/** 카카오톡 안 브라우저인지 (여기서는 구글 로그인이 막히고, 로그인도 다른 브라우저와 따로다) */
+export const inKakaoTalk = () => /KAKAOTALK/i.test(ua())
+
 export function installWay(): InstallWay {
   if (isStandalone()) return 'installed'
   if (/KAKAOTALK/i.test(ua())) return 'kakao'
@@ -67,9 +70,9 @@ export async function promptInstall() {
   return outcome === 'accepted'
 }
 
-/** 카톡 안 브라우저에서 기본 브라우저로 지금 주소 열기 */
-export function openOutsideKakao() {
-  window.location.href = `kakaotalk://web/openExternal?url=${encodeURIComponent(window.location.href)}`
+/** 카톡 안 브라우저에서 기본 브라우저로 지금 주소(또는 준 주소) 열기 */
+export function openOutsideKakao(href: string = window.location.href) {
+  window.location.href = `kakaotalk://web/openExternal?url=${encodeURIComponent(href)}`
 }
 
 const HIDE_KEY = 'bangdeuri:install-hidden'

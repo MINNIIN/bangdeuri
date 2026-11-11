@@ -12,6 +12,8 @@ export interface VisitedRoom {
   owner: { nickname: string; look: AvatarLook }
   /** 마지막으로 들어간 시각 (ISO) */
   at: string
+  /** 익명이 아니라 이름을 밝히고 들어간 적이 있다 (나중에 내 방을 만들면 이 방과 이웃이 된다) */
+  named?: boolean
 }
 
 /** 놀러 간 방은 최근 순으로 이만큼만 기억한다 */
@@ -94,8 +96,11 @@ export const store = {
   /** 친구 방에 들어가면 기억해 둔다. 이미 있으면 맨 앞으로 올리고 이름·링크를 새로 바꾼다 */
   rememberVisit(room: Omit<VisitedRoom, 'at'>, at = new Date().toISOString()) {
     const s = load()
-    const rest = (Array.isArray(s.visits) ? s.visits : []).filter((v) => v.id !== room.id)
-    s.visits = [{ ...room, at }, ...rest].slice(0, VISITS_KEEP)
+    const list = Array.isArray(s.visits) ? s.visits : []
+    const prev = list.find((v) => v.id === room.id)
+    const rest = list.filter((v) => v.id !== room.id)
+    const named = room.named || prev?.named
+    s.visits = [{ ...room, at, ...(named ? { named: true } : {}) }, ...rest].slice(0, VISITS_KEEP)
     save(s)
   },
   deviceKey(): string {

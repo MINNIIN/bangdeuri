@@ -309,11 +309,27 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     }
   }, [theme])
 
-  // 친구 방이면 기억해 둔다 (다음엔 링크 없이 첫 화면에서 바로 들어오게)
+  // 친구 방이면 기억해 둔다 (다음엔 링크 없이 첫 화면에서 바로 들어오게).
+  // 이름을 밝히고 들어가면 표시해 둔다 — 아직 내 방이 없던 손님이 나중에 방을 만들면 이 방과 이웃이 된다
+  const namedEntry = !!entry && !entry.anon
   useEffect(() => {
     if (!room || status !== 'ready' || owner) return
-    store.rememberVisit({ id: room.id, slug: room.slug, name: room.name, ownerId: room.ownerId, owner: room.owner })
-  }, [room, status, owner])
+    store.rememberVisit({ id: room.id, slug: room.slug, name: room.name, ownerId: room.ownerId, owner: room.owner, ...(namedEntry ? { named: true } : {}) })
+  }, [room, status, owner, namedEntry])
+
+  // 남의 방에 온 회원: 내 방이 이미 있으면 메뉴에서 '내 방 만들기' 대신 '내 방으로 가기'
+  const [myRoomSlug, setMyRoomSlug] = useState<string | null>(null)
+  useEffect(() => {
+    if (!ctx.user || owner) return setMyRoomSlug(null)
+    let alive = true
+    backend
+      .myRooms()
+      .then((rs) => alive && setMyRoomSlug(rs[0]?.slug ?? null))
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [ctx.user, owner])
 
   // 손님이 들어오면 방문자 수
   useEffect(() => {
@@ -1126,12 +1142,19 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
                     () => setGuestView(false),
                   )}
                 {!guestView &&
-                  menuItem(
-                    <>
-                      <Icon id="home" size={14} /> 나도 내 방 만들기
-                    </>,
-                    goMakeRoom,
-                  )}
+                  (myRoomSlug
+                    ? menuItem(
+                        <>
+                          <Icon id="home" size={14} /> 내 방으로 가기
+                        </>,
+                        () => ctx.go({ kind: 'room', slug: myRoomSlug }),
+                      )
+                    : menuItem(
+                        <>
+                          <Icon id="home" size={14} /> 나도 내 방 만들기
+                        </>,
+                        goMakeRoom,
+                      ))}
               </>
             )}
           </div>
