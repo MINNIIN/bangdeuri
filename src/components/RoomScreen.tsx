@@ -995,11 +995,6 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
               <Icon id="home" size={12} /> 동네 집 {townRooms.length}채
             </button>
           )}
-          {canArrange && (
-            <button className="chip" onClick={startArrange}>
-              <Icon id="move" size={12} /> {inMyHouse ? '가구 옮기기' : '마당 꾸미기'}
-            </button>
-          )}
         </nav>
       )}
 
