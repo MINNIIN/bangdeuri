@@ -6,6 +6,7 @@ import { type Alarm, MAX_ALARMS, nextAlarmAt } from './alarm'
 import { dateAllowed, EVENTS_PER_MINUTE, MAX_EVENTS, monthRange, ROOM_EVENTS_PER_MINUTE } from './calendar'
 import { CHAT_KEEP, kstDate, MAX_DROPS } from './rules'
 import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room } from './types'
+import { isPlace } from './town'
 
 /**
  * Supabase 키가 없을 때 쓰는 가짜 서버. 같은 브라우저 localStorage에 저장한다.
@@ -24,6 +25,8 @@ interface LocalDb {
   messages: ChatMessage[]
   events: StoredEvent[]
   alarms: (Alarm & { ownerId: string })[]
+  /** 회원이 남의 방에 들어간 기록 (동네 이웃) */
+  visits: { roomId: string; memberId: string; at: string }[]
 }
 
 /** 서버처럼 쓴 사람 계정·기기 키를 따로 들고 있는다 (목록에는 안 나간다) */
@@ -40,11 +43,11 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
   const read = (): LocalDb => {
     try {
       const raw = storage.getItem(DB_KEY)
-      if (raw) return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [], alarms: [], ...JSON.parse(raw) }
+      if (raw) return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [], alarms: [], visits: [], ...JSON.parse(raw) }
     } catch {
       // 깨진 데이터면 새로 시작
     }
-    return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [], alarms: [] }
+    return { accounts: {}, profiles: {}, rooms: {}, drops: [], messages: [], events: [], alarms: [], visits: [] }
   }
   const write = (db: LocalDb) => storage.setItem(DB_KEY, JSON.stringify(db))
 
@@ -193,6 +196,7 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       ownRoom(db, roomId)
       delete db.rooms[roomId]
       db.drops = db.drops.filter((d) => d.roomId !== roomId)
+      db.visits = db.visits.filter((v) => v.roomId !== roomId)
       db.messages = db.messages.filter((m) => m.roomId !== roomId)
       db.events = db.events.filter((e) => e.roomId !== roomId)
       write(db)
@@ -214,15 +218,55 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       write(db)
       return { today: room.todayVisits, total: room.totalVisits }
     },
+    async becomeNeighbor(roomId) {
+      const db = read()
+      const room = db.rooms[roomId] ?? fail('room_not_found')
+      const u = currentUser()
+      if (!u || u.id === room.ownerId || !db.profiles[u.id]) return
+      db.visits = db.visits.filter((v) => !(v.roomId === roomId && v.memberId === u.id))
+      db.visits.unshift({ roomId, memberId: u.id, at: new Date().toISOString() })
+      db.visits = db.visits.slice(0, 500)
+      write(db)
+    },
+    async neighbors(roomId) {
+      const db = read()
+      const room = db.rooms[roomId]
+      if (!room) return []
+      const latestRoomOf = (ownerId: string) =>
+        Object.values(db.rooms)
+          .filter((r) => r.ownerId === ownerId)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+      const picks: { r: StoredRoom; at: string }[] = []
+      for (const v of db.visits) {
+        if (v.roomId === roomId) {
+          const r = latestRoomOf(v.memberId)
+          if (r) picks.push({ r, at: v.at })
+        } else if (v.memberId === room.ownerId && db.rooms[v.roomId]) picks.push({ r: db.rooms[v.roomId], at: v.at })
+      }
+      const seen = new Set([roomId])
+      const owners = new Set([room.ownerId])
+      return picks
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .filter(({ r }) => {
+          if (seen.has(r.id) || owners.has(r.ownerId)) return false
+          seen.add(r.id)
+          owners.add(r.ownerId)
+          return true
+        })
+        .slice(0, 8)
+        .map(({ r }) => withOwner(db, r))
+    },
 
     async listDrops(roomId) {
-      return read().drops.filter((d) => d.roomId === roomId)
+      return read()
+        .drops.filter((d) => d.roomId === roomId)
+        .map((d) => ({ ...d, place: isPlace(d.place) ? d.place : 'in' }))
     },
     async addDrop(roomId, d) {
       const db = read()
       if (!db.rooms[roomId]) fail('room_not_found')
       if (db.drops.filter((x) => x.roomId === roomId).length >= MAX_DROPS) fail('room_full')
-      const drop: Drop = { ...d, id: randomId(12), roomId, createdAt: new Date().toISOString() }
+      const drop: Drop = { ...d, place: isPlace(d.place) ? d.place : 'in', id: randomId(12), roomId, createdAt: new Date().toISOString() }
       db.drops.push(drop)
       write(db)
       return drop

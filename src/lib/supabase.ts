@@ -7,6 +7,7 @@ import type { Peer, RoomChannel, RoomEvent } from './realtime'
 import type { Alarm } from './alarm'
 import { monthRange } from './calendar'
 import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room, ThemeId } from './types'
+import { isPlace } from './town'
 
 interface RoomRow {
   id: string
@@ -27,6 +28,7 @@ interface DropRow {
   id: string
   room_id: string
   item: string
+  place?: string | null
   u: number
   v: number
   nickname: string
@@ -111,6 +113,7 @@ export const toDrop = (r: DropRow): Drop => ({
   id: r.id,
   roomId: r.room_id,
   item: r.item,
+  place: isPlace(r.place) ? r.place : 'in',
   u: r.u,
   v: r.v,
   nickname: r.nickname,
@@ -245,6 +248,16 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     async visit(roomId) {
       return check(await sb.rpc('visit_room', { p_room: roomId })) as { today: number; total: number }
     },
+    async becomeNeighbor(roomId) {
+      check(await sb.rpc('become_neighbor', { p_room: roomId }))
+    },
+    async neighbors(roomId) {
+      const ids = (check(await sb.rpc('neighbor_room_ids', { p_room: roomId })) as string[] | null) ?? []
+      if (!ids.length) return []
+      const rows = check(await sb.from('rooms').select(ROOM_SELECT).in('id', ids)) as unknown as RoomRow[]
+      const byId = new Map(rows.map((r) => [r.id, toRoom(r)]))
+      return ids.flatMap((id) => byId.get(id) ?? [])
+    },
 
     async listDrops(roomId) {
       const rows = check(
@@ -258,6 +271,7 @@ export function createSupabaseBackend(url: string, key: string): Backend {
           .rpc('add_drop', {
             p_room: roomId,
             p_item: d.item,
+            p_place: d.place,
             p_u: d.u,
             p_v: d.v,
             p_nickname: d.nickname,
@@ -351,7 +365,7 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     },
 
     joinRoom(roomId, me) {
-      return supabaseChannel(sb.channel(`room:${roomId}`, { config: { presence: { key: me.cid }, broadcast: { self: false } } }), me)
+      return supabaseChannel(sb.channel(`town:${roomId}`, { config: { presence: { key: me.cid }, broadcast: { self: false } } }), me)
     },
 
     async savePush(sub, prefs) {
@@ -390,7 +404,14 @@ function supabaseChannel(ch: RealtimeChannel, me: Peer): RoomChannel {
     const list: Peer[] = []
     for (const metas of Object.values(state)) {
       const p = metas[0]
-      if (p?.cid) list.push({ cid: p.cid, name: p.name, look: normalizeLook(p.look), owner: !!p.owner })
+      if (p?.cid)
+        list.push({
+          cid: p.cid,
+          name: p.name,
+          look: normalizeLook(p.look),
+          owner: !!p.owner,
+          homes: Array.isArray(p.homes) ? p.homes.filter((h): h is string => typeof h === 'string').slice(0, 5) : [],
+        })
     }
     if (!list.some((p) => p.cid === me.cid)) list.push(me)
     peersCb(list)

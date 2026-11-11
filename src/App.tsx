@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { AuthScreen } from './components/AuthScreen'
 import { CreateScreen } from './components/CreateScreen'
 import { Gallery } from './components/Gallery'
 import { Home } from './components/Home'
 import { ProfileScreen } from './components/ProfileScreen'
-import { RoomScreen } from './components/RoomScreen'
 import { AlarmWatcher } from './components/AlarmWatcher'
 import { armChime } from './lib/chime'
 import { TimerDock } from './components/TimerDock'
 import { backend } from './lib/backend'
 import { RETURN_KEY, roomIdFrom, roomUrl } from './lib/links'
 import type { AuthUser, Profile } from './lib/types'
+
+// 방 화면(3D 동네)은 three.js가 커서 들어갈 때 불러온다
+const RoomScreen = lazy(() => import('./components/RoomScreen').then((m) => ({ default: m.RoomScreen })))
 
 export type Route =
   | { kind: 'home' }
@@ -136,7 +138,11 @@ export default function App() {
   else if (route.kind === 'login') screen = <AuthScreen ctx={ctx} />
   else if (route.kind === 'me') screen = user ? <ProfileScreen ctx={ctx} /> : <AuthScreen ctx={ctx} />
   else if (route.kind === 'create') screen = user ? <CreateScreen ctx={ctx} /> : <AuthScreen ctx={ctx} reason="방을 만들려면 로그인해 주세요" />
-  else if (route.kind === 'room') screen = <RoomScreen key={route.slug} ctx={ctx} slug={route.slug} />
+  else if (route.kind === 'room') screen = (
+      <Suspense fallback={<main className="screen center muted">동네 골목 들어가는 중…</main>}>
+        <RoomScreen key={route.slug} ctx={ctx} slug={route.slug} />
+      </Suspense>
+    )
   else screen = <Home ctx={ctx} />
 
   return (

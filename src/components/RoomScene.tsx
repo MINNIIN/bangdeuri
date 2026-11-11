@@ -746,7 +746,7 @@ export function RoomScene({
       at: me.walk ? me.walk.segs[me.walk.segs.length - 1].to : me.pos,
       act: me.act?.phase === 'doing' ? me.act.key : null,
       outfit: me.outfit,
-      room: { lights: [...lights.current], channel: channel.current },
+      room: { lights: [...lights.current], tv: { 'fx-tv': channel.current } },
     }),
     placeActor: (id, at, act, outfit) => {
       const a = all.get(id)
@@ -763,7 +763,7 @@ export function RoomScene({
     },
     applyRoom: (room) => {
       lights.current = new Set(room.lights.filter((k) => targetOf(k)))
-      channel.current = Math.max(0, Math.min(TV_CHANNELS.length - 1, room.channel | 0))
+      channel.current = Math.max(0, Math.min(TV_CHANNELS.length - 1, (room.tv?.['fx-tv'] ?? 0) | 0))
       bump()
     },
   }))

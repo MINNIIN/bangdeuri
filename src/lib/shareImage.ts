@@ -57,9 +57,10 @@ function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h
 }
 
 /** 인스타 스토리(9:16) 공유 이미지: 미니홈피 창 안에 내 방 */
-export async function renderStoryImage(svg: SVGSVGElement, room: Room, dropCount: number): Promise<Blob> {
+export async function renderStoryImage(src: SVGSVGElement | HTMLCanvasElement, room: Room, dropCount: number): Promise<Blob> {
   await Promise.all([document.fonts.load('44px Galmuri11'), document.fonts.load('700 44px Galmuri11')])
-  const roomImg = await svgToImage(svg)
+  // 3D 화면은 이미 그려 둔 캔버스를 그대로 쓴다
+  const roomImg: CanvasImageSource = src instanceof HTMLCanvasElement ? src : await svgToImage(src)
   const theme = themeById(room.theme)
 
   const canvas = document.createElement('canvas')

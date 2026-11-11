@@ -18,6 +18,7 @@ const demo = (item: string, u: number, v: number): Drop => ({
   id: `demo-${item}`,
   roomId: 'demo',
   item,
+  place: 'in',
   u,
   v,
   nickname: '',

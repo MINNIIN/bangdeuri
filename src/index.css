@@ -3144,3 +3144,178 @@ button {
   font-size: 36px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ─── 3D 동네 ─── */
+
+.world-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: inline-size;
+  background: #bfe4ff;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.world-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+.world-canvas:active {
+  cursor: grabbing;
+}
+
+.room-full.is-placing .world-canvas {
+  cursor: crosshair;
+}
+
+/* 이름표 · 한마디는 그리기 루프가 left/top을 매 프레임 옮긴다 */
+.world-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.world-overlay .tag {
+  z-index: 1;
+}
+
+.world-stage .bubble {
+  z-index: 4;
+}
+
+/* 문을 지날 때 잠깐 어두워졌다 밝아진다 */
+.world-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: #2b2233;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.world-fade.is-on {
+  animation: world-door 0.55s ease-out;
+}
+
+@keyframes world-door {
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world-fade.is-on {
+    animation: none;
+  }
+}
+
+/* 집 밖으로 · 동네 집 목록 버튼 (위 줄 아래 왼쪽) */
+.hud-where {
+  position: absolute;
+  top: calc(58px + env(safe-area-inset-top));
+  left: 8px;
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+}
+
+.hud-where .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-shadow: 2px 2px 0 var(--ink);
+  font-weight: 700;
+}
+
+.room-screen:has(.hud-banner) .hud-where {
+  top: calc(96px + env(safe-area-inset-top));
+}
+
+.town-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.town-house {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.town-house:active {
+  background: var(--soft);
+}
+
+.town-dot {
+  flex: none;
+  width: 26px;
+  height: 22px;
+  border: 2px solid var(--ink);
+  border-radius: 4px 4px 6px 6px;
+  clip-path: polygon(50% 0, 100% 40%, 100% 100%, 0 100%, 0 40%);
+}
+
+.town-dot.is-pink {
+  background: #ff7fa6;
+}
+
+.town-dot.is-studio {
+  background: #c9784a;
+}
+
+.town-dot.is-night {
+  background: #5a5fb0;
+}
+
+.town-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.town-name .muted {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.town-go {
+  flex: none;
+  padding: 3px 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* 미니미 만들기: 3D 미리보기 (끌어서 돌려 보기) */
+.avatar-3d {
+  flex: none;
+  cursor: grab;
+  touch-action: pan-y;
+}
+
+.avatar-3d canvas {
+  display: block;
+}

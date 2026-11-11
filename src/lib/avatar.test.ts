@@ -106,9 +106,9 @@ describe('로컬 실시간 (같은 브라우저 탭끼리)', () => {
     await tick()
     expect(aPeers.map((p) => p.cid).sort()).toEqual(['a', 'b'])
 
-    b.send({ t: 'move', cid: 'b', from: { u: 0.5, v: 0.9 }, to: { u: 0.3, v: 0.3 } })
+    b.send({ t: 'move', cid: 'b', area: 'town', from: { x: 0.5, z: 0.9 }, to: { x: 3, z: -2 } })
     await tick()
-    expect(got).toEqual([{ t: 'move', cid: 'b', from: { u: 0.5, v: 0.9 }, to: { u: 0.3, v: 0.3 } }])
+    expect(got).toEqual([{ t: 'move', cid: 'b', area: 'town', from: { x: 0.5, z: 0.9 }, to: { x: 3, z: -2 } }])
 
     b.leave()
     b.leave()
