@@ -220,6 +220,15 @@ const camDefault = (area: AreaId, at: Vec2, k = 1): Cam =>
 const YAW_CENTER = { town: 0.22, house: Math.PI / 4 } as const
 /** 2D 때 좌우로 끌 때 돌던 빠르기 (px당 라디안) */
 const DRAG_TURN = 0.005
+/** 위아래로 기울일 수 있는 범위 (내려다보는 각, 라디안): 옆에서 비스듬히 ~ 거의 위에서 */
+const PITCH_LIMIT = [0.55, 1.25] as const
+/** 범위를 넘기면 고무줄처럼 조금만 더 간다 */
+const rubberPitch = (p: number, rubber: boolean) => {
+  const [lo, hi] = PITCH_LIMIT
+  if (p < lo) return rubber ? lo - (lo - p) * 0.2 : lo
+  if (p > hi) return rubber ? hi + (p - hi) * 0.2 : hi
+  return p
+}
 const DIST_LIMIT = { town: [7, 40], house: [7, 34] } as const
 
 export function World({
@@ -523,6 +532,7 @@ function createWorld(
     const l = limits()
     const off = c.yaw - YAW_CENTER[l]
     c.yaw = YAW_CENTER[l] + (rubber ? rubberTilt(off) : clampTilt(off))
+    c.pitch = rubberPitch(c.pitch, rubber)
     c.dist = Math.min(DIST_LIMIT[l][1], Math.max(DIST_LIMIT[l][0], c.dist))
     if (l === 'town') {
       c.target.x = Math.min(map.bounds.maxX - 4, Math.max(map.bounds.minX + 4, c.target.x))
@@ -1352,8 +1362,10 @@ function createWorld(
     }
     follow = false
     if (p.right) {
-      // 우클릭 드래그: 좌우로 끌면 2D 때처럼 일정 범위 안에서 돈다
+      // 우클릭 드래그: 좌우로 끌면 2D 때처럼 일정 범위 안에서 돌고, 위아래로 끌면 기울어진다
+      // 위아래로 끌면 내려다보는 각도가 바뀐다 (아래로 끌면 더 위에서 내려다본다 — 보통 3D 뷰어와 같은 방향)
       cam.yaw = p.cam.yaw - dx * DRAG_TURN
+      cam.pitch = p.cam.pitch + dy * DRAG_TURN
       clampCam(cam, true)
       return
     }
@@ -1397,7 +1409,7 @@ function createWorld(
   /** 범위를 넘겨 돌린 채 놓으면 끝 각도로 부드럽게 돌아온다 */
   const settleYaw = () => {
     const to = clampCam({ ...cam, target: cam.target.clone() })
-    if (Math.abs(to.yaw - cam.yaw) > 1e-4) animateCam(to, 260)
+    if (Math.abs(to.yaw - cam.yaw) > 1e-4 || Math.abs(to.pitch - cam.pitch) > 1e-4) animateCam(to, 260)
   }
   const onWheel = (e: WheelEvent) => {
     e.preventDefault()
