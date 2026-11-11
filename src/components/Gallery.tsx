@@ -11,6 +11,7 @@ export function Gallery() {
     id: it.id,
     roomId: 'g',
     item: it.id,
+    place: 'in' as const,
     u: 0.1 + (i % 6) * 0.16,
     v: 0.1 + Math.floor(i / 6) * 0.3,
     nickname: '',

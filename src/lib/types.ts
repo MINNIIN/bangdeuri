@@ -1,5 +1,6 @@
 import type { AvatarLook } from '../art/avatar'
 import type { Decor } from '../art/decor'
+import type { DropPlace } from './town'
 
 export type ThemeId = 'pink' | 'studio' | 'night'
 
@@ -40,6 +41,8 @@ export interface Drop {
   id: string
   roomId: string
   item: string
+  /** 둔 곳: 집 안(in) · 마당(yard) · 우편함(mail). u, v는 그곳의 바닥 좌표 0~1 */
+  place: DropPlace
   u: number
   v: number
   nickname: string
@@ -65,6 +68,7 @@ export interface NewRoom {
 
 export interface NewDrop {
   item: string
+  place: DropPlace
   u: number
   v: number
   nickname: string

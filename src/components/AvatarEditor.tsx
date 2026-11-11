@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import {
   type AvatarLook,
   buildAvatar,
@@ -11,6 +11,9 @@ import {
   SKIN_COLORS,
 } from '../art/avatar'
 import { SpriteIcon } from './PixelSprite'
+
+// 3D 미리보기는 three.js가 커서 필요할 때 불러온다
+const AvatarPreview = lazy(() => import('../three/AvatarPreview'))
 
 type Tab = 'hair' | 'face' | 'top' | 'bottom' | 'hat'
 
@@ -41,7 +44,9 @@ export function AvatarEditor({ look, onChange }: { look: AvatarLook; onChange: (
   return (
     <section className="avatar-editor">
       <div className="avatar-stage">
-        <SpriteIcon sprite={buildAvatar(look)} size={150} className="avatar-big" />
+        <Suspense fallback={<SpriteIcon sprite={buildAvatar(look)} size={150} className="avatar-big" />}>
+          <AvatarPreview look={look} size={170} />
+        </Suspense>
         <div className="avatar-quick">
           <button type="button" className="btn btn-small" onClick={() => onChange(randomLook())}>
             아무렇게나

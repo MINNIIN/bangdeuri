@@ -150,7 +150,36 @@ describe('규칙', () => {
 
 describe('로컬 모드 저장소', () => {
   const newRoom = { name: '민수', theme: 'pink', motto: '하이' } as const
-  const drop = { item: 'ramen', u: 0.3, v: 0.4, nickname: '친구', message: '라면 그만' }
+  const drop = { item: 'ramen', place: 'in' as const, u: 0.3, v: 0.4, nickname: '친구', message: '라면 그만' }
+
+  it('내 이름으로 놀러 가면 서로의 동네에 집이 생긴다 (익명은 안 남는다)', async () => {
+    const db = memoryStorage()
+    const a = createLocalBackend(db, memoryStorage())
+    const b = createLocalBackend(db, memoryStorage())
+    await a.signUpEmail('a@test.kr', 'secret1')
+    await a.saveProfile({ nickname: '민수', look: PRESET_LOOKS[0].look })
+    const roomA = await a.createRoom(newRoom)
+    await b.signUpEmail('b@test.kr', 'secret1')
+    await b.saveProfile({ nickname: '지윤', look: PRESET_LOOKS[1].look })
+    const roomB = await b.createRoom({ ...newRoom, name: '지윤' })
+    expect(await a.neighbors(roomA.id)).toEqual([])
+    await b.becomeNeighbor(roomA.id)
+    expect((await a.neighbors(roomA.id)).map((r) => r.id)).toEqual([roomB.id])
+    expect((await b.neighbors(roomB.id)).map((r) => r.id)).toEqual([roomA.id])
+    // 내 방에 들어가는 건 이웃이 아니다
+    await a.becomeNeighbor(roomA.id)
+    expect((await a.neighbors(roomA.id)).map((r) => r.id)).toEqual([roomB.id])
+  })
+
+  it('선물은 집 안 · 마당 · 우편함에 둘 수 있다', async () => {
+    const be = createLocalBackend(memoryStorage(), memoryStorage())
+    await be.signUpEmail('c@test.kr', 'secret1')
+    await be.saveProfile({ nickname: '도윤', look: PRESET_LOOKS[0].look })
+    const r = await be.createRoom(newRoom)
+    await be.addDrop(r.id, { ...drop, place: 'yard' })
+    await be.addDrop(r.id, { ...drop, place: 'mail' })
+    expect((await be.listDrops(r.id)).map((d) => d.place)).toEqual(['yard', 'mail'])
+  })
 
   /** 같은 DB를 쓰는 두 탭: 방 주인 탭, 손님 탭 */
   async function twoTabs() {

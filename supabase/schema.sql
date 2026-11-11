@@ -46,7 +46,27 @@ create table if not exists public.drops (
   created_at  timestamptz not null default now()
 );
 
+-- 둔 곳: 집 안(in) · 마당(yard) · 우편함(mail). 예전 아이템은 모두 집 안
+alter table public.drops add column if not exists place text not null default 'in';
+do $$ begin
+  alter table public.drops add constraint drops_place_check check (place in ('in', 'yard', 'mail'));
+exception when duplicate_object then null; end $$;
+
 create index if not exists drops_room_idx on public.drops (room_id, created_at);
+
+-- ─── 동네 이웃: 회원이 남의 방에 들어간 기록 ──────────────────────
+-- 서로 놀러 간 적 있는 회원의 집이 동네 골목에 늘어선다. 직접 읽지 못하고 neighbor_room_ids()로만
+
+create table if not exists public.room_visits (
+  room_id     text not null references public.rooms(id) on delete cascade,
+  member_id   uuid not null references public.profiles(id) on delete cascade,
+  at          timestamptz not null default now(),
+  primary key (room_id, member_id)
+);
+
+create index if not exists room_visits_member_idx on public.room_visits (member_id, at desc);
+alter table public.room_visits enable row level security;
+revoke all on public.room_visits from anon, authenticated;
 
 -- ─── 채팅 기록 (방마다 최근 500개, 30일까지) ───────────────────
 
@@ -219,6 +239,28 @@ begin
   return v_row;
 end $$;
 
+-- 둔 곳(집 안 · 마당 · 우편함)까지 받는 새 버전. 위 예전 버전은 배포된 앱이 아직 쓰니 남겨 둔다
+create or replace function public.add_drop(
+  p_room text, p_item text, p_place text, p_u real, p_v real, p_nickname text, p_message text
+)
+returns public.drops
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_row drops;
+begin
+  if not exists (select 1 from rooms where id = p_room) then
+    raise exception 'room_not_found';
+  end if;
+  if (select count(*) from drops where room_id = p_room) >= 60 then
+    raise exception 'room_full';
+  end if;
+  insert into drops (room_id, item, place, u, v, nickname, message)
+  values (p_room, p_item, coalesce(p_place, 'in'), p_u, p_v, trim(p_nickname), coalesce(trim(p_message), ''))
+  returning * into v_row;
+  return v_row;
+end $$;
+
 create or replace function public.post_message(p_room text, p_name text, p_body text)
 returns public.messages
 language plpgsql security definer set search_path = public
@@ -266,16 +308,65 @@ begin
   return json_build_object('today', v_row.today_visits, 'total', v_row.total_visits);
 end $$;
 
+-- 회원이 내 이름으로 남의 방에 들어가면 서로 이웃이 된다 (익명으로 들어가면 부르지 않는다)
+create or replace function public.become_neighbor(p_room text)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_owner uuid;
+begin
+  select owner_id into v_owner from rooms where id = p_room;
+  if v_owner is null then
+    raise exception 'room_not_found';
+  end if;
+  if auth.uid() is null or auth.uid() = v_owner or not exists (select 1 from profiles where id = auth.uid()) then
+    return;
+  end if;
+  insert into room_visits (room_id, member_id) values (p_room, auth.uid())
+  on conflict (room_id, member_id) do update set at = now();
+end $$;
+
+-- 동네 이웃 방 번호 (최근 순, 8개). 이 방에 놀러 온 회원의 가장 최근 방 + 이 방 주인이 놀러 간 방
+create or replace function public.neighbor_room_ids(p_room text)
+returns text[]
+language sql stable security definer set search_path = public
+as $$
+  with me as (select owner_id from rooms where id = p_room),
+  picks as (
+    select (select r.id from rooms r where r.owner_id = v.member_id order by r.created_at desc limit 1) as id, v.at
+      from room_visits v where v.room_id = p_room
+    union all
+    select v.room_id, v.at from room_visits v, me where v.member_id = me.owner_id
+  ),
+  ranked as (
+    select p.id, r.owner_id, max(p.at) as at
+      from picks p join rooms r on r.id = p.id, me
+     where p.id is not null and p.id <> p_room and r.owner_id <> me.owner_id
+     group by p.id, r.owner_id
+  ),
+  one_per_owner as (
+    select distinct on (owner_id) id, at from ranked order by owner_id, at desc
+  )
+  select coalesce(array_agg(id order by at desc), '{}') from (select id, at from one_per_owner order by at desc limit 8) t
+$$;
+
 revoke execute on function public.new_slug() from public;
 revoke execute on function public.create_room(text, text, text) from public;
 revoke execute on function public.reset_room_link(text) from public;
 revoke execute on function public.add_drop(text, text, real, real, text, text) from public;
+revoke execute on function public.add_drop(text, text, text, real, real, text, text) from public;
+revoke execute on function public.neighbor_room_ids(text) from public;
+revoke execute on function public.become_neighbor(text) from public;
 revoke execute on function public.post_message(text, text, text) from public;
 revoke execute on function public.visit_room(text) from public;
 
 grant execute on function public.create_room(text, text, text) to authenticated;
 grant execute on function public.reset_room_link(text) to authenticated;
 grant execute on function public.add_drop(text, text, real, real, text, text) to anon, authenticated;
+grant execute on function public.add_drop(text, text, text, real, real, text, text) to anon, authenticated;
+grant execute on function public.neighbor_room_ids(text) to anon, authenticated;
+grant execute on function public.become_neighbor(text) to authenticated;
 grant execute on function public.post_message(text, text, text) to anon, authenticated;
 grant execute on function public.visit_room(text) to anon, authenticated;
 

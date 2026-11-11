@@ -138,43 +138,58 @@ export function solidSegments(list: Partition[] = PARTITIONS): { from: UV; to: U
 
 const SOLID = solidSegments()
 
-export function isBlocked(p: UV) {
+/** 가구를 놓을 때: 집 밖으로 나가거나 칸막이벽에 걸치는 자리인지 */
+export function hitsWall(p: UV, pad = 0.006) {
+  if (p.u < 0.012 || p.u > 0.988 || p.v < 0.012 || p.v > 0.988) return true
+  return SOLID.some((s) => segDistance(p, s.from, s.to) < pad)
+}
+
+/** 벽 말고 더 막을 것 (3D에서는 가구·놓인 아이템 자리) */
+export type Blocker = (p: UV) => boolean
+
+export function isBlocked(p: UV, extra?: Blocker) {
   if (p.u < EDGE_MIN || p.u > EDGE_MAX || p.v < EDGE_MIN || p.v > EDGE_MAX) return true
-  return SOLID.some((s) => segDistance(p, s.from, s.to) < WALL_PAD)
+  return SOLID.some((s) => segDistance(p, s.from, s.to) < WALL_PAD) || !!extra?.(p)
 }
 
 const center = (i: number) => (i + 0.5) * CELL
 const cellOf = (n: number) => Math.min(N - 1, Math.max(0, Math.floor(n / CELL)))
 
 let blockedGrid: boolean[] | null = null
-function grid() {
-  if (!blockedGrid) {
-    blockedGrid = []
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) blockedGrid.push(isBlocked({ u: center(i), v: center(j) }))
+const extraGrids = new WeakMap<Blocker, boolean[]>()
+function grid(extra?: Blocker) {
+  const make = () => {
+    const out: boolean[] = []
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) out.push(isBlocked({ u: center(i), v: center(j) }, extra))
+    return out
   }
-  return blockedGrid
+  if (!extra) return (blockedGrid ??= make())
+  let g = extraGrids.get(extra)
+  if (!g) extraGrids.set(extra, (g = make()))
+  return g
 }
 
 /** 막히지 않은 가장 가까운 자리 */
-export function nearestFree(p: UV): UV {
+export function nearestFree(p: UV, extra?: Blocker): UV {
   const c = { u: Math.min(EDGE_MAX, Math.max(EDGE_MIN, p.u)), v: Math.min(EDGE_MAX, Math.max(EDGE_MIN, p.v)) }
-  if (!isBlocked(c)) return c
-  for (let r = 1; r < 12; r++) {
+  if (!isBlocked(c, extra)) return c
+  for (let r = 1; r < 16; r++) {
     for (let k = 0; k < 16; k++) {
       const a = (k / 16) * Math.PI * 2
       const q = { u: c.u + Math.cos(a) * r * 0.012, v: c.v + Math.sin(a) * r * 0.012 }
-      if (!isBlocked(q)) return q
+      if (!isBlocked(q, extra)) return q
     }
   }
-  return c
+  // 가구에 둘러싸였으면 벽만 피한다
+  return extra ? nearestFree(p) : c
 }
 
 /** 두 점 사이에 벽이 없는지 (선분을 잘게 나눠 본다) */
-export function clearLine(a: UV, b: UV) {
+export function clearLine(a: UV, b: UV, extra?: Blocker) {
   const steps = Math.ceil(Math.hypot(b.u - a.u, b.v - a.v) / 0.008)
   for (let k = 1; k < steps; k++) {
     const t = k / steps
-    if (isBlocked({ u: a.u + (b.u - a.u) * t, v: a.v + (b.v - a.v) * t })) return false
+    if (isBlocked({ u: a.u + (b.u - a.u) * t, v: a.v + (b.v - a.v) * t }, extra)) return false
   }
   return true
 }
@@ -183,11 +198,12 @@ export function clearLine(a: UV, b: UV) {
  * 벽을 돌아가는 길 (A*, 8방향). 출발점은 빼고 지나갈 점들을 돌려준다.
  * 곧장 갈 수 있으면 [도착점] 하나. 길이 없으면 빈 배열
  */
-export function findPath(fromRaw: UV, toRaw: UV): UV[] {
-  const from = nearestFree(fromRaw)
-  const to = nearestFree(toRaw)
-  if (clearLine(from, to)) return [to]
-  const g = grid()
+export function findPath(fromRaw: UV, toRaw: UV, extra?: Blocker): UV[] {
+  // 가구 위(앉아 있던 자리 등)에서 출발하면 가구는 무시하고 빠져나온다
+  const from = nearestFree(fromRaw, extra && isBlocked(fromRaw, extra) && !isBlocked(fromRaw) ? undefined : extra)
+  const to = nearestFree(toRaw, extra)
+  if (clearLine(from, to, extra)) return [to]
+  const g = grid(extra)
   const idx = (i: number, j: number) => j * N + i
   const si = cellOf(from.u)
   const sj = cellOf(from.v)
@@ -239,7 +255,7 @@ export function findPath(fromRaw: UV, toRaw: UV): UV[] {
   while (n < cells.length) {
     let far = n
     for (let m = cells.length - 1; m > n; m--) {
-      if (clearLine(cur, cells[m])) {
+      if (clearLine(cur, cells[m], extra)) {
         far = m
         break
       }

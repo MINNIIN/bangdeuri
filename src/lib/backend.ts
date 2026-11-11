@@ -37,6 +37,13 @@ export interface Backend {
   /** 링크를 새로 만든다. 예전 링크로는 더 못 들어온다. 새 주소를 돌려준다 */
   resetLink(roomId: string): Promise<string>
   visit(roomId: string): Promise<{ today: number; total: number }>
+  /**
+   * 동네 이웃: 이 방에 놀러 온 적 있는 회원들의 방 + 이 방 주인이 놀러 간 방 (최근 순, 이 방 빼고).
+   * 회원이 내 이름으로 방에 들어가면(becomeNeighbor) 서로 이웃이 된다
+   */
+  neighbors(roomId: string): Promise<Room[]>
+  /** 로그인한 회원이 내 이름으로 이 방에 들어왔다 (익명이면 부르지 않는다) */
+  becomeNeighbor(roomId: string): Promise<void>
 
   // ─── 아이템·방명록 (놓기는 누구나, 치우기는 방 주인) ───
   listDrops(roomId: string): Promise<Drop[]>

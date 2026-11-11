@@ -1,6 +1,6 @@
 import type { AvatarLook } from '../art/avatar'
 import type { Decor } from '../art/decor'
-import type { UV } from './home'
+import type { AreaId, Vec2 } from './town'
 import type { NowPlaying } from './turntable'
 import type { ChatMessage, Drop } from './types'
 
@@ -12,21 +12,34 @@ export interface Peer {
   look: AvatarLook
   /** 방 주인 */
   owner: boolean
+  /** 이 사람의 집 방 번호들 (동네에 그 집이 있으면 주인이 와 있는 것) */
+  homes?: string[]
 }
 
-/** 방 상태: 켜 둔 스탠드, TV 채널 */
+/** 동네 상태: 켜 둔 스탠드, TV마다 채널 (key = 가구·아이템 key) */
 export interface SharedRoomState {
   lights: string[]
-  channel: number
+  tv: Record<string, number>
 }
 
 export type RoomEvent =
-  /** 걸어가기 (받는 쪽이 길을 직접 찾는다) */
-  | { t: 'move'; cid: string; from: UV; to: UV }
-  /** 가구·아이템 쓰기 (key = 가구 id 또는 아이템 id) */
-  | { t: 'act'; cid: string; key: string; from: UV }
-  /** 새로 들어온 사람에게 지금 내 자리와 방 상태를 알려 준다 */
-  | { t: 'hello'; cid: string; at: UV; act: string | null; outfit: number; room: SharedRoomState; song?: NowPlaying | null }
+  /** 걸어가기 (받는 쪽이 길을 직접 찾는다). area = 골목 또는 어느 집 안 */
+  | { t: 'move'; cid: string; area: AreaId; from: Vec2; to: Vec2 }
+  /** 가구·아이템 쓰기 (key = 가구 key 또는 아이템 id) */
+  | { t: 'act'; cid: string; area: AreaId; key: string; from: Vec2 }
+  /** 문을 지나 다른 곳으로 (골목 ↔ 집 안) */
+  | { t: 'area'; cid: string; area: AreaId; at: Vec2 }
+  /** 새로 들어온 사람에게 지금 내 자리와 동네 상태를 알려 준다 */
+  | {
+      t: 'hello'
+      cid: string
+      area: AreaId
+      at: Vec2
+      act: string | null
+      outfit: number
+      room: SharedRoomState
+      song?: NowPlaying | null
+    }
   | { t: 'chat'; cid: string; msg: ChatMessage }
   | { t: 'chat-del'; id: string }
   | { t: 'drop'; cid: string; drop: Drop }
@@ -63,7 +76,7 @@ const EXPIRE_MS = 7000
 type Wire = { k: 'ev'; e: RoomEvent } | { k: 'here'; peer: Peer; reply?: boolean } | { k: 'bye'; cid: string }
 
 export function createLocalChannel(roomId: string, me: Peer): RoomChannel {
-  const bc = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`bangdeuri:room:${roomId}`)
+  const bc = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(`bangdeuri:town:${roomId}`)
   const peers = new Map<string, { peer: Peer; seen: number }>([[me.cid, { peer: me, seen: Infinity }]])
   let peersCb: (p: Peer[]) => void = () => {}
   let eventCb: (e: RoomEvent) => void = () => {}
