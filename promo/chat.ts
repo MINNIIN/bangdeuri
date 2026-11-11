@@ -13,14 +13,15 @@ const slow = Number(params.get('slow') ?? 1) || 1
 const log = document.getElementById('log')!
 const byName = new Map(FRIENDS.map((f) => [f.name, f]))
 
+// 링크 미리보기 그림: 3D 방 (promo/card3d.jpg — 3D 방 화면을 잘라 만든 촬영용 그림)
 const ROOM_LINK = {
-  img: '/og.png',
+  img: '/promo/card3d.jpg',
   title: `${OWNER.name}의 미니룸에 놀러 와!`,
   desc: `${OWNER.name}: “내 방에 뭐 하나 놓고 가 줘”`,
   host: 'bangdeuri.com',
 }
 const HOME_LINK = {
-  img: '/og.png',
+  img: '/promo/card3d.jpg',
   title: '방들이 - 친구들이 놀러 오는 미니룸',
   desc: '내 방에 놀러 와! 같이 돌아다니고, 수다 떨고, 선물 하나 놓고 가 줘',
   host: 'bangdeuri.com',
@@ -114,9 +115,9 @@ function setup() {
     say('나도 할 거 없음…', '서아')
   } else {
     clock = 31
-    say('ㅋㅋㅋㅋㅋㅋ 바선생 누구야', '지윤')
-    say('ㄴ ㅏ', '준')
-    say('님 방 내가 제일 많이 놓고 감', '나은')
+    say('우리 집 첫 집들이 성공 ㅋㅋㅋ', '지윤')
+    say('디스코볼 내가 놓고 옴', '서아')
+    say('노래 뭐였어 계속 생각남', '준')
   }
 }
 
@@ -132,7 +133,7 @@ async function playOpen() {
     ['하린', '싸x월드냐 ㅋㅋㅋㅋ'],
     ['도윤', '들어감'],
     ['서아', '헐 나 미니미 만듦'],
-    ['준', '바선생 놓고 옴 ㅋ'],
+    ['준', '골목에 내 집 생김 ㅋㅋ'],
   ]
   for (const [who, text] of replies) {
     typing(who)
@@ -163,15 +164,15 @@ async function playOpen() {
 async function playEnd() {
   clock = 32
   await wait(300)
-  await typeAndSend('ㅋㅋㅋ 너네도 만들어 봐')
+  await typeAndSend('ㅋㅋㅋ 다음 집들이는 누구네?')
   await wait(250)
   say(card(HOME_LINK), undefined, { html: true, unread: 6 })
   await wait(500)
-  typing('지윤')
+  typing('하린')
   await wait(300)
-  say('만드는 중', '지윤')
+  say('우리 집 ㄱㄱ', '하린')
   await wait(250)
-  say('내 방 오면 똥 놓고 간다', '하린')
+  say('케이크 또 사 갈게', '나은')
   await wait(900)
 }
 
