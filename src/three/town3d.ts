@@ -37,6 +37,8 @@ export interface Town3D {
   setMail(roomId: string, count: number): void
   /** 가로등 불빛 자리 (밤에 조명을 단다) */
   lampHeads: THREE.Vector3[]
+  /** 새로 생긴 집 (솟아오르는 연출용으로 따로 둔다) */
+  risers: Map<string, THREE.Object3D>
   dispose(): void
 }
 
@@ -179,8 +181,10 @@ function buildProp(p: Prop, i: number, heads: THREE.Vector3[], lampMat: THREE.Me
   return o
 }
 
-export function buildTown3D(map: TownMap, rooms: Map<string, Room>): Town3D {
+/** rise: 방금 생긴 집들 — 합치지 않고 따로 두어 솟아오르게 한다 */
+export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: ReadonlySet<string> = new Set()): Town3D {
   const g = new THREE.Group()
+  const risers = new Map<string, THREE.Object3D>()
   const owned: { dispose(): void }[] = []
   const b = map.bounds
   const W = b.maxX - b.minX
@@ -341,6 +345,10 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>): Town3D {
     house.traverse((n) => {
       if (!n.userData.door) n.userData.house = lot.roomId
     })
+    if (rise.has(lot.roomId)) {
+      house.userData.keep = true
+      risers.set(lot.roomId, house)
+    }
     g.add(house)
 
     // 문패
@@ -379,7 +387,7 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>): Town3D {
       const fg = new THREE.Group()
       for (let i = 0; i <= n; i++) {
         const t = i / n
-        fg.add(part(roundBox(0.1, 0.75, 0.06, 0.03), pickets, [x0 + (x1 - x0) * t, 0.375, z0 + (z1 - z0) * t]))
+        fg.add(part(box(0.1, 0.75, 0.06), pickets, [x0 + (x1 - x0) * t, 0.375, z0 + (z1 - z0) * t]))
       }
       const rail = part(box(len, 0.06, 0.04), rails, [(x0 + x1) / 2, 0.5, (z0 + z1) / 2])
       rail.rotation.y = -Math.atan2(z1 - z0, x1 - x0)
@@ -443,6 +451,7 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>): Town3D {
   return {
     group: g,
     lampHeads: heads,
+    risers,
     setNight(night) {
       windowMat.emissiveIntensity = night ? 0.9 : 0
       lampMat.emissiveIntensity = night ? 2.2 : 0.15

@@ -81,6 +81,16 @@ export function townBounds(lots: Lot[]) {
   return { minX: min, maxX: max, minZ: HOUSE_BACK_Z - 1.5, maxZ: PARK_S }
 }
 
+/**
+ * 손님이 처음 서는 자리: 방 주인 대문 앞 인도에서 사람마다 조금씩 다르게 (여럿이 한꺼번에 와도 겹치지 않게).
+ * 접속 id로 정해서, 다른 사람 화면에서도 같은 자리에 나타난다.
+ */
+export function guestSpot(cid: string): Vec2 {
+  let h = 0
+  for (let i = 0; i < cid.length; i++) h = (h * 31 + cid.charCodeAt(i)) | 0
+  return { x: (hash01(h) - 0.5) * 2.4, z: -3.6 - hash01(h + 7) * 0.8 }
+}
+
 /** 대문 앞(인도) — 집에서 나오면 여기 선다 */
 export const doorStep = (lot: Lot): Vec2 => ({ x: lot.x, z: HOUSE_FRONT_Z + 1.1 })
 export const gateSpot = (lot: Lot): Vec2 => ({ x: lot.x, z: FENCE_Z + 1 })

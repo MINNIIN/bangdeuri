@@ -171,7 +171,8 @@ export function bakeStatic(root: THREE.Object3D) {
     const key = `${m.material.uuid}|${m.castShadow}|${JSON.stringify(data)}`
     let b = buckets.get(key)
     if (!b) buckets.set(key, (b = { mat: m.material, cast: m.castShadow, data, geos: [] }))
-    const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()
+    // clone()은 RoundedBoxGeometry 같은 걸 생성자부터 다시 만들어서 느리다 → 빈 BufferGeometry에 복사
+    const g = m.geometry.index ? m.geometry.toNonIndexed() : new THREE.BufferGeometry().copy(m.geometry)
     for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name)
     if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2))
     if (!g.attributes.normal) g.computeVertexNormals()
