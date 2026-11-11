@@ -1,3 +1,4 @@
+import { type Layout, normalizeLayout } from '../lib/layout'
 import type { ThemeId } from '../lib/types'
 
 /**
@@ -171,6 +172,8 @@ export interface FloorDecor {
 export interface Decor {
   walls: [WallDecor, WallDecor]
   floor: FloorDecor
+  /** 방 주인이 옮기고 돌린 가구·아이템 자리 (없으면 처음 자리) */
+  layout?: Layout
 }
 
 const wall = (color: string, pattern: WallPatternId, stickers: PlacedSticker[]): WallDecor => ({
@@ -242,12 +245,14 @@ export function normalizeDecor(raw: unknown, theme: ThemeId | string): Decor {
   const r = raw as Partial<Decor>
   const walls = Array.isArray(r.walls) ? r.walls : []
   const f = (r.floor ?? {}) as Partial<FloorDecor>
+  const layout = normalizeLayout(r.layout)
   return {
     walls: [normalizeWall(walls[0], base.walls[0]), normalizeWall(walls[1], base.walls[1])],
     floor: {
       color: typeof f.color === 'string' && HEX.test(f.color) ? f.color : base.floor.color,
       pattern: FLOOR_PATTERNS.some((p) => p.id === f.pattern) ? (f.pattern as FloorPatternId) : base.floor.pattern,
     },
+    ...(layout ? { layout } : {}),
   }
 }
 

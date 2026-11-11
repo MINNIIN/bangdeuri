@@ -59,6 +59,8 @@ export const ICONS = {
   /** 방 삭제 (빨간색) */
   trash: icon(['...kkk...', 'kkkkkkkkk', '.........', '.kkkkkkk.', '.kwkwkwk.', '.kwkwkwk.', '.kwkwkwk.', '.kwkwkwk.', '..kkkkk..'], { k: '#e8384f' }),
   home: icon(['....k....', '...kkk...', '..kwwwk..', '.kwwwwwk.', 'kkwwwwwkk', '.kwwwwwk.', '.kwkkkwk.', '.kwkwkwk.', '.kkkkkkk.']),
+  /** 가구 옮기기 (네 방향 화살표) */
+  move: icon(['....k....', '...kkk...', '....k....', '.k..k..k.', 'kkkkkkkkk', '.k..k..k.', '....k....', '...kkk...', '....k....']),
   /** 타이머·알람 */
   clock: icon(['..kkkkk..', '.kwwwwwk.', 'kwwwkwwwk', 'kwwwkwwwk', 'kwwwkkkwk', 'kwwwwwwwk', 'kwwwwwwwk', '.kwwwwwk.', '..kkkkk..']),
   /** 배경음악 켜짐 */

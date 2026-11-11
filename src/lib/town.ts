@@ -372,22 +372,24 @@ export interface Obstacle {
   yaw: number
 }
 
+/** 이 자리가 물건 사각형(pad만큼 넉넉히) 안인지 */
+export function insideObstacle(list: Obstacle[], p: Vec2, pad = 0) {
+  for (const o of list) {
+    const dx = p.x - o.x
+    const dz = p.z - o.z
+    const c = Math.cos(o.yaw)
+    const s = Math.sin(o.yaw)
+    // 물건 기준 좌표로 돌려서 사각형 안인지 본다
+    const lx = dx * c - dz * s
+    const lz = dx * s + dz * c
+    if (Math.abs(lx) < o.hw + pad && Math.abs(lz) < o.hd + pad) return true
+  }
+  return false
+}
+
 /** 물건 자리를 집 안 길찾기가 쓰는 막힘 검사로. pad만큼 넉넉히 비켜 간다 */
 export function obstacleBlocker(list: Obstacle[], pad = 0.12): Blocker {
-  return (uv) => {
-    const p = uvToHouse(uv)
-    for (const o of list) {
-      const dx = p.x - o.x
-      const dz = p.z - o.z
-      const c = Math.cos(o.yaw)
-      const s = Math.sin(o.yaw)
-      // 물건 기준 좌표로 돌려서 사각형 안인지 본다
-      const lx = dx * c - dz * s
-      const lz = dx * s + dz * c
-      if (Math.abs(lx) < o.hw + pad && Math.abs(lz) < o.hd + pad) return true
-    }
-    return false
-  }
+  return (uv) => insideObstacle(list, uvToHouse(uv), pad)
 }
 
 export function findHouseWorldPath(from: Vec2, to: Vec2, extra?: Blocker): Vec2[] {

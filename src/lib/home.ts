@@ -138,6 +138,12 @@ export function solidSegments(list: Partition[] = PARTITIONS): { from: UV; to: U
 
 const SOLID = solidSegments()
 
+/** 가구를 놓을 때: 집 밖으로 나가거나 칸막이벽에 걸치는 자리인지 */
+export function hitsWall(p: UV, pad = 0.006) {
+  if (p.u < 0.012 || p.u > 0.988 || p.v < 0.012 || p.v > 0.988) return true
+  return SOLID.some((s) => segDistance(p, s.from, s.to) < pad)
+}
+
 /** 벽 말고 더 막을 것 (3D에서는 가구·놓인 아이템 자리) */
 export type Blocker = (p: UV) => boolean
 

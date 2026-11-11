@@ -3319,3 +3319,44 @@ button {
 .avatar-3d canvas {
   display: block;
 }
+
+/* 가구 배치 바꾸기: 아래 판 (고른 물건 이름 · 돌리기 · 저장) */
+.arrange-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.arrange-hint {
+  margin: 0;
+  font-size: 13px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.arrange-hint b {
+  color: var(--ink);
+}
+
+.arrange-tools .btn {
+  gap: 4px;
+  font-size: 13px;
+  padding-inline: 6px;
+}
+
+.arrange-turn.is-left {
+  display: inline-flex;
+  transform: scaleX(-1);
+}
+
+@media (min-width: 820px) {
+  .arrange-panel {
+    align-self: center;
+    width: 440px;
+  }
+}

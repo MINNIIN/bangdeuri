@@ -1,9 +1,11 @@
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { AppContext } from '../App'
-import type { Decor } from '../art/decor'
+import { type Decor, normalizeDecor } from '../art/decor'
 import { ITEM_CATS, type ItemCat, ITEMS, itemById } from '../art/items'
 import { backend } from '../lib/backend'
+import { FIXTURES } from '../lib/home'
 import { interactionFor } from '../lib/interactions'
+import { mergeLayout } from '../lib/layout'
 import { CHARACTER_SPOT } from '../lib/iso'
 import { type AreaId, buildTown, houseArea, isArea, roomOfArea, safeVec, TOWN, uvToHouse, type Vec2 } from '../lib/town'
 import { RETURN_KEY, roomUrl } from '../lib/links'
@@ -17,7 +19,7 @@ import { type NowPlaying, turntable } from '../lib/turntable'
 import { type ToolId, toolFor } from '../lib/tools'
 import { firstVisitThisSession, store } from '../lib/storage'
 import type { ChatMessage, Drop, Room } from '../lib/types'
-import { type Ghost, type PlaceTap, World, type WorldControl } from '../three/World'
+import { type ArrangeSel, type Ghost, type PlaceTap, World, type WorldControl } from '../three/World'
 import { DecorEditor } from './DecorEditor'
 import { type Entry, EnterSheet } from './EnterSheet'
 import { Icon, SpriteIcon } from './PixelSprite'
@@ -26,6 +28,30 @@ import { Sheet } from './Sheet'
 import { ToolSheet } from './tools/ToolSheet'
 
 type Mode = 'view' | 'pick' | 'place' | 'write' | 'decorate'
+
+/** 처음부터 있는 가구 이름 (친구가 놓은 아이템은 아이템 이름) */
+const FIXTURE_NAMES: Record<string, string> = {
+  tv: 'TV',
+  sofa: '소파',
+  lowtable: '좌탁',
+  lamp: '스탠드',
+  turntable: '턴테이블',
+  calendar: '달력',
+  bed: '침대',
+  wardrobe: '옷장',
+  alarm: '알람시계',
+  desk: '책상',
+  chair: '의자',
+  bookshelf: '책장',
+  beanbag: '빈백',
+  fridge: '냉장고',
+  counter: '주방',
+  washer: '세탁기',
+  toilet: '변기',
+  basin: '세면대',
+  bathtub: '욕조',
+}
+const thingName = (item: string) => itemById(item)?.name ?? FIXTURE_NAMES[item] ?? '물건'
 type Status = 'loading' | 'ready' | 'missing' | 'error' | 'kicked' | 'full'
 
 const PAGE_SIZE = 5
@@ -118,6 +144,9 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [confirmReset, setConfirmReset] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  /** 가구 배치 바꾸는 중 · 그중 고른 물건 */
+  const [arranging, setArranging] = useState(false)
+  const [arrSel, setArrSel] = useState<ArrangeSel | null>(null)
   /** 미니미가 가구에 도착해서 연 도구 창 (그 가구가 있는 집) */
   const [tool, setTool] = useState<ToolId | null>(null)
   const [toolRoom, setToolRoom] = useState<string | null>(null)
@@ -393,7 +422,8 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           setDrops((d) => d.filter((x) => x.id !== e.id))
           break
         case 'room':
-          setRoom((r) => r && { ...r, motto: e.motto, decor: e.decor })
+          // 받은 꾸미기·배치는 믿지 않고 맞춘다
+          setRoom((r) => r && { ...r, motto: e.motto, decor: normalizeDecor(e.decor, r.theme) })
           break
         case 'song':
           hear({ by: e.by, song: e.song, at: e.at })
@@ -784,6 +814,45 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     select(null)
     setMode('decorate')
   }
+
+  // ─── 가구 배치 바꾸기 (방 주인: 내 집 안 가구·아이템, 골목에서는 내 마당 아이템) ───
+  const canArrange = ownerUi && entered && !placing && (inMyHouse || area === TOWN)
+  const startArrange = () => {
+    select(null)
+    setMenuOpen(false)
+    setChatOpen(false)
+    setArrSel(null)
+    setArranging(true)
+  }
+  const endArrange = () => {
+    setArrSel(null)
+    setArranging(false)
+  }
+  const rotateSel = (dir: 1 | -1) => {
+    if (!worldRef.current?.arrangeRotate(dir)) ctx.toast('벽이나 다른 물건에 걸려서 못 돌려요')
+  }
+  const saveArrange = async () => {
+    const changes = worldRef.current?.arrangeChanges() ?? []
+    if (!changes.length) return endArrange()
+    if (busy) return
+    setBusy(true)
+    try {
+      // 치워진 아이템 자리는 버린다
+      const keep = new Set([...FIXTURES.map((f) => f.id), ...drops.filter((d) => d.roomId === room.id).map((d) => d.id)])
+      const layout = mergeLayout(room.decor.layout, changes, (k) => keep.has(k))
+      const { layout: _old, ...rest } = room.decor
+      const decor: Decor = layout ? { ...rest, layout } : rest
+      await backend.updateDecor(room.id, decor)
+      setRoom({ ...room, decor })
+      send({ t: 'room', motto: room.motto, decor })
+      endArrange()
+      ctx.toast('배치를 저장했어요')
+    } catch (e) {
+      ctx.toast(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
   const closeMenu = () => setMenuOpen(false)
   const menuItem = (label: ReactNode, onClick: () => void, cls = '') => (
     <button
@@ -820,10 +889,13 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           ghost={ghost}
           selectedId={placing ? null : selected?.id}
           freshId={freshId}
-          bubble={placing ? null : bubble}
-          walkable={entered}
+          bubble={placing || arranging ? null : bubble}
+          walkable={entered && !arranging}
+          arrange={arranging ? { roomId: room.id } : null}
+          onArrangeSelect={setArrSel}
+          onArrangeBlocked={() => ctx.toast('여기엔 둘 수 없어서 원래 자리로 돌려놨어요')}
           onPlaceTap={mode === 'place' && item ? pickSpot : undefined}
-          onDropTap={placing ? undefined : (d) => select(selected?.id === d.id ? null : d)}
+          onDropTap={placing || arranging ? undefined : (d) => select(selected?.id === d.id ? null : d)}
           onMailTap={(rid) => setMailbox(rid)}
           onBackgroundTap={() => select(null)}
           onMeMove={(a, from, to) => send({ t: 'move', cid, area: a, from, to })}
@@ -863,7 +935,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           )}
         </div>
         {/* PC에서는 꾸미기·놓고 가기 버튼을 위쪽에 (휴대폰은 아래 떠 있는 버튼) */}
-        {entered && !placing && (
+        {entered && !placing && !arranging && (
           <button className="hud-btn hud-wide" onClick={ownerUi && inMyHouse ? startDecorate : startPick}>
             {ownerUi && inMyHouse ? (
               <>
@@ -912,7 +984,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
       </header>
 
       {/* 어디로 갈지: 집 안이면 밖으로, 골목이면 동네 집 목록 */}
-      {entered && !placing && (
+      {entered && !placing && !arranging && (
         <nav className="hud-where" aria-label="이동">
           {areaRoom ? (
             <button className="chip is-on" onClick={() => worldRef.current?.goOut()}>
@@ -921,6 +993,11 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           ) : (
             <button className="chip is-on" onClick={() => setTownOpen(true)}>
               <Icon id="home" size={12} /> 동네 집 {townRooms.length}채
+            </button>
+          )}
+          {canArrange && (
+            <button className="chip" onClick={startArrange}>
+              <Icon id="move" size={12} /> {inMyHouse ? '가구 옮기기' : '마당 꾸미기'}
             </button>
           )}
         </nav>
@@ -941,6 +1018,13 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
                   </>,
                   startDecorate,
                 )}
+                {canArrange &&
+                  menuItem(
+                    <>
+                      <Icon id="move" size={14} /> {inMyHouse ? '가구 배치 바꾸기' : '마당 아이템 옮기기'}
+                    </>,
+                    startArrange,
+                  )}
                 {menuItem(
                   <>
                     <Icon id="note" size={14} /> {room.motto ? '오늘의 한마디 고치기' : '오늘의 한마디 쓰기'}
@@ -1030,7 +1114,45 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
       {/* 아래: 놓기 버튼 · 수다방 */}
       {entered && (
         <div className="hud-bottom">
-          {placing ? (
+          {arranging ? (
+            <div className="arrange-panel" role="group" aria-label="배치 바꾸기">
+              <p className="arrange-hint">
+                {arrSel ? (
+                  <>
+                    <b>{thingName(arrSel.item)}</b> 끌어서 옮기고, 아래 버튼으로 돌려요
+                  </>
+                ) : inMyHouse ? (
+                  '옮길 가구나 아이템을 꾹 잡고 끌어 보세요'
+                ) : (
+                  '내 마당에 놓인 아이템을 꾹 잡고 끌어 보세요'
+                )}
+              </p>
+              {arrSel && (
+                <div className="row arrange-tools">
+                  <button className="btn" onClick={() => rotateSel(1)} aria-label="왼쪽으로 돌리기">
+                    <span className="arrange-turn is-left">
+                      <Icon id="refresh" size={14} />
+                    </span>
+                    왼쪽으로
+                  </button>
+                  <button className="btn" onClick={() => rotateSel(-1)} aria-label="오른쪽으로 돌리기">
+                    <Icon id="refresh" size={14} /> 오른쪽으로
+                  </button>
+                  <button className="btn" onClick={() => worldRef.current?.arrangeReset()}>
+                    <Icon id="undo" size={14} /> 처음 자리
+                  </button>
+                </div>
+              )}
+              <div className="row">
+                <button className="btn" onClick={endArrange} disabled={busy}>
+                  취소
+                </button>
+                <button className="btn btn-primary" onClick={saveArrange} disabled={busy}>
+                  {busy ? '저장 중…' : '이대로 저장'}
+                </button>
+              </div>
+            </div>
+          ) : placing ? (
             <div className="row hud-place">
               <button className="btn" onClick={() => setMode('pick')}>
                 다시 고르기
