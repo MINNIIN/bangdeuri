@@ -125,8 +125,11 @@ drop policy if exists "profiles readable" on public.profiles;
 create policy "profiles readable" on public.profiles for select using (true);
 drop policy if exists "rooms readable" on public.rooms;
 create policy "rooms readable" on public.rooms for select using (true);
+-- 우편함 편지는 집 주인만 읽는다 (다른 사람은 list_drops로 '봉한 편지'만 받는다)
 drop policy if exists "drops readable" on public.drops;
-create policy "drops readable" on public.drops for select using (true);
+create policy "drops readable" on public.drops for select using (
+  place <> 'mail' or exists (select 1 from public.rooms r where r.id = room_id and r.owner_id = auth.uid())
+);
 drop policy if exists "messages readable" on public.messages;
 create policy "messages readable" on public.messages for select using (true);
 
@@ -327,6 +330,54 @@ begin
   on conflict (room_id, member_id) do update set at = now();
 end $$;
 
+-- 방의 아이템·방명록. 남의 우편함 편지는 넣은 것·이름·한마디를 비우고 hidden으로 준다 (편지가 있다는 것과 시각만 보인다)
+create or replace function public.list_drops(p_room text)
+returns table (
+  id uuid, room_id text, item text, place text, u real, v real,
+  nickname text, message text, created_at timestamptz, hidden boolean
+)
+language sql stable security definer set search_path = public
+as $$
+  select d.id, d.room_id,
+         case when s.sealed then '' else d.item end,
+         d.place, d.u, d.v,
+         case when s.sealed then '' else d.nickname end,
+         case when s.sealed then '' else d.message end,
+         d.created_at, s.sealed
+    from drops d
+    cross join lateral (
+      select d.place = 'mail'
+             and not exists (select 1 from rooms r where r.id = d.room_id and r.owner_id = auth.uid()) as sealed
+    ) s
+   where d.room_id = p_room
+   order by d.created_at
+$$;
+
+-- 메인 화면 '친구 방': 내가 놀러 간 방 + 내 방에 놀러 온 회원의 가장 최근 방 (주인마다 하나, 최근 순 30개, 내 방 빼고)
+-- 기기 저장소가 아니라 서버 기록이라 카톡·인스타 안 브라우저, 홈 화면 앱, PC 어디서 열어도 같다
+create or replace function public.friend_rooms()
+returns table (room_id text, at timestamptz)
+language sql stable security definer set search_path = public
+as $$
+  with picks as (
+    select v.room_id as id, v.at from room_visits v where v.member_id = auth.uid()
+    union all
+    select (select r.id from rooms r where r.owner_id = v.member_id order by r.created_at desc limit 1), v.at
+      from room_visits v join rooms mine on mine.id = v.room_id
+     where mine.owner_id = auth.uid()
+  ),
+  ranked as (
+    select p.id, r.owner_id, max(p.at) as at
+      from picks p join rooms r on r.id = p.id
+     where p.id is not null and r.owner_id <> auth.uid()
+     group by p.id, r.owner_id
+  ),
+  one_per_owner as (
+    select distinct on (owner_id) id, at from ranked order by owner_id, at desc
+  )
+  select id, at from one_per_owner order by at desc limit 30
+$$;
+
 -- 이웃 끊기: 메인 화면 '놀러 간 방'에서 지우면 그 방 주인과 오간 기록을 양쪽 다 지운다 (다시 놀러 가면 다시 생긴다)
 create or replace function public.forget_neighbor(p_room text)
 returns void
@@ -379,6 +430,8 @@ revoke execute on function public.add_drop(text, text, text, real, real, text, t
 revoke execute on function public.neighbor_room_ids(text) from public;
 revoke execute on function public.become_neighbor(text) from public;
 revoke execute on function public.forget_neighbor(text) from public, anon;
+revoke execute on function public.list_drops(text) from public;
+revoke execute on function public.friend_rooms() from public, anon;
 revoke execute on function public.post_message(text, text, text) from public;
 revoke execute on function public.visit_room(text) from public;
 
@@ -389,6 +442,8 @@ grant execute on function public.add_drop(text, text, text, real, real, text, te
 grant execute on function public.neighbor_room_ids(text) to anon, authenticated;
 grant execute on function public.become_neighbor(text) to authenticated;
 grant execute on function public.forget_neighbor(text) to authenticated;
+grant execute on function public.list_drops(text) to anon, authenticated;
+grant execute on function public.friend_rooms() to authenticated;
 grant execute on function public.post_message(text, text, text) to anon, authenticated;
 grant execute on function public.visit_room(text) to anon, authenticated;
 

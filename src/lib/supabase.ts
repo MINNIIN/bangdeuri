@@ -34,6 +34,7 @@ interface DropRow {
   nickname: string
   message: string
   created_at: string
+  hidden?: boolean | null
 }
 
 interface MessageRow {
@@ -120,6 +121,7 @@ export const toDrop = (r: DropRow): Drop => ({
   nickname: r.nickname,
   message: r.message,
   createdAt: r.created_at,
+  ...(r.hidden != null && { hidden: r.hidden }),
 })
 
 export const toMessage = (r: MessageRow): ChatMessage => ({
@@ -255,6 +257,17 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     async forgetNeighbor(roomId) {
       check(await sb.rpc('forget_neighbor', { p_room: roomId }))
     },
+    async friendRooms() {
+      if (!(await uid())) return []
+      const picks = (check(await sb.rpc('friend_rooms')) as { room_id: string; at: string }[] | null) ?? []
+      if (!picks.length) return []
+      const rows = check(await sb.from('rooms').select(ROOM_SELECT).in('id', picks.map((p) => p.room_id))) as unknown as RoomRow[]
+      const byId = new Map(rows.map((r) => [r.id, toRoom(r)]))
+      return picks.flatMap((p) => {
+        const room = byId.get(p.room_id)
+        return room ? [{ room, at: p.at }] : []
+      })
+    },
     async neighbors(roomId) {
       const ids = (check(await sb.rpc('neighbor_room_ids', { p_room: roomId })) as string[] | null) ?? []
       if (!ids.length) return []
@@ -264,10 +277,17 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     },
 
     async listDrops(roomId) {
-      const rows = check(
-        await sb.from('drops').select('*').eq('room_id', roomId).order('created_at', { ascending: true }),
-      ) as DropRow[]
-      return rows.map(toDrop)
+      // 우편함 편지는 집 주인에게만 내용이 오고, 다른 사람에게는 봉한 채로 온다 (list_drops)
+      const res = await sb.rpc('list_drops', { p_room: roomId })
+      if (res.error?.code === 'PGRST202') {
+        // 서버에 list_drops가 아직 없을 때 (DB보다 앱이 먼저 배포된 경우): 예전처럼 직접 읽는다
+        console.error('list_drops 없음: supabase/schema.sql을 적용해 주세요')
+        const rows = check(
+          await sb.from('drops').select('*').eq('room_id', roomId).order('created_at', { ascending: true }),
+        ) as DropRow[]
+        return rows.map(toDrop)
+      }
+      return (check(res) as DropRow[]).map(toDrop)
     },
     async addDrop(roomId, d) {
       const row = check(

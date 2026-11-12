@@ -64,13 +64,32 @@ const limb = (len: number, r0: number, r1: number) =>
     return new THREE.LatheGeometry(pts, 18)
   })
 
-/** (반지름, 높이) 점들을 돌려 깎은 몸통·옷 */
-const lathe = (key: string, pts: [number, number][]) =>
+/**
+ * (반지름, 높이) 점들을 돌려 깎은 몸통·옷. 점은 아래에서 위 순서로 준다
+ * (반대로 주면 겉면이 안쪽을 향해서 앞면이 안 그려지고 속이 비쳐 보인다).
+ * pleat: 치마 주름 — 허리(top)에서 단(hem)으로 갈수록 깊어지는 물결
+ */
+const lathe = (key: string, pts: [number, number][], pleat?: { top: number; hem: number; n: number; amp: number }) =>
   shape(`lathe:${key}`, () => {
     const g = new THREE.LatheGeometry(
       pts.map(([r, y]) => new THREE.Vector2(Math.max(1e-4, r), y)),
-      28,
+      pleat ? 72 : 28,
     )
+    if (pleat) {
+      const p = g.attributes.position as THREE.BufferAttribute
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i)
+        const y = p.getY(i)
+        const z = p.getZ(i)
+        const r = Math.hypot(x, z)
+        if (r < 1e-3) continue
+        const k = THREE.MathUtils.clamp((pleat.top - y) / (pleat.top - pleat.hem), 0, 1)
+        const a = Math.atan2(x, z)
+        const s = 1 + Math.cos(a * pleat.n) * pleat.amp * k * k
+        p.setX(i, x * s)
+        p.setZ(i, z * s)
+      }
+    }
     g.computeVertexNormals()
     return g
   })
@@ -163,7 +182,19 @@ function lock(pts: THREE.Vector3[], r0: number, r1: number, flat = 0.45, seg = 1
 
 /** 정수리를 덮는 바탕 (뒤로 기울여 앞은 이마가 드러나고 뒤는 목덜미까지) */
 function capGeo(theta: number, tilt: number) {
-  const g = new THREE.SphereGeometry(HEAD_R + 0.022, 36, 22, 0, Math.PI * 2, 0, theta)
+  const g = new THREE.SphereGeometry(HEAD_R + 0.022, 96, 30, 0, Math.PI * 2, 0, theta)
+  // 결: 정수리 가마에서 사방으로 흘러내리는 얕은 골 (매끈한 헬멧처럼 보이지 않게)
+  const p = g.attributes.position as THREE.BufferAttribute
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i)
+    const y = p.getY(i)
+    const z = p.getZ(i)
+    const polar = Math.acos(THREE.MathUtils.clamp(y / (HEAD_R + 0.022), -1, 1))
+    const fade = THREE.MathUtils.smoothstep(polar, 0.15, 0.7)
+    const s = 1 + Math.cos(Math.atan2(x, z) * 22) * 0.022 * fade
+    p.setXYZ(i, x * s, y, z * s)
+  }
+  g.computeVertexNormals()
   g.rotateX(-tilt)
   g.scale(1.07, 0.98, 1.03)
   return g
@@ -178,8 +209,8 @@ const sphereAt = (r: number, at: THREE.Vector3, sc: [number, number, number] = [
 
 /** 머리 모양 하나 = 바탕색 덩어리 + 밝은 앞머리 덩어리 (각각 하나로 합친다) */
 const hairCache = new Map<string, { base: THREE.BufferGeometry | null; hi: THREE.BufferGeometry | null }>()
-function hairGeos(style: AvatarLook['hair'], hatOn: boolean) {
-  const key = `${style}:${hatOn}`
+function hairGeos(style: AvatarLook['hair'], hatOn: boolean, hood = false) {
+  const key = `${style}:${hatOn}:${hood}`
   const hit = hairCache.get(key)
   if (hit) return hit
   {
@@ -207,9 +238,25 @@ function hairGeos(style: AvatarLook['hair'], hatOn: boolean) {
       for (const s of [-1, 1])
         add(base, lock([sph(s * 1.12, hatOn ? 0.55 : 0.85, 0.29), sph(s * 1.28, 0.3, 0.334), sph(s * 1.33, -0.05, 0.334), sph(s * 1.3, low, 0.32)], 0.085, 0.012, 0.32))
     }
+    // 뒤통수를 덮으며 목덜미로 내려오는 짧은 가닥 (짧은 머리)
+    const nape = (low: number) => {
+      for (let a = 1.5; a <= Math.PI + 0.01; a += 0.27)
+        for (const s of a > Math.PI - 0.05 ? [1] : [-1, 1]) {
+          const az = s * a
+          add(base, lock([sph(az, hatOn ? 0.55 : 0.95, 0.3), sph(az, 0.35, 0.335), sph(az, -0.1, 0.338), sph(az * 0.98, low, 0.31)], 0.1, 0.02, 0.32))
+        }
+    }
+    // 목덜미에서 정수리 뒤 똥머리로 빗어 올린 가닥
+    const upsweep = (to: THREE.Vector3) => {
+      for (let a = 1.4; a <= Math.PI + 0.01; a += 0.3)
+        for (const s of a > Math.PI - 0.05 ? [1] : [-1, 1]) {
+          const az = s * a
+          add(base, lock([sph(az, -0.45, 0.31), sph(az, -0.05, 0.338), sph(az, 0.45, 0.335), to.clone().add(sph(az, 0, 0.05))], 0.09, 0.03, 0.32))
+        }
+    }
     // 머리 둘레를 감싸며 내려오는 가닥 (단발·긴 머리)
-    const ring = (from: number, end: (az: number) => THREE.Vector3[]) => {
-      const n = Math.round((Math.PI - from) / 0.26)
+    const ring = (from: number, end: (az: number) => THREE.Vector3[], step = 0.26) => {
+      const n = Math.round((Math.PI - from) / step)
       for (let i = 0; i <= n; i++) {
         const az = from + ((Math.PI - from) * i) / n
         for (const s of i === n ? [1] : [-1, 1]) {
@@ -231,8 +278,9 @@ function hairGeos(style: AvatarLook['hair'], hatOn: boolean) {
             hi,
             lock([new THREE.Vector3(0, 0.29, 0.02), new THREE.Vector3(0.015, 0.39, 0.05), new THREE.Vector3(0.05, 0.44, 0.12), new THREE.Vector3(0.1, 0.42, 0.18)], 0.03, 0.006, 0.6),
           )
-        // 뒤통수 끝을 살짝 뻗치게
-        for (const a of [-2.55, -2.85, 3.14, 2.85, 2.55]) add(base, lock([sph(a, 0.3, 0.3), sph(a, -0.3, 0.33), sph(a * 1.01, -0.58, 0.33)], 0.09, 0.015, 0.32))
+        // 뒤통수를 결 따라 덮고, 끝은 살짝 뻗치게
+        nape(-0.45)
+        for (const a of [-2.55, -2.85, 3.14, 2.85, 2.55]) add(base, lock([sph(a, 0.3, 0.3), sph(a, -0.3, 0.335), sph(a * 1.01, -0.58, 0.335)], 0.09, 0.015, 0.32))
         break
       }
       case 'bob': {
@@ -245,12 +293,22 @@ function hairGeos(style: AvatarLook['hair'], hatOn: boolean) {
       case 'long': {
         add(base, capGeo(2.05, 0.5))
         bangs()
-        ring(1.0, (a) => {
-          const back = Math.abs(a) > 1.7
-          const o = sph(a, 0, 1)
-          const r = back ? 0.33 : 0.3
-          return [sph(a, -0.35, 0.36), new THREE.Vector3(o.x * r, -0.5, o.z * r - (back ? 0.02 : 0)), new THREE.Vector3(o.x * (r - 0.02), -0.78, o.z * (r - 0.03))]
-        })
+        // 앞쪽(얼굴 옆)은 어깨 아래까지, 뒤로 갈수록 길어져 등 가운데까지. 끝은 살짝 안으로
+        ring(
+          1.0,
+          (a) => {
+            const back = THREE.MathUtils.smoothstep(Math.abs(a), 1.2, 2.6)
+            const o = sph(a, 0, 1)
+            const r = 0.3 + back * 0.03
+            const low = -0.42 - back * 0.16
+            return [
+              sph(a, -0.35, 0.355),
+              new THREE.Vector3(o.x * r, low + 0.14, o.z * r),
+              new THREE.Vector3(o.x * (r - 0.03), low, o.z * (r - 0.035)),
+            ]
+          },
+          0.17,
+        )
         break
       }
       case 'bun': {
@@ -260,6 +318,7 @@ function hairGeos(style: AvatarLook['hair'], hatOn: boolean) {
         if (!hatOn) {
           // 정수리 뒤로 묶어 올린 똥머리 (감아 올린 가닥 + 동그란 덩이)
           add(base, sphereAt(0.125, new THREE.Vector3(0, 0.33, -0.1), [1, 0.92, 1]))
+          upsweep(new THREE.Vector3(0, 0.3, -0.1))
           for (let i = 0; i < 5; i++) {
             const a = (i / 5) * Math.PI * 2
             add(hi, lock([new THREE.Vector3(0, 0.25, -0.06), new THREE.Vector3(Math.sin(a) * 0.1, 0.3, -0.1 + Math.cos(a) * 0.1), new THREE.Vector3(Math.sin(a + 1.2) * 0.11, 0.39, -0.1 + Math.cos(a + 1.2) * 0.11)], 0.04, 0.01, 0.6, 10, 8))
@@ -270,19 +329,25 @@ function hairGeos(style: AvatarLook['hair'], hatOn: boolean) {
       case 'curly': {
         add(base, capGeo(1.92, 0.45))
         // 피보나치로 고르게 뿌린 곱슬 덩이
-        const n = 46
+        const n = 110
         for (let i = 0; i < n; i++) {
-          const y = 1 - (i / (n - 1)) * 1.45
+          const y = 1 - (i / (n - 1)) * 1.5
           const rr = Math.sqrt(Math.max(0, 1 - y * y))
           const a = i * 2.39996
           const d = new THREE.Vector3(Math.sin(a) * rr, y, Math.cos(a) * rr)
           // 얼굴은 비워 둔다
-          if (d.z > 0.35 && d.y < 0.45) continue
-          if (hatOn && d.y > 0.25) continue
-          add(i % 3 ? base : hi, sphereAt(0.085, d.multiplyScalar(HEAD_R + 0.04)))
+          if (d.z > 0.38 && d.y < 0.45) continue
+          // 모자를 쓰면 챙 아래로만 (위쪽 곱슬이 모자를 뚫고 나오지 않게).
+          // 곰돌이 모자는 뒤통수까지 덮는 후드라 얼굴 둘레(볼 옆)만 남긴다
+          if (hatOn && d.y > -0.05) continue
+          if (hood && d.y * 0.85 - d.z * 0.52 > -0.45) continue
+          // 크기·높이를 조금씩 달리해 구슬을 붙인 것처럼 보이지 않게
+          const k = Math.sin(i * 12.9898) * 0.5 + 0.5
+          const r = 0.058 + k * 0.03
+          add(i % 4 ? base : hi, sphereAt(r, d.multiplyScalar(HEAD_R + 0.025 + k * 0.025), [1, 0.9, 1]))
         }
         // 이마 위 곱슬 앞머리
-        for (let k = -2; k <= 2; k++) add(k % 2 ? base : hi, sphereAt(0.075, sph(k * 0.3, hatOn ? 0.42 : 0.5, 0.33)))
+        for (let k = -3; k <= 3; k++) add(k % 2 ? base : hi, sphereAt(0.06 + (k % 2 ? 0.008 : 0), sph(k * 0.22, hatOn ? 0.3 : 0.52, hatOn ? 0.315 : 0.33)))
         break
       }
     }
@@ -628,31 +693,47 @@ export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
   if (look.bottom === 'skirt')
     torso.add(
       part(
-        lathe('skirt', [
-          [0, 0.44],
-          [0.17, 0.445],
-          [0.19, 0.4],
-          [0.228, 0.33],
-          [0.262, 0.265],
-          [0.255, 0.252],
-          [0.0, 0.26],
-        ]),
+        lathe(
+          'skirt',
+          [
+            [0, 0.275],
+            [0.236, 0.262],
+            [0.262, 0.254],
+            [0.268, 0.268],
+            [0.236, 0.33],
+            [0.196, 0.4],
+            [0.176, 0.432],
+            [0.168, 0.448],
+            [0, 0.452],
+          ],
+          { top: 0.43, hem: 0.26, n: 14, amp: 0.045 },
+        ),
         bottomMat,
       ),
     )
   if (look.bottom === 'dress')
     torso.add(
       part(
-        lathe('dress', [
-          [0, 0.58],
-          [0.158, 0.583],
-          [0.17, 0.53],
-          [0.18, 0.47],
-          [0.215, 0.39],
-          [0.27, 0.25],
-          [0.262, 0.236],
-          [0, 0.24],
-        ]),
+        // 윗몸은 셔츠보다 살짝 크게 덮고(어깨선 아래까지), 허리에서 퍼진다
+        lathe(
+          'dress',
+          [
+            [0, 0.25],
+            [0.24, 0.24],
+            [0.275, 0.232],
+            [0.282, 0.248],
+            [0.236, 0.33],
+            [0.2, 0.4],
+            [0.186, 0.44],
+            [0.184, 0.47],
+            [0.176, 0.52],
+            [0.172, 0.565],
+            [0.164, 0.592],
+            [0.14, 0.606],
+            [0, 0.61],
+          ],
+          { top: 0.44, hem: 0.24, n: 12, amp: 0.04 },
+        ),
         bottomMat,
       ),
     )
@@ -732,9 +813,9 @@ export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
     head.add(s)
   }
   const hatOn = look.hat === 'cap' || look.hat === 'beanie' || look.hat === 'bear'
-  const hg = hairGeos(look.hair, hatOn)
+  const hg = hairGeos(look.hair, hatOn, look.hat === 'bear')
   if (hg.base) head.add(part(hg.base, mat(look.hairColor, { rough: 0.48 })))
-  if (hg.hi) head.add(part(hg.hi, mat(tint(look.hairColor, 0.06), { rough: 0.44 })))
+  if (hg.hi) head.add(part(hg.hi, mat(tint(look.hairColor, 0.04), { rough: 0.44 })))
   if (look.hat !== 'none') head.add(hat(look))
   body.add(head)
 

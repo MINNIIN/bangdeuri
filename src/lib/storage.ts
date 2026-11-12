@@ -14,6 +14,8 @@ export interface VisitedRoom {
   at: string
   /** 익명이 아니라 이름을 밝히고 들어간 적이 있다 (나중에 내 방을 만들면 이 방과 이웃이 된다) */
   named?: boolean
+  /** 로그인한 계정의 서버 기록(이웃)으로 옮겼다. 그 뒤로는 어느 기기에서 열어도 보인다 */
+  synced?: boolean
 }
 
 /** 놀러 간 방은 최근 순으로 이만큼만 기억한다 */
@@ -100,7 +102,8 @@ export const store = {
     const prev = list.find((v) => v.id === room.id)
     const rest = list.filter((v) => v.id !== room.id)
     const named = room.named || prev?.named
-    s.visits = [{ ...room, at, ...(named ? { named: true } : {}) }, ...rest].slice(0, VISITS_KEEP)
+    const synced = prev?.synced && !room.named ? true : undefined
+    s.visits = [{ ...room, at, ...(named ? { named: true } : {}), ...(synced ? { synced } : {}) }, ...rest].slice(0, VISITS_KEEP)
     save(s)
   },
   deviceKey(): string {
@@ -113,6 +116,12 @@ export const store = {
   forgetVisit(roomId: string) {
     const s = load()
     s.visits = (Array.isArray(s.visits) ? s.visits : []).filter((v) => v.id !== roomId)
+    save(s)
+  },
+  markVisitsSynced(roomIds: string[]) {
+    if (!roomIds.length) return
+    const s = load()
+    s.visits = (Array.isArray(s.visits) ? s.visits : []).map((v) => (roomIds.includes(v.id) ? { ...v, synced: true } : v))
     save(s)
   },
 }

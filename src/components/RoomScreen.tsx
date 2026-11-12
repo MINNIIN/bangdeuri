@@ -10,7 +10,7 @@ import { CHARACTER_SPOT } from '../lib/iso'
 import { type AreaId, buildTown, guestSpot, houseArea, isArea, roomOfArea, safeVec, TOWN, uvToHouse } from '../lib/town'
 import { RETURN_KEY, roomUrl } from '../lib/links'
 import { MAX_GUESTS, newCid, type Peer, type RoomChannel, type RoomEvent } from '../lib/realtime'
-import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, todayCount } from '../lib/rules'
+import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, sealLetter, todayCount } from '../lib/rules'
 import { renderStoryImage } from '../lib/shareImage'
 import { bgm, bgmEnabled } from '../lib/music'
 import { isSafeSong } from '../lib/songs'
@@ -110,6 +110,8 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [neighbors, setNeighbors] = useState<Room[]>([])
   /** 동네 모든 집의 아이템 */
   const [drops, setDrops] = useState<Drop[]>([])
+  /** 그 집 주인인지 (실시간 이벤트 안에서도 최신 값을 보려고 ref로) */
+  const ownsRef = useRef<(rid: string) => boolean>(() => false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [status, setStatus] = useState<Status>('loading')
   /** 손님이 입장 화면에서 고른 이름 (방 주인은 고를 것 없이 바로 내 미니미) */
@@ -462,10 +464,22 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
         case 'chat-del':
           setMessages((m) => m.filter((x) => x.id !== e.id))
           break
-        case 'drop':
-          setDrops((d) => (d.some((x) => x.id === e.drop.id) ? d : [...d, { ...e.drop, place: e.drop.place ?? 'in' }]))
-          setFreshId(e.drop.id)
+        case 'drop': {
+          const got: Drop = { ...e.drop, place: e.drop.place ?? 'in' }
+          const mine = ownsRef.current(got.roomId)
+          if (got.place === 'mail' && mine && got.hidden) {
+            // 내 우편함에 편지가 왔다: 내용은 실시간으로 오지 않으니 서버에서 받아 온다
+            void backend
+              .listDrops(got.roomId)
+              .then((fresh) => setDrops((d) => [...d.filter((x) => x.roomId !== got.roomId), ...fresh]))
+              .catch(() => undefined)
+          }
+          // 예전 앱이 편지를 봉하지 않고 보내도 주인이 아니면 보이지 않게
+          const shown = got.place === 'mail' && !mine ? sealLetter(got) : got
+          setDrops((d) => (d.some((x) => x.id === shown.id) ? d : [...d, shown]))
+          setFreshId(shown.id)
           break
+        }
         case 'drop-del':
           setDrops((d) => d.filter((x) => x.id !== e.id))
           break
@@ -551,6 +565,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const inMyHouse = areaRoom === room.id
   /** 그 집 주인인지 (치우기 · 우편함 정리) */
   const ownsRoom = (rid: string) => !!ctx.user && roomsById.get(rid)?.ownerId === ctx.user.id && !guestView
+  ownsRef.current = ownsRoom
   const nickOf = (rid: string) => roomsById.get(rid)?.owner.nickname ?? '친구'
 
   const guestbook = [...hostDrops].reverse()
@@ -623,7 +638,8 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
       store.markDropped(spot.roomId)
       cancelDrop()
       setMessage('')
-      send({ t: 'drop', cid, drop: d })
+      // 우편함 편지는 내용을 봉해서 보낸다 (실시간 채널은 동네 사람 모두가 받는다)
+      send({ t: 'drop', cid, drop: d.place === 'mail' ? sealLetter(d) : d })
       if (!ownsRoom(spot.roomId)) void backend.notify(spot.roomId, { kind: 'drop', name: entry.name, item: itemById(d.item)?.name })
       ctx.toast(`${nickOf(spot.roomId)}네 ${PLACE_NAME[d.place]}에 두고 왔어요!`)
     } catch (e) {
@@ -1388,12 +1404,30 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
 
       {/* 우편함 */}
       <Sheet open={mailbox !== null} onClose={() => setMailbox(null)} title={`${mailbox ? nickOf(mailbox) : ''}네 우편함`}>
+        <p className="panel-tip">🔒 우편함 편지는 {mailbox && ownsRoom(mailbox) ? '나만' : `${mailbox ? nickOf(mailbox) : '집 주인'}만`} 읽을 수 있어요</p>
         {mailList.length === 0 ? (
           <p className="muted empty">우편함이 비어 있어요. 선물 두고 오기로 편지를 넣을 수 있어요</p>
         ) : (
           <ul className="book">
             {mailList.map((d) => {
               const it = itemById(d.item)
+              if (d.hidden)
+                return (
+                  <li key={d.id}>
+                    <div className={`note is-sealed ${d.id === freshId ? 'is-fresh' : ''}`}>
+                      <span className="sealed-icon" aria-hidden>
+                        🔒
+                      </span>
+                      <span className="note-body">
+                        <span className="note-head">
+                          <b>비밀 편지</b>
+                          <span className="muted">{timeAgo(d.createdAt)}</span>
+                        </span>
+                        <span className="note-text muted">{mailbox ? nickOf(mailbox) : '집 주인'}만 열어 볼 수 있어요</span>
+                      </span>
+                    </div>
+                  </li>
+                )
               return (
                 <li key={d.id}>
                   <div className={`note ${d.id === freshId ? 'is-fresh' : ''}`}>
@@ -1429,6 +1463,25 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
             <ul className="book">
               {pageItems.map((d) => {
                 const it = itemById(d.item)
+                if (d.hidden)
+                  return (
+                    <li key={d.id}>
+                      <button className={`note is-sealed ${d.id === freshId ? 'is-fresh' : ''}`} onClick={() => openFromBook(d)}>
+                        <span className="sealed-icon" aria-hidden>
+                          🔒
+                        </span>
+                        <span className="note-body">
+                          <span className="note-head">
+                            <b>비밀 편지</b>
+                            <span className="muted">
+                              {PLACE_NAME[d.place]} · {timeAgo(d.createdAt)}
+                            </span>
+                          </span>
+                          <span className="note-text muted">{nickOf(d.roomId)}만 열어 볼 수 있어요</span>
+                        </span>
+                      </button>
+                    </li>
+                  )
                 return (
                   <li key={d.id}>
                     <button className={`note ${d.id === freshId ? 'is-fresh' : ''}`} onClick={() => openFromBook(d)}>
@@ -1511,6 +1564,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
             )}
             <b>{entry?.name}</b> 이름으로 남겨요
           </p>
+          {spot?.place === 'mail' && <p className="panel-tip">🔒 우편함 편지는 {nickOf(spot.roomId)}만 읽을 수 있어요. 다른 친구들에게는 편지가 있다는 것만 보여요</p>}
           <label className="field">
             <span>
               한마디 <em>{charLength(message)}/{MESSAGE_MAX}</em>

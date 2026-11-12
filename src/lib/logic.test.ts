@@ -200,6 +200,37 @@ describe('로컬 모드 저장소', () => {
     expect((await a.neighbors(roomA.id)).map((r) => r.id)).toContain(roomB.id)
   })
 
+  it('친구 방 목록은 서버 이웃 기록에서 온다 (어느 기기에서 열어도 같다)', async () => {
+    const db = memoryStorage()
+    const a = createLocalBackend(db, memoryStorage())
+    const b = createLocalBackend(db, memoryStorage())
+    const c = createLocalBackend(db, memoryStorage())
+    await a.signUpEmail('a@test.kr', 'secret1')
+    await a.saveProfile({ nickname: '민수', look: PRESET_LOOKS[0].look })
+    const roomA = await a.createRoom(newRoom)
+    await b.signUpEmail('b@test.kr', 'secret1')
+    await b.saveProfile({ nickname: '지윤', look: PRESET_LOOKS[1].look })
+    const roomB = await b.createRoom({ ...newRoom, name: '지윤' })
+    await c.signUpEmail('c@test.kr', 'secret1')
+    await c.saveProfile({ nickname: '하린', look: PRESET_LOOKS[2].look })
+    const roomC = await c.createRoom({ ...newRoom, name: '하린' })
+    expect(await a.friendRooms()).toEqual([])
+    // 민수가 지윤네에 놀러 갔고, 하린이 민수네에 놀러 왔다. 내 방은 목록에 없다
+    await a.becomeNeighbor(roomB.id)
+    await c.becomeNeighbor(roomA.id)
+    await a.becomeNeighbor(roomA.id)
+    const list = await a.friendRooms()
+    expect(list.map((f) => f.room.id).sort()).toEqual([roomB.id, roomC.id].sort())
+    expect(list.every((f) => typeof f.at === 'string' && f.at.length > 0)).toBe(true)
+    // 같은 계정이면 다른 기기(다른 로컬 저장소)에서도 같은 목록
+    const a2 = createLocalBackend(db, memoryStorage())
+    await a2.signInEmail('a@test.kr', 'secret1')
+    expect((await a2.friendRooms()).map((f) => f.room.id).sort()).toEqual([roomB.id, roomC.id].sort())
+    // 지우면 목록에서도 빠진다
+    await a.forgetNeighbor(roomB.id)
+    expect((await a.friendRooms()).map((f) => f.room.id)).toEqual([roomC.id])
+  })
+
   it('선물은 집 안 · 마당 · 우편함에 둘 수 있다', async () => {
     const be = createLocalBackend(memoryStorage(), memoryStorage())
     await be.signUpEmail('c@test.kr', 'secret1')
@@ -208,6 +239,26 @@ describe('로컬 모드 저장소', () => {
     await be.addDrop(r.id, { ...drop, place: 'yard' })
     await be.addDrop(r.id, { ...drop, place: 'mail' })
     expect((await be.listDrops(r.id)).map((d) => d.place)).toEqual(['yard', 'mail'])
+  })
+
+  it('우편함 편지는 집 주인만 읽고, 다른 사람에게는 "비밀 편지"가 있다는 것만 보인다', async () => {
+    const { owner, guest } = await twoTabs()
+    const room = await owner.createRoom(newRoom)
+    await guest.addDrop(room.id, { ...drop, place: 'yard', message: '마당에 둠' })
+    const sent = await guest.addDrop(room.id, { ...drop, place: 'mail', nickname: '지윤', message: '생일 축하해' })
+    // 보낸 사람은 방금 넣은 편지를 그대로 돌려받는다
+    expect(sent.message).toBe('생일 축하해')
+
+    const mine = await owner.listDrops(room.id)
+    expect(mine.find((d) => d.place === 'mail')).toMatchObject({ nickname: '지윤', message: '생일 축하해', hidden: false })
+
+    const theirs = await guest.listDrops(room.id)
+    expect(theirs).toHaveLength(2)
+    expect(theirs.find((d) => d.place === 'yard')?.message).toBe('마당에 둠')
+    const letter = theirs.find((d) => d.place === 'mail')!
+    expect(letter.hidden).toBe(true)
+    expect([letter.item, letter.nickname, letter.message]).toEqual(['', '', ''])
+    expect(letter.createdAt).toBe(sent.createdAt)
   })
 
   /** 같은 DB를 쓰는 두 탭: 방 주인 탭, 손님 탭 */

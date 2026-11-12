@@ -42,6 +42,11 @@ export interface Backend {
    * 회원이 내 이름으로 방에 들어가면(becomeNeighbor) 서로 이웃이 된다
    */
   neighbors(roomId: string): Promise<Room[]>
+  /**
+   * 메인 화면 '친구 방': 로그인한 내가 놀러 간 방 + 내 방에 놀러 온 회원의 방 (최근 순, 내 방 빼고).
+   * 서버 기록이라 카톡·인스타 안 브라우저, 홈 화면 앱, PC 어디서 열어도 같다. 로그인 안 했으면 빈 목록
+   */
+  friendRooms(): Promise<{ room: Room; at: string }[]>
   /** 로그인한 회원이 내 이름으로 이 방에 들어왔다 (익명이면 부르지 않는다) */
   becomeNeighbor(roomId: string): Promise<void>
   /** 이 방 주인과 이웃을 끊는다: 어느 쪽으로 오간 기록이든 지워서 서로의 동네에서 빠진다 (다시 놀러 가면 다시 생긴다) */

@@ -204,13 +204,52 @@ function Dashboard({ ctx }: { ctx: AppContext }) {
   )
 }
 
-/** 놀러 갔던 친구 방: 링크를 다시 찾지 않아도 바로 들어간다 (이 기기에 기억) */
+/** 서버 목록 + 이 브라우저 목록: 같은 방은 하나로 (방 이름·링크는 서버 것이 최신), 최근 순 */
+function mergeFriends(server: VisitedRoom[], local: VisitedRoom[]) {
+  const byId = new Map<string, VisitedRoom>()
+  for (const v of local) byId.set(v.id, v)
+  for (const v of server) {
+    const prev = byId.get(v.id)
+    byId.set(v.id, prev && prev.at > v.at ? { ...v, at: prev.at } : v)
+  }
+  return [...byId.values()].sort((a, b) => b.at.localeCompare(a.at))
+}
+
+/**
+ * 친구 방: 링크를 다시 찾지 않아도 바로 들어간다.
+ * 로그인했으면 계정의 서버 기록(이웃)에서 와서 카톡·인스타 안 브라우저, 홈 화면 앱, PC 어디서 열어도 같다.
+ * 로그인 전에 이 브라우저에서 들어간 방은 로그인하는 순간 계정 기록으로 옮긴다
+ */
 function VisitedRooms({ ctx }: { ctx: AppContext }) {
-  const [list, setList] = useState<VisitedRoom[]>(() => store.visits())
+  const [local, setLocal] = useState<VisitedRoom[]>(() => store.visits())
+  const [server, setServer] = useState<VisitedRoom[]>([])
   const [asking, setAsking] = useState<VisitedRoom | null>(null)
   const [busy, setBusy] = useState(false)
+  const userId = ctx.user?.id ?? null
+  const hasProfile = !!ctx.profile
+
+  useEffect(() => {
+    if (!userId) return setServer([])
+    let alive = true
+    ;(async () => {
+      // 로그인 전에 이 브라우저에서 이름을 밝히고 들어간 친구 방을 내 계정 기록으로 옮긴다 (프로필이 있어야 이웃이 된다)
+      if (hasProfile) {
+        const pending = store.visits().filter((v) => v.named && !v.synced && v.ownerId !== userId)
+        const done = await Promise.allSettled(pending.map((v) => backend.becomeNeighbor(v.id)))
+        store.markVisitsSynced(pending.filter((_, i) => done[i].status === 'fulfilled').map((v) => v.id))
+      }
+      const fr = await backend.friendRooms()
+      if (!alive) return
+      setServer(fr.map(({ room, at }) => ({ id: room.id, slug: room.slug, name: room.name, ownerId: room.ownerId, owner: room.owner, at })))
+      setLocal(store.visits())
+    })().catch((e) => console.error('친구 방 목록을 서버에서 못 불러왔어요', e))
+    return () => {
+      alive = false
+    }
+  }, [userId, hasProfile])
+
   // 내 방은 '내 방'에 따로 나온다
-  const shown = list.filter((v) => v.ownerId !== ctx.user?.id)
+  const shown = mergeFriends(server, local).filter((v) => v.ownerId !== userId)
   if (shown.length === 0) return null
 
   // 목록에서 지우면 동네 골목에서도 뺀다 (로그인했을 때만 이웃이 있다)
@@ -220,7 +259,9 @@ function VisitedRooms({ ctx }: { ctx: AppContext }) {
     try {
       if (ctx.user) await backend.forgetNeighbor(v.id)
       store.forgetVisit(v.id)
-      setList(store.visits())
+      setLocal(store.visits())
+      // 서버 기록은 그 친구(주인)와의 이웃이 통째로 끊긴다
+      setServer((s) => s.filter((x) => x.ownerId !== v.ownerId))
       setAsking(null)
     } catch (e) {
       ctx.toast(errorText(e))
@@ -232,7 +273,7 @@ function VisitedRooms({ ctx }: { ctx: AppContext }) {
   return (
     <section className="my-rooms visited-rooms">
       <h2>
-        놀러 간 방 <span className="muted">{shown.length}</span>
+        친구 방 <span className="muted">{shown.length}</span>
       </h2>
       <ul>
         {shown.map((v) => (
@@ -255,8 +296,12 @@ function VisitedRooms({ ctx }: { ctx: AppContext }) {
           </li>
         ))}
       </ul>
-      <p className="panel-tip">이 기기에서 들어간 방만 기억해요. 주인이 링크를 새로 만들면 새 링크로 한 번 더 들어와 주세요</p>
-      <Sheet open={asking !== null} onClose={() => !busy && setAsking(null)} title="놀러 간 방 지우기">
+      <p className="panel-tip">
+        {ctx.user
+          ? '내 계정에 저장돼서 카톡·인스타로 들어간 방도 어디서 열든 여기 모여요'
+          : '이 브라우저에서 들어간 방만 기억해요. 로그인하면 카톡·인스타 어디서 들어간 방이든 한곳에 모여요'}
+      </p>
+      <Sheet open={asking !== null} onClose={() => !busy && setAsking(null)} title="친구 방 지우기">
         {asking && (
           <>
             <p className="confirm-text">

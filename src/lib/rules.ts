@@ -1,10 +1,13 @@
-import type { Room } from './types'
+import type { Drop, Room } from './types'
 
 export const NAME_MAX = 8
 export const MOTTO_MAX = 30
 export const NICK_MAX = 8
 export const MESSAGE_MAX = 40
 export const MAX_DROPS = 60
+
+/** 우편함 편지 봉하기: 집 주인이 아닌 사람에게는 무엇을 누가 넣었는지 비우고 '비밀 편지'라는 것만 남긴다 */
+export const sealLetter = (d: Drop): Drop => ({ ...d, item: '', nickname: '', message: '', hidden: true })
 /** 채팅 한 줄 글자 수 */
 export const CHAT_MAX = 80
 /** 방마다 남기는 채팅 수 (서버는 30일 지난 것도 지운다) */

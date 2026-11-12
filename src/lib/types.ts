@@ -48,6 +48,8 @@ export interface Drop {
   nickname: string
   message: string
   createdAt: string
+  /** 남의 우편함 편지: 집 주인만 읽는다. 다른 사람에게는 무엇을 누가 넣었는지 비우고 이 표시만 준다 */
+  hidden?: boolean
 }
 
 export interface ChatMessage {

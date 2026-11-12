@@ -4,7 +4,7 @@ import type { Backend } from './backend'
 import { createLocalChannel } from './realtime'
 import { type Alarm, MAX_ALARMS, nextAlarmAt } from './alarm'
 import { dateAllowed, EVENTS_PER_MINUTE, MAX_EVENTS, monthRange, ROOM_EVENTS_PER_MINUTE } from './calendar'
-import { CHAT_KEEP, kstDate, MAX_DROPS } from './rules'
+import { CHAT_KEEP, kstDate, MAX_DROPS, sealLetter } from './rules'
 import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room } from './types'
 import { isPlace } from './town'
 
@@ -241,6 +241,30 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       )
       write(db)
     },
+    async friendRooms() {
+      const db = read()
+      const u = currentUser()
+      if (!u) return []
+      const mine = new Set(Object.values(db.rooms).filter((r) => r.ownerId === u.id).map((r) => r.id))
+      const latestRoomOf = (ownerId: string) =>
+        Object.values(db.rooms)
+          .filter((r) => r.ownerId === ownerId)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+      const picks: { r: StoredRoom; at: string }[] = []
+      for (const v of db.visits) {
+        if (v.memberId === u.id && db.rooms[v.roomId]) picks.push({ r: db.rooms[v.roomId], at: v.at })
+        else if (mine.has(v.roomId)) {
+          const r = latestRoomOf(v.memberId)
+          if (r) picks.push({ r, at: v.at })
+        }
+      }
+      const owners = new Set([u.id])
+      return picks
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .filter(({ r }) => (owners.has(r.ownerId) ? false : (owners.add(r.ownerId), true)))
+        .slice(0, 30)
+        .map(({ r, at }) => ({ room: withOwner(db, r), at }))
+    },
     async neighbors(roomId) {
       const db = read()
       const room = db.rooms[roomId]
@@ -271,9 +295,15 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
     },
 
     async listDrops(roomId) {
-      return read()
-        .drops.filter((d) => d.roomId === roomId)
-        .map((d) => ({ ...d, place: isPlace(d.place) ? d.place : 'in' }))
+      const db = read()
+      const isOwner = !!db.rooms[roomId] && db.rooms[roomId].ownerId === currentUser()?.id
+      return db.drops
+        .filter((d) => d.roomId === roomId)
+        .map((d): Drop => {
+          const place = isPlace(d.place) ? d.place : 'in'
+          if (place !== 'mail') return { ...d, place }
+          return isOwner ? { ...d, place, hidden: false } : sealLetter({ ...d, place })
+        })
     },
     async addDrop(roomId, d) {
       const db = read()

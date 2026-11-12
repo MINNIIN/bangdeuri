@@ -747,6 +747,20 @@ button {
   word-break: break-all;
 }
 
+/* 남의 우편함 편지: 봉한 편지 */
+.note.is-sealed {
+  background: repeating-linear-gradient(-45deg, var(--panel) 0 10px, #f6efe2 10px 20px);
+  border-style: dashed;
+}
+
+.sealed-icon {
+  flex-shrink: 0;
+  width: 36px;
+  text-align: center;
+  font-size: 22px;
+  line-height: 1;
+}
+
 /* ─── 시트 ─── */
 
 .sheet-backdrop {
