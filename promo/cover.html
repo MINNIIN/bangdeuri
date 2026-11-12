@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>방들이 릴스 커버 (촬영용)</title>
+    <!-- 릴스 커버 1080x1920. 배포 안 됨. 개발 서버에서 /promo/cover.html 을 405x720, 배율 8/3으로 찍는다 -->
+    <style>
+      @font-face { font-family: Galmuri11; font-weight: 400; src: url('/src/assets/fonts/Galmuri11.woff2') format('woff2'); }
+      @font-face { font-family: Galmuri11; font-weight: 700; src: url('/src/assets/fonts/Galmuri11-Bold.woff2') format('woff2'); }
+      :root { --ink: #2b2233; --accent: #ff7f2a; --soft: #fff3b0; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #fff6fb; }
+      /* 405x720으로 짜고 8/3배로 키워 1080x1920에 맞춘다 */
+      .canvas { position: relative; width: 405px; height: 720px; overflow: hidden; transform: scale(2.6666667); transform-origin: 0 0;
+        font-family: Galmuri11, system-ui, sans-serif; color: var(--ink); background: #fff6fb; }
+      /* 게임 화면: 파티 장면이 아래쪽 절반에 오게 내리고 (위 메뉴는 밝은 막 아래로) */
+      .bg { position: absolute; left: -7.5%; top: 196px; width: 115%; }
+      /* 위쪽은 밝게 덮어 글씨 자리, 아래 방은 그대로 */
+      .veil { position: absolute; inset: 0;
+        background: linear-gradient(180deg, #fff6fb 0%, #fff6fb 44%, rgba(255, 246, 251, 0.75) 49%, rgba(255, 246, 251, 0) 57%); }
+      .stack { position: absolute; left: 0; right: 0; top: 88px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+      .house { width: 58px; height: 58px; image-rendering: pixelated; filter: drop-shadow(0 3px 0 rgba(43, 34, 51, 0.25)); }
+      .eyebrow { margin: 0; padding: 4px 12px; background: var(--soft); border: 2px solid var(--ink); border-radius: 999px; font-size: 13px; }
+      .logo { margin: 0 0 2px; font-size: 70px; font-weight: 700; line-height: 1; color: var(--accent); letter-spacing: 0.04em;
+        text-shadow: 4px 4px 0 var(--ink), -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink); }
+      .lead { margin: 0; font-size: 16px; line-height: 1.55; font-weight: 700; }
+      .url { margin-top: 4px; padding: 7px 18px; background: var(--accent); color: #fff; border: 2px solid var(--ink); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); font-size: 15px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div class="canvas">
+    <img class="bg" src="./cover-bg.png" alt="" />
+    <div class="veil"></div>
+    <div class="stack">
+      <img class="house" src="/favicon.svg" alt="" />
+      <p class="eyebrow">친구들이 놀러 오는 미니룸</p>
+      <h1 class="logo">방들이</h1>
+      <p class="lead">내 방 링크 보내면<br />친구들이 놀러 와요</p>
+      <div class="url">bangdeuri.com</div>
+    </div>
+    </div>
+    <script>document.fonts.ready.then(() => (window.done = true))</script>
+  </body>
+</html>
