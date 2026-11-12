@@ -60,6 +60,15 @@ textarea {
   color: inherit;
 }
 
+/* 아이폰(사파리·카톡)은 16px보다 작은 입력칸을 누르면 화면을 확대한다. 손가락 기기에서는 입력칸 글자를 16px 이상으로 */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
 button {
   cursor: pointer;
 }
