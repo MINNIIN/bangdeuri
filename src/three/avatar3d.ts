@@ -207,10 +207,45 @@ const sphereAt = (r: number, at: THREE.Vector3, sc: [number, number, number] = [
   return g
 }
 
+/**
+ * 모자가 덮는 곳 (hat()의 돔과 같은 위치·기울기·크기). 그 안에 있는 머리카락은 모자 안쪽으로 눌러 넣어
+ * 모자를 뚫고 나오지 않게 하고, 모자 아래로 빠져나오는 부분만 보이게 한다
+ */
+const HAT_COVER: Partial<Record<AvatarLook['hat'], { at: [number, number, number]; tilt: number; scale: [number, number, number]; r: number; theta: number }>> = {
+  cap: { at: [0, 0.06, -0.01], tilt: -0.18, scale: [1.07, 1, 1.03], r: HEAD_R + 0.05, theta: Math.PI / 2 },
+  beanie: { at: [0, 0.05, -0.02], tilt: -0.25, scale: [1.07, 1.12, 1.03], r: HEAD_R + 0.055, theta: Math.PI / 2 },
+  bear: { at: [0, 0.02, -0.04], tilt: -0.55, scale: [1.07, 1, 1.03], r: HEAD_R + 0.065, theta: 2.1 },
+}
+
+function tuckUnderHat(g: THREE.BufferGeometry, hat: AvatarLook['hat']) {
+  const c = HAT_COVER[hat]
+  if (!c) return
+  const m = new THREE.Matrix4().compose(
+    new THREE.Vector3(...c.at),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(c.tilt, 0, 0)),
+    new THREE.Vector3(...c.scale),
+  )
+  const inv = m.clone().invert()
+  const p = g.attributes.position as THREE.BufferAttribute
+  const v = new THREE.Vector3()
+  const inner = c.r - 0.018
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).applyMatrix4(inv)
+    const len = v.length()
+    if (len <= inner) continue
+    // 모자 가장자리 바로 아래(여유 0.06)까지는 덮인 것으로 본다: 챙 끝에서 머리가 삐죽 나오지 않게
+    if (Math.acos(THREE.MathUtils.clamp(v.y / len, -1, 1)) > c.theta + 0.06) continue
+    v.multiplyScalar(inner / len).applyMatrix4(m)
+    p.setXYZ(i, v.x, v.y, v.z)
+  }
+  g.computeVertexNormals()
+}
+
 /** 머리 모양 하나 = 바탕색 덩어리 + 밝은 앞머리 덩어리 (각각 하나로 합친다) */
 const hairCache = new Map<string, { base: THREE.BufferGeometry | null; hi: THREE.BufferGeometry | null }>()
-function hairGeos(style: AvatarLook['hair'], hatOn: boolean, hood = false) {
-  const key = `${style}:${hatOn}:${hood}`
+function hairGeos(style: AvatarLook['hair'], hat: AvatarLook['hat']) {
+  const hatOn = hat in HAT_COVER
+  const key = `${style}:${hat}`
   const hit = hairCache.get(key)
   if (hit) return hit
   {
@@ -337,10 +372,8 @@ function hairGeos(style: AvatarLook['hair'], hatOn: boolean, hood = false) {
           const d = new THREE.Vector3(Math.sin(a) * rr, y, Math.cos(a) * rr)
           // 얼굴은 비워 둔다
           if (d.z > 0.38 && d.y < 0.45) continue
-          // 모자를 쓰면 챙 아래로만 (위쪽 곱슬이 모자를 뚫고 나오지 않게).
-          // 곰돌이 모자는 뒤통수까지 덮는 후드라 얼굴 둘레(볼 옆)만 남긴다
+          // 모자를 쓰면 챙 아래로만 (모자 안쪽은 어차피 안 보인다)
           if (hatOn && d.y > -0.05) continue
-          if (hood && d.y * 0.85 - d.z * 0.52 > -0.45) continue
           // 크기·높이를 조금씩 달리해 구슬을 붙인 것처럼 보이지 않게
           const k = Math.sin(i * 12.9898) * 0.5 + 0.5
           const r = 0.058 + k * 0.03
@@ -358,6 +391,8 @@ function hairGeos(style: AvatarLook['hair'], hatOn: boolean, hood = false) {
       return g
     }
     const made = { base: merge(base), hi: merge(hi) }
+    if (made.base) tuckUnderHat(made.base, hat)
+    if (made.hi) tuckUnderHat(made.hi, hat)
     hairCache.set(key, made)
     return made
   }
@@ -813,7 +848,7 @@ export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
     head.add(s)
   }
   const hatOn = look.hat === 'cap' || look.hat === 'beanie' || look.hat === 'bear'
-  const hg = hairGeos(look.hair, hatOn, look.hat === 'bear')
+  const hg = hairGeos(look.hair, look.hat)
   if (hg.base) head.add(part(hg.base, mat(look.hairColor, { rough: 0.48 })))
   if (hg.hi) head.add(part(hg.hi, mat(tint(look.hairColor, 0.04), { rough: 0.44 })))
   if (look.hat !== 'none') head.add(hat(look))

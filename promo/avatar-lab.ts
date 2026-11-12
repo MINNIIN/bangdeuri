@@ -17,7 +17,11 @@ const ALL: AvatarLook[] = [
   L({ hair: 'curly', bottom: 'shorts', hat: 'bear', hatColor: '#b07a4f' }),
   L({ hair: 'short', bottom: 'skirt', hat: 'ribbon', hatColor: '#e8553a' }),
 ]
-const LOOKS = q.has('rows') ? q.get('rows')!.split(',').map((i) => ALL[Number(i)]) : ALL
+// ?grid=hats : 머리 5종 × 모자(cap·beanie·bear) 전부
+const HAIRS: AvatarLook['hair'][] = ['bob', 'short', 'long', 'bun', 'curly']
+const HATS: AvatarLook['hat'][] = ['cap', 'beanie', 'bear']
+const GRID = HATS.flatMap((hat) => HAIRS.map((hair) => L({ hair, hat, hatColor: '#f2d16b', bottom: 'pants' })))
+const LOOKS = q.get('grid') === 'hats' ? GRID.filter((_, i) => !q.has('hat') || HATS[Math.floor(i / 5)] === q.get('hat')) : q.has('rows') ? q.get('rows')!.split(',').map((i) => ALL[Number(i)]) : ALL
 // 각도: [이름, 방위각, 높이]
 const ALLV: [string, number, number][] = [
   ['앞', 0, 0.75],
@@ -52,6 +56,12 @@ LOOKS.forEach((look, r) => {
   const a = buildAvatar3D(look)
   a.animate({ walking: walk, pose: null, t: Number(q.get("t") ?? 1.7) })
   scene.add(a.root)
+  // ?nohat : 모자만 숨겨서 그 아래 머리카락이 어떻게 눌려 있는지 본다
+  if (q.has('nohat'))
+    a.root.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+      if (m?.color && '#' + m.color.getHexString() === new THREE.Color(look.hatColor).getHexString().replace(/^/, '#')) o.visible = false
+    })
   VIEWS.forEach(([, az, h], c) => {
     const d = 3.2
     camera.position.set(Math.sin(az) * d, h + 0.6, Math.cos(az) * d)
