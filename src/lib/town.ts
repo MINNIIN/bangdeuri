@@ -126,12 +126,15 @@ export function lotAtYard(lots: Lot[], p: Vec2): { lot: Lot; uv: UV } | null {
 // ─── 공원 장식 (자리가 매번 같게 x로 정한다) ───
 
 export interface Prop {
-  kind: 'tree' | 'bench' | 'lamp' | 'flower' | 'swing' | 'slide' | 'bush' | 'signal'
+  kind: 'tree' | 'bench' | 'lamp' | 'flower' | 'swing' | 'slide' | 'bush' | 'signal' | 'seesaw' | 'sandbox' | 'mat' | 'stones' | 'trash'
   x: number
   z: number
   /** 지나가지 못하는 반지름 (0이면 지나갈 수 있다) */
   r: number
   rot?: number
+  /** 바닥 매트 반지름 · 색 같은 모양 정보 */
+  size?: number
+  color?: string
 }
 
 /** 0~1 해시 (같은 입력 = 같은 값) */
@@ -158,19 +161,88 @@ export function townProps(lots: Lot[]): Prop[] {
     out.push({ kind: 'flower', x: r.x1 - 1.2, z: r.z0 + 0.8, r: 0 })
     out.push({ kind: 'flower', x: r.x0 + 1.4, z: r.z0 + 0.7, r: 0 })
   }
-  // 공원: 놀이터는 가운데, 나무·벤치는 해시로
+  // 공원 가운데 놀이터 (집이 한 채여도 휑하지 않게 늘 같은 자리에)
+  // 놀이기구 아래 푹신한 바닥 매트
+  out.push({ kind: 'mat', x: -4, z: 10.6, r: 0, size: 2.3, color: '#f4a46a' })
+  out.push({ kind: 'mat', x: 4.4, z: 10.5, r: 0, size: 2.3, color: '#7cc98f' })
   out.push({ kind: 'swing', x: -4, z: 10.5, r: 1.4 })
   out.push({ kind: 'slide', x: 4.5, z: 10.5, r: 1.3, rot: Math.PI / 2 })
-  out.push({ kind: 'bench', x: 0, z: 7.4, r: 0.8 })
+  out.push({ kind: 'seesaw', x: 0, z: 12.2, r: 1.05, rot: Math.PI / 2 })
+  out.push({ kind: 'sandbox', x: -3.6, z: 14.3, r: 1.15 })
+  // 횡단보도에서 벤치 옆으로 들어가는 징검다리
+  out.push({ kind: 'stones', x: 0, z: 5.9, r: 0 })
+  out.push({ kind: 'bench', x: -1.6, z: 7.4, r: 0.8 })
+  out.push({ kind: 'bench', x: 1.9, z: 7.4, r: 0.8 })
+  out.push({ kind: 'trash', x: 3.3, z: 7.2, r: 0.25 })
+  // 공원 가로등 · 나무 · 덤불 · 꽃
+  out.push({ kind: 'lamp', x: -6, z: 8.6, r: 0.25 })
+  out.push({ kind: 'lamp', x: 6.2, z: 13.6, r: 0.25 })
+  out.push({ kind: 'tree', x: -6.1, z: 12.4, r: 0.7 })
+  out.push({ kind: 'tree', x: 6.1, z: 7.6, r: 0.7 })
+  out.push({ kind: 'tree', x: 3.2, z: 15.1, r: 0.7 })
+  for (const [x, z] of [[-1.2, 15.4], [0.8, 15.5], [-6, 15.2], [5.9, 15.4]] as const) out.push({ kind: 'bush', x, z, r: 0.5 })
+  for (const [x, z] of [[-3.1, 7.0], [0.3, 6.8], [4.6, 7.2], [-5.6, 10.9], [2.1, 13.6], [-1.6, 13.8]] as const) out.push({ kind: 'flower', x, z, r: 0 })
   let i = 0
   for (let x = b.minX + 3; x <= b.maxX - 3; x += 5.5) {
     i++
-    if (Math.abs(x) < 8) continue
+    if (Math.abs(x) < 8.5) continue
     const h = hash01(i)
     const z = 8 + h * 6.5
     if (h < 0.2) out.push({ kind: 'bench', x, z: 7.4, r: 0.8 })
     else out.push({ kind: 'tree', x: x + (hash01(i + 9) - 0.5) * 2, z, r: 0.7 })
     if (hash01(i + 3) > 0.55) out.push({ kind: 'flower', x: x + 1.6, z: z - 1.4, r: 0 })
+  }
+  return out
+}
+
+// ─── 공원에서 탈 수 있는 것 ───
+
+export interface ParkSeat {
+  /** 'park/swing0:1' — 실시간으로 주고받는 이름 (모든 화면에서 같다) */
+  key: string
+  item: 'p_swing' | 'p_slide' | 'p_bench' | 'p_seesaw' | 'p_sand'
+  /** 앉는 자리 (미끄럼틀은 올라가는 꼭대기 받침) */
+  x: number
+  z: number
+  /** 앉아서 보는 쪽 (미끄럼틀은 사다리 쪽: 그 뒤에 서서 올라간다) */
+  yaw: number
+  /** 놀이기구 가운데와 돌린 각도 (미끄럼틀·그네 움직임에 쓴다) */
+  ox: number
+  oz: number
+  rot: number
+}
+
+/** 놀이기구 기준 자리(lx, lz)를 동네 좌표로 */
+export const parkLocal = (s: { ox: number; oz: number; rot: number }, lx: number, lz: number): Vec2 => ({
+  x: s.ox + lx * Math.cos(s.rot) + lz * Math.sin(s.rot),
+  z: s.oz - lx * Math.sin(s.rot) + lz * Math.cos(s.rot),
+})
+
+/**
+ * 탈 자리: 놀이기구 기준 [x, z, 보는 쪽(기구 기준 각도)].
+ * 그네·벤치는 앞(+z)을, 미끄럼틀은 사다리 쪽(뒤)을, 시소는 서로 마주 보고, 모래놀이터는 가운데를 본다
+ */
+const SEATS: Partial<Record<Prop['kind'], { item: ParkSeat['item']; at: [number, number, number][] }>> = {
+  swing: { item: 'p_swing', at: [[-0.6, 0, 0], [0.6, 0, 0]] },
+  bench: { item: 'p_bench', at: [[-0.4, -0.05, 0], [0.4, -0.05, 0]] },
+  slide: { item: 'p_slide', at: [[0, -0.9, Math.PI]] },
+  seesaw: { item: 'p_seesaw', at: [[-1.0, 0, Math.PI / 2], [1.0, 0, -Math.PI / 2]] },
+  sandbox: { item: 'p_sand', at: [[-0.38, 0.36, Math.atan2(0.38, -0.36)], [0.4, -0.3, Math.atan2(-0.4, 0.3)]] },
+}
+
+export function parkSeats(props: Prop[]): ParkSeat[] {
+  const seen = new Map<string, number>()
+  const out: ParkSeat[] = []
+  for (const p of props) {
+    const def = SEATS[p.kind]
+    if (!def) continue
+    const k = seen.get(p.kind) ?? 0
+    seen.set(p.kind, k + 1)
+    const rot = p.rot ?? 0
+    def.at.forEach(([lx, lz, face], i) => {
+      const at = parkLocal({ ox: p.x, oz: p.z, rot }, lx, lz)
+      out.push({ key: `park/${p.kind}${k}:${i}`, item: def.item, x: at.x, z: at.z, yaw: rot + face, ox: p.x, oz: p.z, rot })
+    })
   }
   return out
 }

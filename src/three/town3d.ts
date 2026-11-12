@@ -22,7 +22,7 @@ import {
   type Prop,
   type TownMap,
 } from '../lib/town'
-import { bakeStatic, box, canvasTexture, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint } from './kit'
+import { bakeStatic, box, canvasTexture, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint, torus } from './kit'
 
 const HOUSE_STYLE: Record<string, { wall: string; roof: string; trim: string; door: string }> = {
   pink: { wall: '#ffe1ec', roof: '#ff7fa6', trim: '#ffffff', door: '#c9577d' },
@@ -40,6 +40,10 @@ export interface Town3D {
   lampHeads: THREE.Vector3[]
   /** 새로 생긴 집 (솟아오르는 연출용으로 따로 둔다) */
   risers: Map<string, THREE.Object3D>
+  /** 그네 자리 (자리 이름 → 위 가로대에 매달린 의자·줄). 타면 흔든다 */
+  swingSeats: Map<string, THREE.Object3D>
+  /** 시소 판 (park/seesaw0 → 가운데 축에 걸린 판). 타면 오르내린다 */
+  seesawBoards: Map<string, THREE.Object3D>
   dispose(): void
 }
 
@@ -128,7 +132,7 @@ function bench() {
   )
 }
 
-function swing() {
+function swing(seats: Map<string, THREE.Object3D>, base: string) {
   // 나무 A자 틀: 양쪽 다리 둘이 위에서 만나 가로대를 받친다 (아래로 벌어져 선다)
   const wood = mat('#b5713f', { rough: 0.85 })
   const dark = mat('#8a5230', { rough: 0.85 })
@@ -148,14 +152,104 @@ function swing() {
   }
   // 가로대 양끝 마개
   for (const x of [-1.47, 1.47]) g.add(part(sphere(0.085, 10, 8), dark, [x, H + 0.02, 0]))
-  for (const x of [-0.6, 0.6]) {
+  // 의자 + 두 줄: 가로대(높이 H)에 매달아 통째로 앞뒤로 흔든다
+  ;[-0.6, 0.6].forEach((x, i) => {
+    const hang = new THREE.Group()
+    hang.name = 'swingSeat'
+    hang.position.set(x, H, 0)
     for (const dx of [-0.21, 0.21]) {
-      g.add(part(cyl(0.012, 0.012, 1.5, 5), metal, [x + dx, 1.38, 0]))
-      g.add(part(cyl(0.035, 0.035, 0.03, 8), metal, [x + dx, H - 0.06, 0], { rot: [0, 0, Math.PI / 2] }))
+      hang.add(part(cyl(0.012, 0.012, 1.5, 5), metal, [dx, 1.38 - H, 0]))
+      hang.add(part(cyl(0.035, 0.035, 0.03, 8), metal, [dx, -0.06, 0], { rot: [0, 0, Math.PI / 2] }))
     }
-    g.add(part(roundBox(0.52, 0.06, 0.24, 0.025), mat('#5aa9e6', { rough: 0.5 }), [x, 0.6, 0]))
-  }
+    hang.add(part(roundBox(0.52, 0.06, 0.24, 0.025), mat('#5aa9e6', { rough: 0.5 }), [0, 0.6 - H, 0]))
+    hang.traverse((n) => (n.userData.key = `${base}:${i}`))
+    seats.set(`${base}:${i}`, hang)
+    g.add(hang)
+  })
   return g
+}
+
+/** 누름 상자 (가로·높이·깊이·앞뒤 위치): 보이지 않지만 눌린다 */
+const HIT_BOX: Partial<Record<Prop['kind'], [number, number, number, number]>> = {
+  swing: [3.1, 2.4, 1.4, 0],
+  slide: [1.3, 1.7, 3.8, 0.1],
+  bench: [1.8, 1.0, 0.9, -0.05],
+  seesaw: [2.7, 1.0, 0.8, 0],
+  sandbox: [2.0, 0.6, 2.0, 0],
+}
+const HIT_MAT = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false })
+
+/** 시소가 쉴 때 기울기 */
+export const SEESAW_REST = 0.16
+
+/** 시소: 가운데 받침 + 기울어진 판 + 양끝 손잡이 (x 방향으로 길다) */
+function seesaw(boards: Map<string, THREE.Object3D>, base: string) {
+  const tilt = SEESAW_REST
+  const board = group(
+    part(roundBox(2.4, 0.07, 0.32, 0.03), mat('#ff8fb8', { rough: 0.5 }), [0, 0, 0]),
+    ...[-1.0, 1.0].flatMap((x) => [
+      part(roundBox(0.28, 0.06, 0.3, 0.025), mat('#5aa9e6', { rough: 0.5 }), [x, 0.05, 0]),
+      part(cyl(0.022, 0.022, 0.3, 8), mat('#9aa0ad', { metal: 0.6, rough: 0.35 }), [x * 0.8, 0.18, 0]),
+      part(cyl(0.022, 0.022, 0.3, 8), mat('#9aa0ad', { metal: 0.6, rough: 0.35 }), [x * 0.8, 0.33, 0], { rot: [Math.PI / 2, 0, 0] }),
+    ]),
+  )
+  board.position.y = 0.42
+  board.rotation.z = tilt
+  board.name = 'seesawBoard'
+  board.traverse((n) => (n.userData.key = base))
+  boards.set(base, board)
+  return group(
+    part(roundBox(0.3, 0.42, 0.42, 0.05), mat('#ffd94a', { rough: 0.6 }), [0, 0.21, 0]),
+    part(cyl(0.05, 0.05, 0.5, 10), mat('#9aa0ad', { metal: 0.6, rough: 0.35 }), [0, 0.42, 0], { rot: [Math.PI / 2, 0, 0] }),
+    board,
+  )
+}
+
+/** 모래놀이터: 나무 테두리 + 모래 + 양동이·삽 */
+function sandbox() {
+  const wood = mat('#c98f5a', { rough: 0.85 })
+  const g = group(part(box(1.8, 0.12, 1.8), mat('#f3dfae', { rough: 1 }), [0, 0.06, 0]))
+  for (const [x, z, w, d] of [[0, -0.9, 2.0, 0.2], [0, 0.9, 2.0, 0.2], [-0.9, 0, 0.2, 1.6], [0.9, 0, 0.2, 1.6]] as const)
+    g.add(part(roundBox(w, 0.24, d, 0.04), wood, [x, 0.12, z]))
+  // 모래 언덕 · 양동이 · 삽
+  g.add(part(sphere(0.3, 14, 10), mat('#ecd39b', { rough: 1 }), [-0.3, 0.12, 0.2], { scale: [1, 0.4, 1] }))
+  g.add(part(cyl(0.11, 0.08, 0.18, 14), mat('#ff7f2a', { rough: 0.5 }), [0.35, 0.21, -0.25]))
+  g.add(part(torus(0.1, 0.01, Math.PI), mat('#2b2233'), [0.35, 0.3, -0.25], { rot: [0, 0, 0] }))
+  g.add(part(roundBox(0.06, 0.03, 0.34, 0.01), mat('#59c26b', { rough: 0.5 }), [0.1, 0.14, 0.35], { rot: [0, 0.7, 0] }))
+  g.add(part(roundBox(0.14, 0.03, 0.14, 0.02), mat('#59c26b', { rough: 0.5 }), [-0.02, 0.14, 0.48], { rot: [0, 0.7, 0] }))
+  return g
+}
+
+/** 놀이기구 아래 푹신한 바닥 (밟고 지나갈 수 있다) */
+function playMat(size: number, color: string) {
+  const m = new THREE.Mesh(new THREE.CircleGeometry(size, 40), mat(color, { rough: 0.95 }))
+  m.rotation.x = -Math.PI / 2
+  m.position.y = 0.012
+  m.receiveShadow = true
+  m.userData.ground = true
+  const ring = part(torus(size, 0.04, Math.PI * 2), mat(tint(color, -0.12), { rough: 0.9 }), [0, 0.014, 0], { rot: [Math.PI / 2, 0, 0], shadow: false })
+  ring.receiveShadow = true
+  return group(m, ring)
+}
+
+/** 징검다리: 횡단보도에서 공원으로 */
+function stones() {
+  const g = new THREE.Group()
+  ;[[0.1, -0.5], [-0.15, 0.1], [0.12, 0.7]].forEach(([x, z], i) => {
+    const s = part(cyl(0.28 - i * 0.02, 0.3 - i * 0.02, 0.05, 14), mat('#d9d3cc', { rough: 0.95 }), [x, 0.02, z], { scale: [1, 1, 0.8] })
+    s.userData.ground = true
+    g.add(s)
+  })
+  return g
+}
+
+/** 쓰레기통 */
+function trash() {
+  return group(
+    part(cyl(0.2, 0.17, 0.62, 16), mat('#59c26b', { rough: 0.6 }), [0, 0.31, 0]),
+    part(cyl(0.22, 0.22, 0.05, 16), mat('#3f9a55', { rough: 0.6 }), [0, 0.64, 0]),
+    part(roundBox(0.16, 0.05, 0.04, 0.015), mat('#2b2233'), [0, 0.67, 0]),
+  )
 }
 
 /** 보행 신호등: 기둥 + 빨간불(켜짐)·초록불 상자. 앞(+z)을 본다 */
@@ -186,7 +280,15 @@ function slide() {
   )
 }
 
-function buildProp(p: Prop, i: number, heads: THREE.Vector3[], lampMat: THREE.MeshStandardMaterial) {
+function buildProp(
+  p: Prop,
+  i: number,
+  heads: THREE.Vector3[],
+  lampMat: THREE.MeshStandardMaterial,
+  seats: Map<string, THREE.Object3D>,
+  boards: Map<string, THREE.Object3D>,
+  base: string,
+) {
   let o: THREE.Object3D
   switch (p.kind) {
     case 'tree':
@@ -204,7 +306,22 @@ function buildProp(p: Prop, i: number, heads: THREE.Vector3[], lampMat: THREE.Me
       o = bench()
       break
     case 'swing':
-      o = swing()
+      o = swing(seats, base)
+      break
+    case 'seesaw':
+      o = seesaw(boards, base)
+      break
+    case 'sandbox':
+      o = sandbox()
+      break
+    case 'mat':
+      o = playMat(p.size ?? 2, p.color ?? '#f4a46a')
+      break
+    case 'stones':
+      o = stones()
+      break
+    case 'trash':
+      o = trash()
       break
     case 'slide':
       o = slide()
@@ -212,6 +329,20 @@ function buildProp(p: Prop, i: number, heads: THREE.Vector3[], lampMat: THREE.Me
     case 'signal':
       o = signal()
       break
+  }
+  // 탈 수 있는 것: 누르면 그 자리로 (그네 의자는 위에서 자리마다 따로 붙였다).
+  // 휴대폰에서는 의자·판이 손가락보다 작아서 기구 전체를 감싸는 보이지 않는 누름 상자를 씌운다
+  const hit = HIT_BOX[p.kind]
+  if (hit) {
+    o.traverse((n) => {
+      if (n.userData.key === undefined) n.userData.key = base
+    })
+    const [w, h, d, z] = hit
+    const m = new THREE.Mesh(box(w, h, d), HIT_MAT)
+    m.name = 'hit'
+    m.position.set(0, h / 2, z)
+    m.userData.key = base
+    o.add(m)
   }
   o.position.set(p.x, 0, p.z)
   o.rotation.y = p.rot ?? 0
@@ -481,7 +612,15 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   sand.receiveShadow = true
   sand.userData.ground = true
   g.add(sand)
-  map.props.forEach((p, i) => g.add(buildProp(p, i, heads, lampMat)))
+  // 놀이기구 이름은 lib/town.ts parkSeats와 같게: park/<종류><몇 번째>
+  const swingSeats = new Map<string, THREE.Object3D>()
+  const seesawBoards = new Map<string, THREE.Object3D>()
+  const nth = new Map<string, number>()
+  map.props.forEach((p, i) => {
+    const k = nth.get(p.kind) ?? 0
+    nth.set(p.kind, k + 1)
+    g.add(buildProp(p, i, heads, lampMat, swingSeats, seesawBoards, `park/${p.kind}${k}`))
+  })
   // 골목 뒤 먼 산
   for (let k = -3; k <= 3; k++) {
     const hill = part(sphere(9, 24, 12), mat(k % 2 ? '#8fcf7e' : '#7fc271', { rough: 1 }), [cx + k * 14, -4, HOUSE_BACK_Z - 12], { shadow: false })
@@ -496,6 +635,8 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     group: g,
     lampHeads: heads,
     risers,
+    swingSeats,
+    seesawBoards,
     setNight(night) {
       windowMat.emissiveIntensity = night ? 0.9 : 0
       lampMat.emissiveIntensity = night ? 2.2 : 0.15

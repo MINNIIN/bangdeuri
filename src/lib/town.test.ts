@@ -12,6 +12,7 @@ import {
   lotAtYard,
   MAX_HOUSES,
   obstacleBlocker,
+  parkSeats,
   roomOfArea,
   safeVec,
   slotX,
@@ -139,5 +140,42 @@ describe('손님이 처음 서는 자리', () => {
       expect(p.z).toBeGreaterThanOrEqual(-4.4)
       expect(map.blocked(p)).toBe(false)
     }
+  })
+})
+
+describe('공원 놀이터', () => {
+  it('그네 두 자리 · 미끄럼틀 · 벤치 두 자리를 탈 수 있고, 어느 화면에서나 같은 자리·같은 이름', () => {
+    const a = parkSeats(buildTown(['host', 'a', 'b']).props)
+    const b = parkSeats(buildTown(['host', 'a', 'b']).props)
+    expect(a).toEqual(b)
+    expect(new Set(a.map((s) => s.key)).size).toBe(a.length)
+    expect(a.filter((s) => s.item === 'p_swing')).toHaveLength(2)
+    expect(a.filter((s) => s.item === 'p_slide')).toHaveLength(1)
+    expect(a.filter((s) => s.item === 'p_bench').length).toBeGreaterThanOrEqual(2)
+    expect(a.filter((s) => s.item === 'p_seesaw')).toHaveLength(2)
+    expect(a.filter((s) => s.item === 'p_sand')).toHaveLength(2)
+    // 시소 두 자리는 양 끝에서 서로 마주 본다
+    const [s0, s1] = a.filter((s) => s.item === 'p_seesaw')
+    expect(Math.hypot(s0.x - s1.x, s0.z - s1.z)).toBeCloseTo(2, 1)
+    const face = (s: typeof s0, o: typeof s0) => Math.sin(s.yaw) * (o.x - s.x) + Math.cos(s.yaw) * (o.z - s.z)
+    expect(face(s0, s1)).toBeGreaterThan(1.9)
+    expect(face(s1, s0)).toBeGreaterThan(1.9)
+    for (const s of a) expect(s.key.startsWith('park/')).toBe(true)
+    // 그네 두 자리는 나란히 (같은 그네 틀 안에서 좌우로)
+    const [l, r] = a.filter((s) => s.item === 'p_swing')
+    expect(Math.abs(l.z - r.z)).toBeLessThan(0.01)
+    expect(Math.abs(l.x - r.x)).toBeCloseTo(1.2, 1)
+  })
+
+  it('집이 한 채뿐이어도 공원이 꾸며져 있고, 놀이터 사이로 걸어 다닐 수 있다', () => {
+    const map = buildTown(['host'])
+    const kinds = new Set(map.props.map((p) => p.kind))
+    for (const k of ['swing', 'slide', 'bench', 'seesaw', 'sandbox', 'mat', 'tree']) expect(kinds.has(k as never)).toBe(true)
+    // 횡단보도 남쪽 끝에서 공원 안쪽으로 들어가는 길은 열려 있다
+    expect(map.blocked({ x: 0, z: 5.8 })).toBe(false)
+    expect(map.blocked({ x: -1.6, z: 9 })).toBe(false)
+    // 시소·모래놀이터는 막혀 있다
+    const seesaw = map.props.find((p) => p.kind === 'seesaw')!
+    expect(map.blocked({ x: seesaw.x, z: seesaw.z })).toBe(true)
   })
 })

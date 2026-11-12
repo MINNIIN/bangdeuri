@@ -70,6 +70,9 @@ export interface Interaction {
   flee?: boolean
 }
 
+/** 미끄럼틀 한 번 (사다리 오르기 ~ 아래에서 일어서기) */
+export const SLIDE_MS = 3400
+
 const eat = (lines: string[]): Interaction => ({ verb: '먹기', pose: 'floor', fx: ['hearts'], lines, ms: 2800 })
 const hug = (lines: string[]): Interaction => ({ verb: '안아 주기', pose: 'stand', fx: ['hearts'], lines, ms: 2600 })
 const sit = (seat: number, lines: string[], verb = '앉기'): Interaction => ({ verb, pose: 'sit', seat, fx: [], lines })
@@ -171,6 +174,12 @@ export const INTERACTIONS: Record<string, Interaction> = {
   socks: { verb: '냄새 맡기', pose: 'stand', fx: ['stink'], lines: ['윽 이게 무슨 냄새', '한 짝은 어디 갔어?'], ms: 2400 },
   trashbag: { verb: '버리기', pose: 'stand', fx: ['stink'], lines: ['내일 버릴게…', '분리수거 해야 돼'], ms: 2400 },
   rock: { verb: '들어 보기', pose: 'stand', fx: ['sweat'], lines: ['…돌이다', '왜 돌을 주는 거야'], ms: 2400 },
+  // ─── 공원 놀이터 ───
+  p_swing: { verb: '그네 타기', pose: 'sit', fx: [], lines: ['슝~ 슝~', '더 높이!', '어릴 때 생각난다', '누가 좀 밀어 줘'] },
+  p_slide: { verb: '미끄럼틀 타기', pose: 'stand', fx: [], lines: ['야호~!', '한 번 더!', '슈웅~'], ms: SLIDE_MS, leave: { fx: 'sparkle', line: '재밌다!' } },
+  p_bench: sit(5, ['공원 벤치 최고', '바람 좋다~', '여기 앉아서 수다 떨자', '날씨 좋다'], '앉기'),
+  p_seesaw: { verb: '시소 타기', pose: 'sit', fx: [], lines: ['위로~ 아래로~', '엉덩이 아파 ㅋㅋ', '같이 타자! 반대편 앉아', '쿵! 쿵!'] },
+  p_sand: { verb: '모래 놀이', pose: 'floor', fx: ['sparkle'], lines: ['모래성 쌓는 중', '두껍아 두껍아 헌 집 줄게', '삽질 중 (진짜로)', '보물 찾았다!'] },
 }
 
 export const interactionFor = (item: string): Interaction | undefined => INTERACTIONS[item]

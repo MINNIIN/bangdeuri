@@ -13,7 +13,7 @@ import { OUTFITS } from '../art/poses'
 import { FIXTURES, ZONES } from '../lib/home'
 import { type PinchMode, pinchMode, ROTATE_GAIN, twist } from '../lib/gesture'
 import { clampTilt, rubberTilt } from '../lib/iso'
-import { type Fx, type Interaction, interactionFor, pickLine, TV_CHANNELS } from '../lib/interactions'
+import { type Fx, type Interaction, interactionFor, pickLine, SLIDE_MS, TV_CHANNELS } from '../lib/interactions'
 import { type Blocker, hitsWall } from '../lib/home'
 import { makeSpot, type Spot } from '../lib/layout'
 import type { SharedRoomState } from '../lib/realtime'
@@ -38,6 +38,9 @@ import {
   nearestOpen,
   type Obstacle,
   obstacleBlocker,
+  parkLocal,
+  type ParkSeat,
+  parkSeats,
   townToYard,
   roomOfArea,
   TOWN,
@@ -52,7 +55,7 @@ import { buildItem3D, BULB, COVER, itemDepth, LIE_FORWARD, SCREEN, SEAT, SEAT_FO
 import { FxLayer, glowTexture, ON_HEAD } from './fx3d'
 import { buildHouse3D, fixtureFacing, fixtureWorld, type House3D } from './house3d'
 import { disposeTree, mat, part, torus } from './kit'
-import { buildTown3D, type Town3D } from './town3d'
+import { buildTown3D, SEESAW_REST, type Town3D } from './town3d'
 
 const TAP_SLOP = 7
 const WALK_TOWN = 2.6
@@ -162,6 +165,8 @@ interface Activity extends Target {
   inter: Interaction
   phase: 'going' | 'doing'
   fxAt: number
+  /** 자리를 잡은 시각 (그네 흔들기·미끄럼틀 순서에 쓴다) */
+  since?: number
 }
 
 interface Walk {
@@ -190,6 +195,13 @@ interface Actor {
 }
 
 const KEY_SEP = '/'
+/** 공원 놀이기구 이름 앞머리 */
+const PARK = 'park/'
+/** 그네: 가로대 높이 · 줄 길이 */
+const SWING_TOP = 2.2
+const SWING_ROPE = 1.6
+/** 그네 흔들림 (처음 1.5초는 살살 커진다) */
+const swingAngle = (t: number) => Math.sin(t * 2.5) * 0.55 * Math.min(1, t / 1.5)
 const fixtureKey = (roomId: string, fx: string) => `${roomId}${KEY_SEP}${fx}`
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.z - b.z)
 
@@ -388,6 +400,8 @@ function createWorld(
   let rooms = roomsInit
   /** 이웃이 늘면 바뀐다 (setTown) */
   let map = mapInit
+  /** 이번 프레임에 그네를 타는 자리 → 흔들리는 각도 */
+  const swingNow = new Map<string, number>()
   const lotOf = (roomId: string) => map.lots.find((l) => l.roomId === roomId)
 
   // ─── 렌더러 ───
@@ -614,7 +628,30 @@ function createWorld(
     syncDrops()
   }
 
+  // ─── 공원 놀이기구 자리 (모든 화면에서 같은 이름: park/swing0:1) ───
+  let seatCache: { props: TownMap['props']; byKey: Map<string, ParkSeat> } | null = null
+  const parkSeatOf = (key: string) => {
+    if (!seatCache || seatCache.props !== map.props) seatCache = { props: map.props, byKey: new Map(parkSeats(map.props).map((s) => [s.key, s])) }
+    return seatCache.byKey.get(key) ?? null
+  }
+  /** 놀이기구를 누르면: 그 기구의 빈자리 중 손가락에서 (화면 위로) 가장 가까운 자리 (다 차 있으면 가장 가까운 자리) */
+  const SEAT_Y: Record<string, number> = { p_swing: 0.6, p_bench: 0.47, p_slide: 1, p_seesaw: 0.5, p_sand: 0.15 }
+  const pickParkSeat = (base: string, cx: number, cy: number) => {
+    if (parkSeatOf(base)) return base
+    parkSeatOf('') // 캐시 채우기
+    const list = [...seatCache!.byKey.values()].filter((s) => s.key.startsWith(base + ':'))
+    const taken = new Set([...actors.values()].filter((a) => a.id !== 'me').map((a) => a.act?.key))
+    const r = renderer.domElement.getBoundingClientRect()
+    const near = (s: ParkSeat) => {
+      const q = project(new THREE.Vector3(s.x, SEAT_Y[s.item] ?? 0.5, s.z))
+      return Math.hypot(r.left + q.x - cx, r.top + q.y - cy)
+    }
+    const free = list.filter((s) => !taken.has(s.key))
+    return ((free.length ? free : list).sort((a, b) => near(a) - near(b))[0] ?? null)?.key ?? null
+  }
+
   const keyArea = (key: string): AreaId | null => {
+    if (key.startsWith(PARK)) return TOWN
     if (key.includes(KEY_SEP)) return houseArea(key.split(KEY_SEP)[0])
     const d = props.current.drops.find((x) => x.id === key)
     if (!d) return null
@@ -646,6 +683,10 @@ function createWorld(
   const dropYawOf = (d: Drop) => spotFor(d.roomId, d.id)?.[2] ?? dropYaw(d.id)
 
   const targetOf = (key: string): Target | null => {
+    if (key.startsWith(PARK)) {
+      const s = parkSeatOf(key)
+      return s ? { key, item: s.item, area: TOWN, pos: { x: s.x, z: s.z }, yaw: s.yaw } : null
+    }
     if (key.includes(KEY_SEP)) {
       const [rid, fid] = key.split(KEY_SEP)
       const f = FIXTURES.find((x) => x.id === fid)
@@ -972,7 +1013,7 @@ function createWorld(
   }
 
   const arrive = (a: Actor, t: Target, inter: Interaction) => {
-    a.act = { ...t, inter, phase: 'doing', fxAt: 0 }
+    a.act = { ...t, inter, phase: 'doing', fxAt: 0, since: clock }
     if (a.id === 'me') cb.current.onMeArrive?.(t.key, t.item)
     // 그쪽을 본다
     if (inter.pose === 'sit' || inter.pose === 'lie' || inter.pose === 'bath') a.yaw = t.yaw
@@ -996,6 +1037,9 @@ function createWorld(
       window.clearTimeout(a.actTimer)
       a.actTimer = window.setTimeout(() => {
         a.act = null
+        // 미끄럼틀은 내려온 자리(아래 끝)에 선다
+        const seat = t.item === 'p_slide' ? parkSeatOf(t.key) : null
+        if (seat) a.pos = open(TOWN, parkLocal(seat, 0, 2.05))
         if (inter.flee && isLocal(a)) {
           const dx = a.pos.x - t.pos.x
           const dz = a.pos.z - t.pos.z
@@ -1136,6 +1180,13 @@ function createWorld(
           }
           return
         }
+      }
+      if (p.walkable && typeof d.key === 'string' && d.key.startsWith(PARK)) {
+        p.onBackgroundTap?.()
+        const k = pickParkSeat(d.key, cx, cy)
+        const t = k && targetOf(k)
+        if (t) meAct(t)
+        return
       }
       if (p.walkable && typeof d.key === 'string' && d.key.includes(KEY_SEP)) {
         p.onBackgroundTap?.()
@@ -1527,6 +1578,22 @@ function createWorld(
 
     // 걷기 · 자세
     const doingOn = new Map<string, Actor[]>()
+    swingNow.clear()
+    // 시소: 어느 쪽에 누가 앉았나 (둘 다면 번갈아 오르내리고, 한쪽만이면 그쪽이 콩콩)
+    const seesawSides = new Map<string, number>()
+    for (const a of actors.values()) {
+      const k = a.act?.phase === 'doing' ? a.act.key : ''
+      if (!k.startsWith(PARK + 'seesaw')) continue
+      const [b, i] = k.split(':')
+      seesawSides.set(b, (seesawSides.get(b) ?? 0) | (i === '0' ? 1 : 2))
+    }
+    const seesawTilt = (b: string) => {
+      const m = seesawSides.get(b) ?? 0
+      if (m === 3) return Math.sin(clock * 2.2) * 0.28
+      if (m === 1) return 0.12 + Math.sin(clock * 3) * 0.12
+      if (m === 2) return -(0.12 + Math.sin(clock * 3) * 0.12)
+      return null
+    }
     let dim = false
     for (const a of actors.values()) {
       stepWalk(a, walkDt)
@@ -1540,7 +1607,66 @@ function createWorld(
       let pz = a.pos.z
       root.rotation.set(0, a.yaw, 0, 'YXZ')
       let knee: number | undefined
-      if (doing && (pose === 'sit' || pose === 'lie' || pose === 'bath')) {
+      let animPose = pose
+      const seat = doing && doing.key.startsWith(PARK) ? parkSeatOf(doing.key) : null
+      if (doing && seat && doing.item === 'p_swing') {
+        // 그네: 가로대에 매달린 채 앞뒤로 (처음 1.5초는 살살 커진다)
+        const t = clock - (doing.since ?? clock)
+        const th = swingAngle(t)
+        swingNow.set(doing.key, th)
+        const fwd = { x: Math.sin(seat.rot), z: Math.cos(seat.rot) }
+        px = seat.x + fwd.x * Math.sin(th) * SWING_ROPE
+        pz = seat.z + fwd.z * Math.sin(th) * SWING_ROPE
+        y = SWING_TOP - Math.cos(th) * SWING_ROPE + 0.03
+        root.rotation.set(-th, seat.rot, 0, 'YXZ')
+        knee = th > 0 ? 0.5 : 1.3
+      } else if (doing && seat && doing.item === 'p_seesaw') {
+        // 시소: 판 끝에 앉아 판과 같이 오르내린다 (자리 0은 판의 -x 끝, 1은 +x 끝)
+        const side = doing.key.endsWith(':0') ? -1 : 1
+        const tilt = seesawTilt(doing.key.split(':')[0]) ?? SEESAW_REST
+        px = seat.x
+        pz = seat.z
+        y = 0.485 + side * Math.sin(tilt)
+        root.rotation.set(0, seat.yaw, 0, 'YXZ')
+        knee = 0.9
+      } else if (doing && seat && doing.item === 'p_sand') {
+        // 모래놀이터: 모래 위에 털썩 앉아 가운데를 보며 논다
+        px = seat.x
+        pz = seat.z
+        y = 0.1
+        root.rotation.set(0, seat.yaw, 0, 'YXZ')
+      } else if (doing && seat && doing.item === 'p_slide') {
+        // 미끄럼틀: 사다리 오르기 → 꼭대기에 앉기 → 쭉 내려가기 → 아래에서 일어서기
+        const k = Math.min(1, (clock - (doing.since ?? clock)) / (SLIDE_MS / 1000))
+        const at = (lz: number) => parkLocal(seat, 0, lz)
+        root.rotation.set(0, seat.rot, 0, 'YXZ')
+        let lz: number
+        if (k < 0.34) {
+          const e = k / 0.34
+          lz = -1.7 + e * 0.35
+          y = e * 1.42
+          animPose = null
+        } else if (k < 0.46) {
+          lz = -1.35 + ((k - 0.34) / 0.12) * 0.8
+          y = 1.42
+          animPose = 'sit'
+          knee = 0.3
+        } else if (k < 0.8) {
+          const e = ((k - 0.46) / 0.34) ** 1.6
+          lz = -0.55 + e * 2.1
+          y = 1.42 - e * 1.3
+          animPose = 'sit'
+          knee = 0.2
+        } else {
+          lz = 1.55 + Math.min(1, (k - 0.8) / 0.1) * 0.45
+          y = 0
+          animPose = null
+        }
+        const p2 = at(lz)
+        px = p2.x
+        pz = p2.z
+        a.yaw = seat.rot
+      } else if (doing && (pose === 'sit' || pose === 'lie' || pose === 'bath')) {
         // 미니미는 앉으면 엉덩이, 누우면 등이 발밑 높이에 오게 자세를 잡는다 → 닿는 면 높이에 그대로 둔다
         const seat = SEAT[doing.item] ?? 0.45
         const fwd = { x: Math.sin(doing.yaw), z: Math.cos(doing.yaw) }
@@ -1552,7 +1678,9 @@ function createWorld(
       }
       if (doing?.inter.flee) y += Math.abs(Math.sin(clock * 14)) * 0.25
       root.position.set(px, y, pz)
-      a.avatar.animate({ walking: !!a.walk, pose: a.walk ? null : pose, t: clock + a.id.length, knee })
+      // 미끄럼틀 사다리를 오를 때는 걷는 동작으로 다리를 움직인다
+      const climbing = doing?.item === 'p_slide' && animPose === null && y > 0.01
+      a.avatar.animate({ walking: !!a.walk || climbing, pose: a.walk ? null : animPose, t: clock + a.id.length, knee })
       // 효과
       if (doing && a.area === me.area && clock >= doing.fxAt) {
         doing.fxAt = clock + 1.1
@@ -1564,6 +1692,20 @@ function createWorld(
         rerender()
       }
     }
+
+    // 그네 의자: 탄 사람과 같이 흔들리고, 내리면 천천히 멈춘다
+    if (town && me.area === TOWN)
+      for (const [key, hang] of town.swingSeats) {
+        const th = swingNow.get(key)
+        hang.rotation.x = th !== undefined ? -th : hang.rotation.x * Math.exp(-dt * 2.2)
+      }
+
+    // 시소 판: 탄 사람에 맞춰 오르내리고, 다 내리면 원래 기울기로
+    if (town && me.area === TOWN)
+      for (const [b, board] of town.seesawBoards) {
+        const t = seesawTilt(b)
+        board.rotation.z = t ?? board.rotation.z + (SEESAW_REST - board.rotation.z) * (1 - Math.exp(-dt * 3))
+      }
 
     // 가구 상태: 이불·욕조 물, TV 화면, 움직임, 디스코
     const motionTargets: [THREE.Object3D, Activity][] = []
@@ -1963,7 +2105,7 @@ function createWorld(
   }
 
   // 개발 중 확인용 (자동 스크린샷에서 상태를 본다)
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), tapWalk: (x: number, z: number) => meWalk({ x, z }), tapWorld: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y) }, tapFixture: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) meAct(t); return !!t }, tapDrop: (id: string) => { const t = targetOf(id); if (t && t.area === me.area) meAct(t); return !!t }, lens: (o: { x?: number; z?: number; dist?: number; yaw?: number; pitch?: number; follow?: boolean; ms?: number }) => { follow = o.follow ?? false; animateCam({ ...cam, target: new THREE.Vector3(o.x ?? cam.target.x, cam.target.y, o.z ?? cam.target.z), dist: o.dist ?? cam.dist, yaw: o.yaw ?? cam.yaw, pitch: o.pitch ?? cam.pitch }, o.ms ?? 900) }, use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), screen: (x: number, z: number) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, 0, z)); return { x: r.left + s.x, y: r.top + s.y } } }
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk, act: me.act ? me.act.key + ':' + me.act.phase : null }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), tapWalk: (x: number, z: number) => meWalk({ x, z }), tapWorld: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y) }, tapFixture: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) meAct(t); return !!t }, tapDrop: (id: string) => { const t = targetOf(id); if (t && t.area === me.area) meAct(t); return !!t }, lens: (o: { x?: number; z?: number; dist?: number; yaw?: number; pitch?: number; follow?: boolean; ms?: number }) => { follow = o.follow ?? false; animateCam({ ...cam, target: new THREE.Vector3(o.x ?? cam.target.x, cam.target.y, o.z ?? cam.target.z), dist: o.dist ?? cam.dist, yaw: o.yaw ?? cam.yaw, pitch: o.pitch ?? cam.pitch }, o.ms ?? 900) }, use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), screen: (x: number, z: number, y = 0) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, y, z)); return { x: r.left + s.x, y: r.top + s.y } } }
 
 
   return {
