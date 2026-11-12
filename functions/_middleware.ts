@@ -49,7 +49,7 @@ async function findRoom(env: Env, slug: string): Promise<RoomRow | null> {
   const base = env.VITE_SUPABASE_URL?.replace(/\/$/, '')
   const key = env.VITE_SUPABASE_KEY
   if (!base || !key) return null
-  const url = `${base}/rest/v1/rooms?slug=eq.${slug}&select=name,motto,owner:profiles(nickname)&limit=1`
+  const url = `${base}/rest/v1/rooms?slug=eq.${slug}&select=name,motto,owner:profiles!rooms_owner_id_fkey(nickname)&limit=1`
   const res = await fetch(url, {
     headers: { apikey: key },
     signal: AbortSignal.timeout(1500),
