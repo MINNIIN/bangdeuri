@@ -92,7 +92,8 @@ export const toAlarm = (r: AlarmRow): Alarm => ({
 })
 
 const ROOM_SELECT =
-  'id,slug,owner_id,name,theme,motto,total_visits,today_visits,today_date,created_at,decor,owner:profiles(nickname,look)'
+  // room_visits도 rooms↔profiles를 잇기 때문에 주인 연결을 꼭 짚어 줘야 한다 (안 그러면 PGRST201로 방 조회가 전부 실패)
+  'id,slug,owner_id,name,theme,motto,total_visits,today_visits,today_date,created_at,decor,owner:profiles!rooms_owner_id_fkey(nickname,look)'
 
 export const toRoom = (r: RoomRow): Room => ({
   id: r.id,
