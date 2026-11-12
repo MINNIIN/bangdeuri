@@ -171,6 +171,35 @@ describe('로컬 모드 저장소', () => {
     expect((await a.neighbors(roomA.id)).map((r) => r.id)).toEqual([roomB.id])
   })
 
+  it('놀러 간 방을 지우면 서로의 동네에서 빠지고, 다시 놀러 가면 다시 생긴다', async () => {
+    const db = memoryStorage()
+    const a = createLocalBackend(db, memoryStorage())
+    const b = createLocalBackend(db, memoryStorage())
+    const c = createLocalBackend(db, memoryStorage())
+    await a.signUpEmail('a@test.kr', 'secret1')
+    await a.saveProfile({ nickname: '민수', look: PRESET_LOOKS[0].look })
+    const roomA = await a.createRoom(newRoom)
+    await b.signUpEmail('b@test.kr', 'secret1')
+    await b.saveProfile({ nickname: '지윤', look: PRESET_LOOKS[1].look })
+    const roomB = await b.createRoom({ ...newRoom, name: '지윤' })
+    await c.signUpEmail('c@test.kr', 'secret1')
+    await c.saveProfile({ nickname: '하린', look: PRESET_LOOKS[2].look })
+    const roomC = await c.createRoom({ ...newRoom, name: '하린' })
+    // 민수가 지윤네에 놀러 가고, 지윤도 민수네에 놀러 왔다. 하린도 민수네에 왔다
+    await a.becomeNeighbor(roomB.id)
+    await b.becomeNeighbor(roomA.id)
+    await c.becomeNeighbor(roomA.id)
+    expect((await a.neighbors(roomA.id)).map((r) => r.id).sort()).toEqual([roomB.id, roomC.id].sort())
+
+    await a.forgetNeighbor(roomB.id)
+    // 어느 쪽으로 오간 기록이든 지윤과의 이웃은 끊기고, 하린은 그대로
+    expect((await a.neighbors(roomA.id)).map((r) => r.id)).toEqual([roomC.id])
+    expect(await b.neighbors(roomB.id)).toEqual([])
+
+    await a.becomeNeighbor(roomB.id)
+    expect((await a.neighbors(roomA.id)).map((r) => r.id)).toContain(roomB.id)
+  })
+
   it('선물은 집 안 · 마당 · 우편함에 둘 수 있다', async () => {
     const be = createLocalBackend(memoryStorage(), memoryStorage())
     await be.signUpEmail('c@test.kr', 'secret1')

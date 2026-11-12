@@ -44,6 +44,8 @@ export interface Backend {
   neighbors(roomId: string): Promise<Room[]>
   /** 로그인한 회원이 내 이름으로 이 방에 들어왔다 (익명이면 부르지 않는다) */
   becomeNeighbor(roomId: string): Promise<void>
+  /** 이 방 주인과 이웃을 끊는다: 어느 쪽으로 오간 기록이든 지워서 서로의 동네에서 빠진다 (다시 놀러 가면 다시 생긴다) */
+  forgetNeighbor(roomId: string): Promise<void>
 
   // ─── 아이템·방명록 (놓기는 누구나, 치우기는 방 주인) ───
   listDrops(roomId: string): Promise<Drop[]>

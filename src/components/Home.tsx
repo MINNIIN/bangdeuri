@@ -12,6 +12,7 @@ import type { Drop, PushPrefs, Room } from '../lib/types'
 import { InstallCard } from './InstallCard'
 import { Icon, SpriteIcon } from './PixelSprite'
 import { RoomScene } from './RoomScene'
+import { Sheet } from './Sheet'
 
 // 첫 화면 예시 방: 친구들이 놓고 간 것처럼 몇 개 깔아 둔다
 const demo = (item: string, u: number, v: number): Drop => ({
@@ -206,13 +207,26 @@ function Dashboard({ ctx }: { ctx: AppContext }) {
 /** 놀러 갔던 친구 방: 링크를 다시 찾지 않아도 바로 들어간다 (이 기기에 기억) */
 function VisitedRooms({ ctx }: { ctx: AppContext }) {
   const [list, setList] = useState<VisitedRoom[]>(() => store.visits())
+  const [asking, setAsking] = useState<VisitedRoom | null>(null)
+  const [busy, setBusy] = useState(false)
   // 내 방은 '내 방'에 따로 나온다
   const shown = list.filter((v) => v.ownerId !== ctx.user?.id)
   if (shown.length === 0) return null
 
-  const forget = (id: string) => {
-    store.forgetVisit(id)
-    setList(store.visits())
+  // 목록에서 지우면 동네 골목에서도 뺀다 (로그인했을 때만 이웃이 있다)
+  const forget = async (v: VisitedRoom) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      if (ctx.user) await backend.forgetNeighbor(v.id)
+      store.forgetVisit(v.id)
+      setList(store.visits())
+      setAsking(null)
+    } catch (e) {
+      ctx.toast(errorText(e))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -235,13 +249,36 @@ function VisitedRooms({ ctx }: { ctx: AppContext }) {
                 <Icon id="send" size={12} />
               </span>
             </button>
-            <button className="visited-forget" aria-label={`${v.name}의 미니룸 목록에서 지우기`} onClick={() => forget(v.id)}>
+            <button className="visited-forget" aria-label={`${v.name}의 미니룸 목록에서 지우기`} onClick={() => setAsking(v)}>
               ×
             </button>
           </li>
         ))}
       </ul>
       <p className="panel-tip">이 기기에서 들어간 방만 기억해요. 주인이 링크를 새로 만들면 새 링크로 한 번 더 들어와 주세요</p>
+      <Sheet open={asking !== null} onClose={() => !busy && setAsking(null)} title="놀러 간 방 지우기">
+        {asking && (
+          <>
+            <p className="confirm-text">
+              {asking.name}의 미니룸을 목록에서 지울까요?
+              {ctx.user && (
+                <>
+                  <br />
+                  {asking.owner.nickname}님과 서로의 동네 골목에서도 집이 없어져요. 다시 놀러 가면 다시 이웃이 돼요.
+                </>
+              )}
+            </p>
+            <div className="row">
+              <button className="btn" onClick={() => setAsking(null)} disabled={busy}>
+                그냥 둘래
+              </button>
+              <button className="btn btn-danger" onClick={() => void forget(asking)} disabled={busy}>
+                {busy ? '지우는 중…' : '지우기'}
+              </button>
+            </div>
+          </>
+        )}
+      </Sheet>
     </section>
   )
 }

@@ -228,6 +228,19 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       db.visits = db.visits.slice(0, 500)
       write(db)
     },
+    async forgetNeighbor(roomId) {
+      const db = read()
+      const room = db.rooms[roomId]
+      const u = currentUser()
+      if (!room || !u || u.id === room.ownerId) return
+      const ownerOf = (id: string) => db.rooms[id]?.ownerId
+      db.visits = db.visits.filter(
+        (v) =>
+          !(v.memberId === u.id && ownerOf(v.roomId) === room.ownerId) &&
+          !(v.memberId === room.ownerId && ownerOf(v.roomId) === u.id),
+      )
+      write(db)
+    },
     async neighbors(roomId) {
       const db = read()
       const room = db.rooms[roomId]

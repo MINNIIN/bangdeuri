@@ -252,6 +252,9 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     async becomeNeighbor(roomId) {
       check(await sb.rpc('become_neighbor', { p_room: roomId }))
     },
+    async forgetNeighbor(roomId) {
+      check(await sb.rpc('forget_neighbor', { p_room: roomId }))
+    },
     async neighbors(roomId) {
       const ids = (check(await sb.rpc('neighbor_room_ids', { p_room: roomId })) as string[] | null) ?? []
       if (!ids.length) return []

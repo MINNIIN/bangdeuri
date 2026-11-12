@@ -327,6 +327,26 @@ begin
   on conflict (room_id, member_id) do update set at = now();
 end $$;
 
+-- 이웃 끊기: 메인 화면 '놀러 간 방'에서 지우면 그 방 주인과 오간 기록을 양쪽 다 지운다 (다시 놀러 가면 다시 생긴다)
+create or replace function public.forget_neighbor(p_room text)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_owner uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'login_required';
+  end if;
+  select owner_id into v_owner from rooms where id = p_room;
+  if v_owner is null or v_owner = auth.uid() then
+    return;
+  end if;
+  delete from room_visits v
+   where (v.member_id = auth.uid() and v.room_id in (select id from rooms where owner_id = v_owner))
+      or (v.member_id = v_owner and v.room_id in (select id from rooms where owner_id = auth.uid()));
+end $$;
+
 -- 동네 이웃 방 번호 (최근 순, 8개). 이 방에 놀러 온 회원의 가장 최근 방 + 이 방 주인이 놀러 간 방
 create or replace function public.neighbor_room_ids(p_room text)
 returns text[]
@@ -358,6 +378,7 @@ revoke execute on function public.add_drop(text, text, real, real, text, text) f
 revoke execute on function public.add_drop(text, text, text, real, real, text, text) from public;
 revoke execute on function public.neighbor_room_ids(text) from public;
 revoke execute on function public.become_neighbor(text) from public;
+revoke execute on function public.forget_neighbor(text) from public, anon;
 revoke execute on function public.post_message(text, text, text) from public;
 revoke execute on function public.visit_room(text) from public;
 
@@ -367,6 +388,7 @@ grant execute on function public.add_drop(text, text, real, real, text, text) to
 grant execute on function public.add_drop(text, text, text, real, real, text, text) to anon, authenticated;
 grant execute on function public.neighbor_room_ids(text) to anon, authenticated;
 grant execute on function public.become_neighbor(text) to authenticated;
+grant execute on function public.forget_neighbor(text) to authenticated;
 grant execute on function public.post_message(text, text, text) to anon, authenticated;
 grant execute on function public.visit_room(text) to anon, authenticated;
 
