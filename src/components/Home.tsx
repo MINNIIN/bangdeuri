@@ -102,6 +102,7 @@ function Landing({ ctx }: { ctx: AppContext }) {
       <a className="link center-link" href="/privacy.html">
         개인정보처리방침
       </a>
+      <p className="made-by">made by mingcoding_</p>
     </main>
   )
 }
@@ -197,6 +198,7 @@ function Dashboard({ ctx }: { ctx: AppContext }) {
       <a className="link center-link" href="/privacy.html">
         개인정보처리방침
       </a>
+      <p className="made-by">made by mingcoding_</p>
     </main>
   )
 }

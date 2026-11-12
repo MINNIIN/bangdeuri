@@ -231,6 +231,16 @@ button {
   padding: 6px;
 }
 
+/* 첫 화면 맨 아래 만든 사람 */
+.made-by {
+  align-self: center;
+  margin: 2px 0 16px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
 .link.danger {
   color: var(--danger);
 }
@@ -515,7 +525,7 @@ button {
 
 .steps {
   list-style: none;
-  margin: 4px 0 0;
+  margin: 2px 0 16px;
   padding: 0;
   display: grid;
   gap: 6px;
@@ -998,7 +1008,7 @@ button {
 }
 
 .panel-label {
-  margin: 4px 0 0;
+  margin: 2px 0 16px;
   font-weight: 700;
   font-size: 13px;
 }
