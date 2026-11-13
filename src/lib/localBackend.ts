@@ -4,8 +4,8 @@ import type { Backend } from './backend'
 import { createLocalChannel } from './realtime'
 import { type Alarm, MAX_ALARMS, nextAlarmAt } from './alarm'
 import { dateAllowed, EVENTS_PER_MINUTE, MAX_EVENTS, monthRange, ROOM_EVENTS_PER_MINUTE } from './calendar'
-import { CHAT_KEEP, kstDate, MAX_DROPS, sealLetter } from './rules'
-import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room } from './types'
+import { CHAT_KEEP, FEEDBACK_CONTACT_MAX, FEEDBACK_MAX, FEEDBACK_PER_10MIN, kstDate, MAX_DROPS, sealLetter } from './rules'
+import type { AuthUser, CalEvent, ChatMessage, Drop, Feedback, Profile, Room } from './types'
 import { isPlace, MAX_HOUSES } from './town'
 
 /**
@@ -27,6 +27,10 @@ interface LocalDb {
   alarms: (Alarm & { ownerId: string })[]
   /** 회원이 남의 방에 들어간 기록 (동네 이웃) */
   visits: { roomId: string; memberId: string; at: string }[]
+  /** 개발자에게 한마디 */
+  feedback?: (Feedback & { device: string; userId: string | null })[]
+  /** 개발자 계정 이메일 (소문자) */
+  admins?: string[]
 }
 
 /** 서버처럼 쓴 사람 계정·기기 키를 따로 들고 있는다 (목록에는 안 나간다) */
@@ -463,6 +467,49 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
       fail('push_unavailable')
     },
     async removePush() {},
+    async sendFeedback(f, key) {
+      const body = f.body.trim()
+      if (!body || [...body].length > FEEDBACK_MAX || !key) fail('bad_request')
+      const db = read()
+      const list = db.feedback ?? []
+      const u = currentUser()
+      const since = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+      const mine = list.filter((x) => x.createdAt > since && (x.device === key || (u && x.userId === u.id)))
+      if (mine.length >= FEEDBACK_PER_10MIN) fail('too_fast')
+      const nickname = f.nickname.trim().slice(0, 12) || null
+      const contact = f.contact.trim().slice(0, FEEDBACK_CONTACT_MAX) || null
+      // 같은 밀리초에 여러 개가 들어와도 순서가 섞이지 않게 앞 것보다 늦은 시각으로
+      const last = list.at(-1)?.createdAt
+      const now = new Date(Math.max(Date.now(), last ? Date.parse(last) + 1 : 0)).toISOString()
+      db.feedback = [...list, { id: randomId(12), body, nickname, contact, read: false, createdAt: now, device: key, userId: u?.id ?? null }]
+      write(db)
+    },
+    async isAdmin() {
+      const u = currentUser()
+      const email = u?.email?.toLowerCase()
+      return !!email && (read().admins ?? []).includes(email)
+    },
+    async listFeedback() {
+      if (!(await this.isAdmin())) fail('forbidden')
+      return [...(read().feedback ?? [])]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map(({ id, body, nickname, contact, read: r, createdAt }) => ({ id, body, nickname, contact, read: r, createdAt }))
+    },
+    async markFeedbackRead(id) {
+      if (!(await this.isAdmin())) fail('forbidden')
+      const db = read()
+      db.feedback = (db.feedback ?? []).map((x) => (x.id === id ? { ...x, read: true } : x))
+      write(db)
+    },
+    async deleteFeedback(id) {
+      if (!(await this.isAdmin())) fail('forbidden')
+      const db = read()
+      db.feedback = (db.feedback ?? []).filter((x) => x.id !== id)
+      write(db)
+    },
+    async notifyAdmins() {
+      // 로컬 모드는 알림을 보내지 않는다
+    },
     async notify() {
       // 로컬 모드는 알림을 보내지 않는다
     },

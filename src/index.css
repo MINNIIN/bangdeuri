@@ -240,6 +240,76 @@ button {
   padding: 6px;
 }
 
+/* 개발자에게 한마디 · 받은 메시지함 */
+.feedback-open,
+.admin-inbox {
+  align-self: center;
+  margin-top: 6px;
+}
+
+.admin-inbox .unread {
+  margin-left: 4px;
+}
+
+.inbox-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inbox-list li {
+  display: grid;
+  gap: 4px;
+}
+
+.inbox-item {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.inbox-item.is-new {
+  background: #fff8d6;
+}
+
+.inbox-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.inbox-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.inbox-body {
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.inbox-contact {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.inbox-del {
+  justify-self: end;
+  padding: 2px 4px;
+}
+
 /* 첫 화면 맨 아래 만든 사람 */
 .made-by {
   align-self: center;

@@ -6,7 +6,7 @@ import { CHAT_KEEP } from './rules'
 import type { Peer, RoomChannel, RoomEvent } from './realtime'
 import type { Alarm } from './alarm'
 import { monthRange } from './calendar'
-import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room, ThemeId } from './types'
+import type { AuthUser, CalEvent, ChatMessage, Drop, Feedback, Profile, Room, ThemeId } from './types'
 import { isPlace } from './town'
 
 interface RoomRow {
@@ -138,7 +138,7 @@ const toUser = (u: User | null | undefined): AuthUser | null => (u ? { id: u.id,
 /** Supabase 에러 → 화면 문구용 코드 (rules.ts ERROR_TEXT) */
 function code(e: { message?: string; code?: string } | null): string {
   const m = e?.message ?? ''
-  const known = m.match(/room_full|room_not_found|forbidden|too_fast|profile_required|login_required|too_many_rooms|calendar_full|too_many_alarms|bad_date/)
+  const known = m.match(/room_full|room_not_found|forbidden|too_fast|bad_request|profile_required|login_required|too_many_rooms|calendar_full|too_many_alarms|bad_date/)
   if (known) return known[0]
   if (/already registered|already exists/i.test(m)) return 'email_taken'
   if (/invalid login credentials/i.test(m)) return 'bad_login'
@@ -410,6 +410,33 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     },
     async removePush(endpoint) {
       await sb.from('push_subscriptions').delete().eq('endpoint', endpoint)
+    },
+    async sendFeedback(f, key) {
+      check(await sb.rpc('send_feedback', { p_body: f.body, p_nickname: f.nickname, p_contact: f.contact, p_device: key }))
+    },
+    async isAdmin() {
+      if (!(await uid())) return false
+      const r = await sb.rpc('is_admin')
+      // 서버에 아직 함수가 없으면 (DB보다 앱이 먼저 배포) 개발자 아님으로
+      return !r.error && r.data === true
+    },
+    async listFeedback() {
+      const rows = check(
+        await sb.from('feedback').select('id,body,nickname,contact,read,created_at').order('created_at', { ascending: false }).limit(300),
+      ) as { id: string; body: string; nickname: string | null; contact: string | null; read: boolean; created_at: string }[]
+      return rows.map((r): Feedback => ({ id: r.id, body: r.body, nickname: r.nickname, contact: r.contact, read: r.read, createdAt: r.created_at }))
+    },
+    async markFeedbackRead(id) {
+      const rows = check(await sb.from('feedback').update({ read: true }).eq('id', id).select('id'))
+      if (!rows.length) throw new Error('forbidden')
+    },
+    async deleteFeedback(id) {
+      const rows = check(await sb.from('feedback').delete().eq('id', id).select('id'))
+      if (!rows.length) throw new Error('forbidden')
+    },
+    async notifyAdmins() {
+      // 알림은 덤이라 실패해도 화면에는 알리지 않는다
+      await sb.functions.invoke('notify', { body: { kind: 'feedback' } }).catch(() => undefined)
     },
     async notify(roomId, n) {
       // 알림은 덤이라 실패해도 화면에는 알리지 않는다

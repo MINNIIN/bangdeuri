@@ -251,6 +251,38 @@ describe('로컬 모드 저장소', () => {
     expect((await a.friendRooms()).map((f) => f.room.id)).toEqual([roomC.id])
   })
 
+  it('개발자에게 한마디: 누구나 보내고, 개발자 계정만 읽고 지운다. 한 기기에서 10분에 3개까지', async () => {
+    const db = memoryStorage()
+    const guest = createLocalBackend(db, memoryStorage())
+    await guest.sendFeedback({ body: '  너무 귀여워요  ', nickname: '지윤', contact: '' }, 'device-aaaa')
+    await guest.sendFeedback({ body: '그네 최고', nickname: '', contact: 'insta @jiyun' }, 'device-aaaa')
+    await guest.sendFeedback({ body: '세 번째', nickname: '', contact: '' }, 'device-aaaa')
+    await expect(guest.sendFeedback({ body: '네 번째', nickname: '', contact: '' }, 'device-aaaa')).rejects.toThrow('too_fast')
+    await expect(guest.sendFeedback({ body: '   ', nickname: '', contact: '' }, 'device-bbbb')).rejects.toThrow('bad_request')
+
+    // 개발자 목록에 없는 회원은 못 읽는다
+    const someone = createLocalBackend(db, memoryStorage())
+    await someone.signUpEmail('someone@test.kr', 'secret1')
+    expect(await someone.isAdmin()).toBe(false)
+    await expect(someone.listFeedback()).rejects.toThrow('forbidden')
+
+    // 개발자(목록의 이메일, 대소문자 무관)는 최신 순으로 읽고, 읽음 표시하고, 지운다
+    const raw = JSON.parse(db.getItem('bangdeuri:localdb:v2')!)
+    db.setItem('bangdeuri:localdb:v2', JSON.stringify({ ...raw, admins: ['dev@test.kr'] }))
+    const dev = createLocalBackend(db, memoryStorage())
+    await dev.signUpEmail('DEV@test.kr', 'secret1')
+    expect(await dev.isAdmin()).toBe(true)
+    const list = await dev.listFeedback()
+    expect(list.map((f) => f.body)).toEqual(['세 번째', '그네 최고', '너무 귀여워요'])
+    expect(list[2]).toMatchObject({ nickname: '지윤', contact: null, read: false })
+    expect(list[1].contact).toBe('insta @jiyun')
+    await dev.markFeedbackRead(list[0].id)
+    await dev.deleteFeedback(list[1].id)
+    const after = await dev.listFeedback()
+    expect(after).toHaveLength(2)
+    expect(after[0].read).toBe(true)
+  })
+
   it('선물은 집 안 · 마당 · 우편함에 둘 수 있다', async () => {
     const be = createLocalBackend(memoryStorage(), memoryStorage())
     await be.signUpEmail('c@test.kr', 'secret1')

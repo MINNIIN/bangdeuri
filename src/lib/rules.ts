@@ -6,6 +6,11 @@ export const NICK_MAX = 8
 export const MESSAGE_MAX = 40
 export const MAX_DROPS = 60
 
+/** 개발자에게 한마디: 글자 수 · 연락처 · 이름, 한 기기에서 10분에 몇 개 */
+export const FEEDBACK_MAX = 300
+export const FEEDBACK_CONTACT_MAX = 60
+export const FEEDBACK_PER_10MIN = 3
+
 /** 우편함 편지 봉하기: 집 주인이 아닌 사람에게는 무엇을 누가 넣었는지 비우고 '비밀 편지'라는 것만 남긴다 */
 export const sealLetter = (d: Drop): Drop => ({ ...d, item: '', nickname: '', message: '', hidden: true })
 /** 채팅 한 줄 글자 수 */
@@ -27,6 +32,7 @@ export const ERROR_TEXT: Record<string, string> = {
   push_unavailable: '이 환경에서는 알림을 쓸 수 없어요',
   push_denied: '브라우저에서 알림이 꺼져 있어요. 설정에서 허용해 주세요',
   too_fast: '조금 천천히 보내 주세요',
+  bad_request: '내용을 확인해 주세요',
   too_many_rooms: '방은 5개까지 만들 수 있어요',
   bad_date: '1년 전부터 2년 뒤까지만 적을 수 있어요',
   calendar_full: '달력이 꽉 찼어요. 지난 일정이 지나면 다시 쓸 수 있어요',

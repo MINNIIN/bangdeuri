@@ -3,6 +3,7 @@ import { AuthScreen } from './components/AuthScreen'
 import { CreateScreen } from './components/CreateScreen'
 import { Gallery } from './components/Gallery'
 import { Home } from './components/Home'
+import { InboxScreen } from './components/InboxScreen'
 import { ProfileScreen } from './components/ProfileScreen'
 import { AlarmWatcher } from './components/AlarmWatcher'
 import { armChime } from './lib/chime'
@@ -19,6 +20,7 @@ export type Route =
   | { kind: 'create' }
   | { kind: 'login' }
   | { kind: 'me' }
+  | { kind: 'inbox' }
   | { kind: 'room'; slug: string }
 
 export interface AppContext {
@@ -31,7 +33,7 @@ export interface AppContext {
   setProfile: (p: Profile) => void
 }
 
-const QUERY_ROUTES = ['new', 'login', 'me'] as const
+const QUERY_ROUTES = ['new', 'login', 'me', 'inbox'] as const
 
 const routeFromUrl = (): Route => {
   const slug = roomIdFrom(window.location.href)
@@ -40,6 +42,7 @@ const routeFromUrl = (): Route => {
   if (q.has('new')) return { kind: 'create' }
   if (q.has('login')) return { kind: 'login' }
   if (q.has('me')) return { kind: 'me' }
+  if (q.has('inbox')) return { kind: 'inbox' }
   return { kind: 'home' }
 }
 
@@ -137,6 +140,7 @@ export default function App() {
   else if (user && !profile && route.kind !== 'login') screen = <ProfileScreen ctx={ctx} first />
   else if (route.kind === 'login') screen = <AuthScreen ctx={ctx} />
   else if (route.kind === 'me') screen = user ? <ProfileScreen ctx={ctx} /> : <AuthScreen ctx={ctx} />
+  else if (route.kind === 'inbox') screen = user ? <InboxScreen ctx={ctx} /> : <AuthScreen ctx={ctx} reason="받은 메시지함은 개발자 계정으로 로그인해야 볼 수 있어요" />
   else if (route.kind === 'create') screen = user ? <CreateScreen ctx={ctx} /> : <AuthScreen ctx={ctx} reason="방을 만들려면 로그인해 주세요" />
   else if (route.kind === 'room') screen = (
       <Suspense fallback={<main className="screen center muted">동네 골목 들어가는 중…</main>}>

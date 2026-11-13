@@ -378,6 +378,86 @@ as $$
   select id, at from one_per_owner order by at desc limit 30
 $$;
 
+-- ─── 개발자에게 한마디 ──────────────────────────────────────────────
+-- 누구나 send_feedback으로 보내고(한 기기 10분에 3개, 전체 1시간에 120개), 개발자 목록(admins)의 계정만 읽고 지운다.
+-- 개발자 이메일은 리포에 적지 않는다: SQL Editor에서 따로 insert into public.admins (email) values ('…');
+create table if not exists public.feedback (
+  id          uuid primary key default gen_random_uuid(),
+  body        text not null check (char_length(body) between 1 and 300),
+  nickname    text check (nickname is null or char_length(nickname) <= 12),
+  contact     text check (contact is null or char_length(contact) <= 60),
+  user_id     uuid references auth.users(id) on delete set null,
+  device      text not null check (char_length(device) between 8 and 64),
+  read        boolean not null default false,
+  notified_at timestamptz,
+  created_at  timestamptz not null default now()
+);
+create index if not exists feedback_created_idx on public.feedback (created_at desc);
+create index if not exists feedback_device_idx on public.feedback (device, created_at desc);
+
+create table if not exists public.admins (
+  email text primary key check (email = lower(email))
+);
+alter table public.feedback enable row level security;
+alter table public.admins enable row level security;
+revoke all on public.feedback, public.admins from anon, authenticated;
+
+-- 지금 로그인한 계정이 개발자인지 (이메일 가입·카카오·구글 모두: 계정 이메일 또는 카카오가 준 이메일로 맞춘다)
+create or replace function public.is_admin()
+returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select exists (
+    select 1 from auth.users u join public.admins a
+      on a.email = lower(coalesce(u.email, '')) or a.email = lower(coalesce(u.raw_user_meta_data->>'email', ''))
+     where u.id = auth.uid()
+  )
+$$;
+
+-- 알림 함수(서버 키)만 쓴다: 개발자 계정 번호들
+create or replace function public.admin_user_ids()
+returns setof uuid
+language sql stable security definer set search_path = public
+as $$
+  select distinct u.id from auth.users u join public.admins a
+    on a.email = lower(coalesce(u.email, '')) or a.email = lower(coalesce(u.raw_user_meta_data->>'email', ''))
+$$;
+
+grant select, update (read), delete on public.feedback to authenticated;
+drop policy if exists "feedback admin read" on public.feedback;
+create policy "feedback admin read" on public.feedback for select to authenticated using (public.is_admin());
+drop policy if exists "feedback admin update" on public.feedback;
+create policy "feedback admin update" on public.feedback for update to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "feedback admin delete" on public.feedback;
+create policy "feedback admin delete" on public.feedback for delete to authenticated using (public.is_admin());
+
+create or replace function public.send_feedback(p_body text, p_nickname text, p_contact text, p_device text)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_body text := trim(coalesce(p_body, ''));
+  v_device text := trim(coalesce(p_device, ''));
+begin
+  if char_length(v_body) < 1 or char_length(v_body) > 300 or char_length(v_device) < 8 or char_length(v_device) > 64 then
+    raise exception 'bad_request';
+  end if;
+  if (select count(*) from feedback
+       where created_at > now() - interval '10 minutes'
+         and (device = v_device or (auth.uid() is not null and user_id = auth.uid()))) >= 3
+     or (select count(*) from feedback where created_at > now() - interval '1 hour') >= 120 then
+    raise exception 'too_fast';
+  end if;
+  insert into feedback (body, nickname, contact, user_id, device)
+  values (
+    v_body,
+    nullif(left(trim(coalesce(p_nickname, '')), 12), ''),
+    nullif(left(trim(coalesce(p_contact, '')), 60), ''),
+    auth.uid(),
+    v_device
+  );
+end $$;
+
 -- 이웃 끊기: 메인 화면 '놀러 간 방'에서 지우면 그 방 주인과 오간 기록을 양쪽 다 지운다 (다시 놀러 가면 다시 생긴다)
 create or replace function public.forget_neighbor(p_room text)
 returns void
@@ -432,6 +512,9 @@ revoke execute on function public.become_neighbor(text) from public;
 revoke execute on function public.forget_neighbor(text) from public, anon;
 revoke execute on function public.list_drops(text) from public;
 revoke execute on function public.friend_rooms() from public, anon;
+revoke execute on function public.is_admin() from public, anon;
+revoke execute on function public.admin_user_ids() from public, anon, authenticated;
+revoke execute on function public.send_feedback(text, text, text, text) from public;
 revoke execute on function public.post_message(text, text, text) from public;
 revoke execute on function public.visit_room(text) from public;
 
@@ -444,6 +527,8 @@ grant execute on function public.become_neighbor(text) to authenticated;
 grant execute on function public.forget_neighbor(text) to authenticated;
 grant execute on function public.list_drops(text) to anon, authenticated;
 grant execute on function public.friend_rooms() to authenticated;
+grant execute on function public.is_admin() to authenticated;
+grant execute on function public.send_feedback(text, text, text, text) to anon, authenticated;
 grant execute on function public.post_message(text, text, text) to anon, authenticated;
 grant execute on function public.visit_room(text) to anon, authenticated;
 

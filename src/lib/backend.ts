@@ -4,7 +4,7 @@ import type { Alarm } from './alarm'
 import { createLocalBackend } from './localBackend'
 import type { Peer, RoomChannel } from './realtime'
 import { createSupabaseBackend } from './supabase'
-import type { AuthUser, CalEvent, ChatMessage, Drop, NewDrop, NewEvent, NewRoom, Profile, PushPrefs, Room } from './types'
+import type { AuthUser, CalEvent, ChatMessage, Drop, Feedback, NewDrop, NewEvent, NewRoom, Profile, PushPrefs, Room } from './types'
 
 export type SocialProvider = 'kakao' | 'google'
 
@@ -85,6 +85,17 @@ export interface Backend {
   // ─── 푸시 알림 ───
   savePush(sub: PushSubscriptionJSON, prefs: PushPrefs): Promise<void>
   removePush(endpoint: string): Promise<void>
+  // ─── 개발자에게 한마디 (보내기는 누구나, 읽기·지우기는 개발자 목록의 계정만) ───
+  /** key: 이 기기 비밀 키 (한 기기에서 10분에 3개까지) */
+  sendFeedback(f: { body: string; nickname: string; contact: string }, key: string): Promise<void>
+  isAdmin(): Promise<boolean>
+  /** 최신 순 */
+  listFeedback(): Promise<Feedback[]>
+  markFeedbackRead(id: string): Promise<void>
+  deleteFeedback(id: string): Promise<void>
+  /** 개발자 기기들에 새 메시지 알림 (내용은 서버가 DB에서 읽는다) */
+  notifyAdmins(): Promise<void>
+
   /** 방 주인에게 알림을 보낸다 (주인이 켜 둔 알림만 간다) */
   notify(roomId: string, n: { kind: 'enter' | 'drop' | 'event'; name: string; item?: string }): Promise<void>
 }

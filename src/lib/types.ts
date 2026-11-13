@@ -52,6 +52,18 @@ export interface Drop {
   hidden?: boolean
 }
 
+/** 개발자에게 한마디 (개발자 계정만 읽는다) */
+export interface Feedback {
+  id: string
+  body: string
+  /** 보낸 사람이 남긴 이름 (없으면 null) */
+  nickname: string | null
+  /** 답장 받을 연락처 (선택) */
+  contact: string | null
+  read: boolean
+  createdAt: string
+}
+
 export interface ChatMessage {
   id: string
   roomId: string

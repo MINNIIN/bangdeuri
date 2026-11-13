@@ -6,7 +6,7 @@ import { ITEMS } from '../art/items'
 import { themeById } from '../art/themes'
 import { backend } from '../lib/backend'
 import { allOff, isIOS, needsUpgrade, prefsFor, pushSupport, savedPrefs, setPushPrefs } from '../lib/push'
-import { errorText } from '../lib/rules'
+import { charLength, clip, errorText, FEEDBACK_CONTACT_MAX, FEEDBACK_MAX } from '../lib/rules'
 import { store, type VisitedRoom } from '../lib/storage'
 import type { Drop, PushPrefs, Room } from '../lib/types'
 import { InstallCard } from './InstallCard'
@@ -100,6 +100,7 @@ function Landing({ ctx }: { ctx: AppContext }) {
           <b>3</b>놀러 온 친구들이랑 같이 놀기
         </li>
       </ol>
+      <FeedbackButton ctx={ctx} />
       <a className="link center-link" href="/privacy.html">
         개인정보처리방침
       </a>
@@ -192,6 +193,9 @@ function Dashboard({ ctx }: { ctx: AppContext }) {
       <VisitedRooms ctx={ctx} />
 
       <NotifySettings ctx={ctx} />
+
+      <AdminInbox ctx={ctx} />
+      <FeedbackButton ctx={ctx} />
 
       <button className="link center-link" onClick={() => backend.signOut().then(() => ctx.toast('로그아웃했어요'))}>
         로그아웃
@@ -400,6 +404,91 @@ function Toggle({ on, disabled, onClick, label }: { on: boolean; disabled?: bool
     <button className={`toggle ${on ? 'is-on' : ''}`} role="switch" aria-checked={on} disabled={disabled} onClick={onClick}>
       <span>{label}</span>
       <span className="toggle-knob" aria-hidden />
+    </button>
+  )
+}
+
+/** 개발자에게 한마디: 피드백·버그·그냥 인사. 로그인 안 해도 보낼 수 있다 */
+function FeedbackButton({ ctx }: { ctx: AppContext }) {
+  const [open, setOpen] = useState(false)
+  const [body, setBody] = useState('')
+  const [contact, setContact] = useState('')
+  const [busy, setBusy] = useState(false)
+  const name = ctx.profile?.nickname ?? store.guest()?.nickname ?? ''
+
+  const send = async () => {
+    if (busy || !body.trim()) return
+    setBusy(true)
+    try {
+      await backend.sendFeedback({ body, nickname: name, contact }, store.deviceKey())
+      void backend.notifyAdmins()
+      setBody('')
+      setContact('')
+      setOpen(false)
+      ctx.toast('보냈어요! 고마워요 💌')
+    } catch (e) {
+      ctx.toast(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <button className="btn feedback-open" onClick={() => setOpen(true)}>
+        💌 개발자에게 한마디
+      </button>
+      <Sheet open={open} onClose={() => !busy && setOpen(false)} title="개발자에게 한마디">
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void send()
+          }}
+        >
+          <p className="muted">하고 싶은 말, 불편한 점, 바라는 기능 뭐든 좋아요. 개발자만 읽어요{name ? ` (${name} 이름으로 보내요)` : ''}</p>
+          <label className="field">
+            <span>
+              한마디 <em>{charLength(body)}/{FEEDBACK_MAX}</em>
+            </span>
+            <textarea rows={4} value={body} onChange={(e) => setBody(clip(e.target.value, FEEDBACK_MAX))} placeholder="예: 그네 너무 재밌어요! 시소도 같이 타고 싶어요" />
+          </label>
+          <label className="field">
+            <span>
+              답장 받을 연락처 <em>선택</em>
+            </span>
+            <input value={contact} onChange={(e) => setContact(clip(e.target.value, FEEDBACK_CONTACT_MAX))} placeholder="인스타 아이디, 이메일 등" />
+          </label>
+          <button className="btn btn-primary" disabled={busy || !body.trim()}>
+            {busy ? '보내는 중…' : '보내기'}
+          </button>
+        </form>
+      </Sheet>
+    </>
+  )
+}
+
+/** 개발자 계정에만 보이는 받은 메시지함 입구 */
+function AdminInbox({ ctx }: { ctx: AppContext }) {
+  const [unread, setUnread] = useState<number | null>(null)
+  useEffect(() => {
+    let alive = true
+    backend
+      .isAdmin()
+      .then(async (ok) => {
+        if (!ok || !alive) return
+        const list = await backend.listFeedback()
+        if (alive) setUnread(list.filter((f) => !f.read).length)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+  if (unread === null) return null
+  return (
+    <button className="btn admin-inbox" onClick={() => ctx.go({ kind: 'inbox' })}>
+      💌 받은 메시지{unread > 0 ? <span className="unread"> 새 {unread}</span> : ''}
     </button>
   )
 }

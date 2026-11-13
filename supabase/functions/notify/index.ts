@@ -1,4 +1,5 @@
 // 방 주인에게 푸시 알림 보내기: "OO님이 들어왔어요", "OO님이 라면을 두고 갔어요"
+// kind: 'feedback' — 개발자 기기들에 "💌 새 메시지" (내용은 앱이 보낸 걸 믿지 않고 DB에서 아직 안 알린 것만 읽는다)
 // 배포: 대시보드 Edge Functions > Deploy a new function > Via Editor (이름 notify, Verify JWT 끄기)
 //       또는 npx supabase functions deploy notify --no-verify-jwt
 // 비밀값: npx supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:나@example.com
@@ -45,6 +46,7 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: 'bad_json' }, 400)
   }
+  if (body.kind === 'feedback') return feedbackPush()
   const roomId = String(body.room_id ?? '')
   const kind = body.kind === 'drop' ? 'drop' : body.kind === 'enter' ? 'enter' : body.kind === 'event' ? 'event' : null
   const name = String(body.name ?? '').trim().slice(0, 10)
@@ -122,3 +124,64 @@ Deno.serve(async (req) => {
   )
   return json({ sent })
 })
+
+/** 개발자에게 한마디: 최근 10분 안에 들어왔는데 아직 안 알린 메시지를 개발자 기기들에 알린다 */
+async function feedbackPush() {
+  const serviceKey = serverKey()
+  if (!serviceKey) return json({ error: 'no_service_key' }, 500)
+  if (!Deno.env.get('VAPID_PUBLIC_KEY') || !Deno.env.get('VAPID_PRIVATE_KEY')) return json({ error: 'no_vapid_key' }, 500)
+  const db = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey)
+
+  const since = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+  const { data: rows } = await db
+    .from('feedback')
+    .select('id,body,nickname')
+    .is('notified_at', null)
+    .gt('created_at', since)
+    .order('created_at', { ascending: true })
+    .limit(20)
+  if (!rows?.length) return json({ sent: 0 })
+  // 먼저 알린 것으로 표시 (여러 번 불려도 한 번만 알린다)
+  const { data: claimed } = await db
+    .from('feedback')
+    .update({ notified_at: new Date().toISOString() })
+    .in('id', rows.map((r) => r.id))
+    .is('notified_at', null)
+    .select('id')
+  const mine = rows.filter((r) => claimed?.some((c) => c.id === r.id))
+  if (!mine.length) return json({ sent: 0 })
+
+  const { data: ids } = await db.rpc('admin_user_ids')
+  const adminIds = ((ids ?? []) as (string | { admin_user_ids: string })[]).map((x) => (typeof x === 'string' ? x : x.admin_user_ids))
+  if (!adminIds.length) return json({ sent: 0, skipped: 'no_admin' })
+  const { data: subs } = await db.from('push_subscriptions').select('endpoint,p256dh,auth').in('user_id', adminIds)
+  if (!subs?.length) return json({ sent: 0 })
+
+  webpush.setVapidDetails(
+    Deno.env.get('VAPID_SUBJECT') ?? 'mailto:admin@example.com',
+    Deno.env.get('VAPID_PUBLIC_KEY')!,
+    Deno.env.get('VAPID_PRIVATE_KEY')!,
+  )
+  const first = mine[0]
+  const preview = `${first.nickname ? `${first.nickname}: ` : ''}${String(first.body).slice(0, 60)}`
+  const siteUrl = (Deno.env.get('SITE_URL') ?? '').replace(/\/$/, '')
+  const payload = JSON.stringify({
+    title: mine.length > 1 ? `💌 새 메시지 ${mine.length}개` : '💌 방들이에 새 메시지',
+    body: preview,
+    url: siteUrl ? `${siteUrl}/?inbox` : '/?inbox',
+    tag: 'feedback',
+  })
+  let sent = 0
+  await Promise.all(
+    subs.map(async (s) => {
+      try {
+        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 24 * 60 * 60 })
+        sent++
+      } catch (e) {
+        const status = (e as { statusCode?: number }).statusCode
+        if (status === 404 || status === 410) await db.from('push_subscriptions').delete().eq('endpoint', s.endpoint)
+      }
+    }),
+  )
+  return json({ sent })
+}
