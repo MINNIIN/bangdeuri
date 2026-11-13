@@ -4,11 +4,13 @@ import { CreateScreen } from './components/CreateScreen'
 import { Gallery } from './components/Gallery'
 import { Home } from './components/Home'
 import { InboxScreen } from './components/InboxScreen'
+import { StatsScreen } from './components/StatsScreen'
 import { ProfileScreen } from './components/ProfileScreen'
 import { AlarmWatcher } from './components/AlarmWatcher'
 import { armChime } from './lib/chime'
 import { TimerDock } from './components/TimerDock'
 import { backend } from './lib/backend'
+import { detectEntry, stripTags } from './lib/entry'
 import { RETURN_KEY, roomIdFrom, roomUrl } from './lib/links'
 import type { AuthUser, Profile } from './lib/types'
 
@@ -21,6 +23,7 @@ export type Route =
   | { kind: 'login' }
   | { kind: 'me' }
   | { kind: 'inbox' }
+  | { kind: 'stats' }
   | { kind: 'room'; slug: string }
 
 export interface AppContext {
@@ -33,7 +36,7 @@ export interface AppContext {
   setProfile: (p: Profile) => void
 }
 
-const QUERY_ROUTES = ['new', 'login', 'me', 'inbox'] as const
+const QUERY_ROUTES = ['new', 'login', 'me', 'inbox', 'stats'] as const
 
 const routeFromUrl = (): Route => {
   const slug = roomIdFrom(window.location.href)
@@ -43,6 +46,7 @@ const routeFromUrl = (): Route => {
   if (q.has('login')) return { kind: 'login' }
   if (q.has('me')) return { kind: 'me' }
   if (q.has('inbox')) return { kind: 'inbox' }
+  if (q.has('stats')) return { kind: 'stats' }
   return { kind: 'home' }
 }
 
@@ -54,6 +58,35 @@ function urlFor(route: Route) {
   const q = route.kind === 'create' ? 'new' : route.kind === 'home' ? null : route.kind
   if (q && (QUERY_ROUTES as readonly string[]).includes(q)) url.search = `?${q}`
   return url.toString()
+}
+
+const ENTRY_KEY = 'bangdeuri:entry'
+
+/**
+ * 이 탭에서 처음 열었을 때 한 번만 유입 경로를 센다 (새로고침·화면 이동은 안 센다).
+ * 개발 서버는 운영 DB에 붙어 있어도 세지 않는다. 링크 꼬리표(?from=)는 세고 나서 주소에서 지운다
+ */
+function countEntry() {
+  const href = window.location.href
+  const clean = stripTags(href)
+  if (clean) window.history.replaceState(null, '', clean)
+  if (import.meta.env.DEV) return
+  try {
+    if (sessionStorage.getItem(ENTRY_KEY)) return
+    sessionStorage.setItem(ENTRY_KEY, '1')
+  } catch {
+    // 저장소를 못 쓰면 그냥 센다
+  }
+  const standalone =
+    window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
+  const entry = detectEntry({
+    href,
+    referrer: document.referrer,
+    ua: navigator.userAgent,
+    standalone,
+    landing: roomIdFrom(href) ? 'room' : 'home',
+  })
+  void backend.logEntry(entry)
 }
 
 const showGallery = import.meta.env.DEV && new URL(window.location.href).searchParams.has('gallery')
@@ -68,6 +101,8 @@ export default function App() {
 
   // 알람·타이머 소리를 첫 터치 때 미리 깨워 둔다 (아이폰)
   useEffect(armChime, [])
+
+  useEffect(countEntry, [])
 
   useEffect(() => {
     const onPop = () => setRoute(routeFromUrl())
@@ -141,6 +176,7 @@ export default function App() {
   else if (route.kind === 'login') screen = <AuthScreen ctx={ctx} />
   else if (route.kind === 'me') screen = user ? <ProfileScreen ctx={ctx} /> : <AuthScreen ctx={ctx} />
   else if (route.kind === 'inbox') screen = user ? <InboxScreen ctx={ctx} /> : <AuthScreen ctx={ctx} reason="받은 메시지함은 개발자 계정으로 로그인해야 볼 수 있어요" />
+  else if (route.kind === 'stats') screen = user ? <StatsScreen ctx={ctx} /> : <AuthScreen ctx={ctx} reason="유입 통계는 개발자 계정으로 로그인해야 볼 수 있어요" />
   else if (route.kind === 'create') screen = user ? <CreateScreen ctx={ctx} /> : <AuthScreen ctx={ctx} reason="방을 만들려면 로그인해 주세요" />
   else if (route.kind === 'room') screen = (
       <Suspense fallback={<main className="screen center muted">동네 골목 들어가는 중…</main>}>

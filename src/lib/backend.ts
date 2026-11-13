@@ -1,6 +1,7 @@
 import type { AvatarLook } from '../art/avatar'
 import type { Decor } from '../art/decor'
 import type { Alarm } from './alarm'
+import type { Entry, EntryStat } from './entry'
 import { createLocalBackend } from './localBackend'
 import type { Peer, RoomChannel } from './realtime'
 import { createSupabaseBackend } from './supabase'
@@ -95,6 +96,11 @@ export interface Backend {
   deleteFeedback(id: string): Promise<void>
   /** 개발자 기기들에 새 메시지 알림 (내용은 서버가 DB에서 읽는다) */
   notifyAdmins(): Promise<void>
+
+  // ─── 유입 경로 (세기는 누구나, 보기는 개발자만. IP·계정은 남기지 않고 숫자만) ───
+  logEntry(e: Entry): Promise<void>
+  /** sinceDay(한국 날짜 YYYY-MM-DD)부터 */
+  entryStats(sinceDay: string): Promise<EntryStat[]>
 
   /** 방 주인에게 알림을 보낸다 (주인이 켜 둔 알림만 간다) */
   notify(roomId: string, n: { kind: 'enter' | 'drop' | 'event'; name: string; item?: string }): Promise<void>

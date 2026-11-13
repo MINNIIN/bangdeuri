@@ -487,8 +487,13 @@ function AdminInbox({ ctx }: { ctx: AppContext }) {
   }, [])
   if (unread === null) return null
   return (
-    <button className="btn admin-inbox" onClick={() => ctx.go({ kind: 'inbox' })}>
-      💌 받은 메시지{unread > 0 ? <span className="unread"> 새 {unread}</span> : ''}
-    </button>
+    <div className="admin-row">
+      <button className="btn admin-inbox" onClick={() => ctx.go({ kind: 'inbox' })}>
+        💌 받은 메시지{unread > 0 ? <span className="unread"> 새 {unread}</span> : ''}
+      </button>
+      <button className="btn admin-inbox" onClick={() => ctx.go({ kind: 'stats' })}>
+        📊 유입 통계
+      </button>
+    </div>
   )
 }

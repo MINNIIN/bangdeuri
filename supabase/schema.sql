@@ -502,6 +502,44 @@ as $$
   select coalesce(array_agg(id order by at desc), '{}') from (select id, at from one_per_owner order by at desc limit 16) t
 $$;
 
+-- ─── 유입 경로 ────────────────────────────────────────────────────
+-- 어디서 들어왔는지 숫자만 센다: 날짜 × 경로(꼬리표·초대·앞 사이트) × 연 앱 × 첫 화면.
+-- IP·계정·기기 키는 받지도 남기지도 않는다. 세기는 누구나(log_entry), 보기는 개발자만.
+create table if not exists public.entry_stats (
+  day     date not null,
+  source  text not null check (source ~ '^[a-z0-9_-]{1,20}$'),
+  app     text not null check (app ~ '^[a-z0-9_-]{1,12}$'),
+  landing text not null check (landing in ('home', 'room')),
+  count   integer not null default 0,
+  primary key (day, source, app, landing)
+);
+alter table public.entry_stats enable row level security;
+revoke all on public.entry_stats from anon, authenticated;
+grant select on public.entry_stats to authenticated;
+drop policy if exists "entry_stats admin read" on public.entry_stats;
+create policy "entry_stats admin read" on public.entry_stats for select to authenticated using (public.is_admin());
+
+create or replace function public.log_entry(p_source text, p_app text, p_landing text)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_day date := (now() at time zone 'Asia/Seoul')::date;
+  v_source text := coalesce(p_source, '');
+begin
+  if v_source !~ '^[a-z0-9_-]{1,20}$' or coalesce(p_app, '') !~ '^[a-z0-9_-]{1,12}$' or p_landing not in ('home', 'room') then
+    raise exception 'bad_request';
+  end if;
+  -- 장난으로 꼬리표를 마구 만들어도 하루 경로 종류는 60개까지 (넘으면 etc로)
+  if not exists (select 1 from entry_stats where day = v_day and source = v_source)
+     and (select count(distinct source) from entry_stats where day = v_day) >= 60 then
+    v_source := 'etc';
+  end if;
+  insert into entry_stats (day, source, app, landing, count)
+  values (v_day, v_source, p_app, p_landing, 1)
+  on conflict (day, source, app, landing) do update set count = entry_stats.count + 1;
+end $$;
+
 revoke execute on function public.new_slug() from public;
 revoke execute on function public.create_room(text, text, text) from public;
 revoke execute on function public.reset_room_link(text) from public;
@@ -515,6 +553,7 @@ revoke execute on function public.friend_rooms() from public, anon;
 revoke execute on function public.is_admin() from public, anon;
 revoke execute on function public.admin_user_ids() from public, anon, authenticated;
 revoke execute on function public.send_feedback(text, text, text, text) from public;
+revoke execute on function public.log_entry(text, text, text) from public;
 revoke execute on function public.post_message(text, text, text) from public;
 revoke execute on function public.visit_room(text) from public;
 
@@ -529,6 +568,7 @@ grant execute on function public.list_drops(text) to anon, authenticated;
 grant execute on function public.friend_rooms() to authenticated;
 grant execute on function public.is_admin() to authenticated;
 grant execute on function public.send_feedback(text, text, text, text) to anon, authenticated;
+grant execute on function public.log_entry(text, text, text) to anon, authenticated;
 grant execute on function public.post_message(text, text, text) to anon, authenticated;
 grant execute on function public.visit_room(text) to anon, authenticated;
 

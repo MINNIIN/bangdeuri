@@ -5,6 +5,7 @@ import { createLocalChannel } from './realtime'
 import { type Alarm, MAX_ALARMS, nextAlarmAt } from './alarm'
 import { dateAllowed, EVENTS_PER_MINUTE, MAX_EVENTS, monthRange, ROOM_EVENTS_PER_MINUTE } from './calendar'
 import { CHAT_KEEP, FEEDBACK_CONTACT_MAX, FEEDBACK_MAX, FEEDBACK_PER_10MIN, kstDate, MAX_DROPS, sealLetter } from './rules'
+import type { EntryStat } from './entry'
 import type { AuthUser, CalEvent, ChatMessage, Drop, Feedback, Profile, Room } from './types'
 import { isPlace, MAX_HOUSES } from './town'
 
@@ -31,6 +32,8 @@ interface LocalDb {
   feedback?: (Feedback & { device: string; userId: string | null })[]
   /** 개발자 계정 이메일 (소문자) */
   admins?: string[]
+  /** 유입 경로 숫자 */
+  entries?: EntryStat[]
 }
 
 /** 서버처럼 쓴 사람 계정·기기 키를 따로 들고 있는다 (목록에는 안 나간다) */
@@ -509,6 +512,21 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
     },
     async notifyAdmins() {
       // 로컬 모드는 알림을 보내지 않는다
+    },
+    async logEntry(e) {
+      if (!/^[a-z0-9_-]{1,20}$/.test(e.source) || !/^[a-z0-9_-]{1,12}$/.test(e.app) || !['home', 'room'].includes(e.landing)) fail('bad_request')
+      const db = read()
+      const day = kstDate()
+      const list = db.entries ?? []
+      const hit = list.find((x) => x.day === day && x.source === e.source && x.app === e.app && x.landing === e.landing)
+      if (hit) hit.count += 1
+      else list.push({ day, source: e.source, app: e.app, landing: e.landing, count: 1 })
+      db.entries = list
+      write(db)
+    },
+    async entryStats(sinceDay) {
+      if (!(await this.isAdmin())) fail('forbidden')
+      return (read().entries ?? []).filter((x) => x.day >= sinceDay).map((x) => ({ ...x }))
     },
     async notify() {
       // 로컬 모드는 알림을 보내지 않는다

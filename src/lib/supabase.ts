@@ -6,6 +6,7 @@ import { CHAT_KEEP } from './rules'
 import type { Peer, RoomChannel, RoomEvent } from './realtime'
 import type { Alarm } from './alarm'
 import { monthRange } from './calendar'
+import type { EntryStat } from './entry'
 import type { AuthUser, CalEvent, ChatMessage, Drop, Feedback, Profile, Room, ThemeId } from './types'
 import { isPlace } from './town'
 
@@ -437,6 +438,16 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     async notifyAdmins() {
       // 알림은 덤이라 실패해도 화면에는 알리지 않는다
       await sb.functions.invoke('notify', { body: { kind: 'feedback' } }).catch(() => undefined)
+    },
+    async logEntry(e) {
+      // 세기는 덤이라 실패해도 조용히 (DB에 함수가 아직 없을 때도)
+      await sb.rpc('log_entry', { p_source: e.source, p_app: e.app, p_landing: e.landing }).then(() => undefined, () => undefined)
+    },
+    async entryStats(sinceDay) {
+      const rows = check(
+        await sb.from('entry_stats').select('day,source,app,landing,count').gte('day', sinceDay).order('day', { ascending: false }).limit(5000),
+      ) as { day: string; source: string; app: string; landing: 'home' | 'room'; count: number }[]
+      return rows.map((r): EntryStat => ({ day: r.day, source: r.source, app: r.app, landing: r.landing, count: r.count }))
     },
     async notify(roomId, n) {
       // 알림은 덤이라 실패해도 화면에는 알리지 않는다
