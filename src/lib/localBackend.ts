@@ -6,7 +6,7 @@ import { type Alarm, MAX_ALARMS, nextAlarmAt } from './alarm'
 import { dateAllowed, EVENTS_PER_MINUTE, MAX_EVENTS, monthRange, ROOM_EVENTS_PER_MINUTE } from './calendar'
 import { CHAT_KEEP, kstDate, MAX_DROPS, sealLetter } from './rules'
 import type { AuthUser, CalEvent, ChatMessage, Drop, Profile, Room } from './types'
-import { isPlace } from './town'
+import { isPlace, MAX_HOUSES } from './town'
 
 /**
  * Supabase 키가 없을 때 쓰는 가짜 서버. 같은 브라우저 localStorage에 저장한다.
@@ -290,7 +290,7 @@ export function createLocalBackend(storage: Storage = localStorage, session: Sto
           owners.add(r.ownerId)
           return true
         })
-        .slice(0, 8)
+        .slice(0, MAX_HOUSES - 1)
         .map(({ r }) => withOwner(db, r))
     },
 

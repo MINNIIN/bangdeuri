@@ -171,6 +171,26 @@ describe('로컬 모드 저장소', () => {
     expect((await a.neighbors(roomA.id)).map((r) => r.id)).toEqual([roomB.id])
   })
 
+  it('이웃 집은 최근 순으로 16채까지 골목에 선다', async () => {
+    const db = memoryStorage()
+    const host = createLocalBackend(db, memoryStorage())
+    await host.signUpEmail('host@test.kr', 'secret1')
+    await host.saveProfile({ nickname: '민수', look: PRESET_LOOKS[0].look })
+    const mine = await host.createRoom(newRoom)
+    for (let i = 0; i < 18; i++) {
+      const f = createLocalBackend(db, memoryStorage())
+      await f.signUpEmail(`f${i}@test.kr`, 'secret1')
+      await f.saveProfile({ nickname: `친구${i}`, look: PRESET_LOOKS[i % PRESET_LOOKS.length].look })
+      await f.createRoom({ ...newRoom, name: `친구${i}` })
+      await f.becomeNeighbor(mine.id)
+    }
+    const nb = await host.neighbors(mine.id)
+    expect(nb).toHaveLength(16)
+    // 가장 먼저 왔던 두 명이 밀려난다
+    expect(nb.map((r) => r.name)).not.toContain('친구0')
+    expect(nb.map((r) => r.name)).toContain('친구17')
+  })
+
   it('놀러 간 방을 지우면 서로의 동네에서 빠지고, 다시 놀러 가면 다시 생긴다', async () => {
     const db = memoryStorage()
     const a = createLocalBackend(db, memoryStorage())

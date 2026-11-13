@@ -28,9 +28,15 @@ describe('동네 배치', () => {
     expect(lots[0].x).toBe(0)
   })
 
-  it('집은 최대 9채', () => {
+  it('집은 최대 17채 (친구 집 16 + 내 집)', () => {
     const ids = Array.from({ length: 20 }, (_, i) => `r${i}`)
     expect(layoutLots(ids)).toHaveLength(MAX_HOUSES)
+    expect(MAX_HOUSES).toBe(17)
+    // 집이 다 차도 골목·공원이 만들어지고, 집끼리 겹치지 않는다
+    const map = buildTown(ids)
+    const xs = map.lots.map((l) => l.x).sort((a, b) => a - b)
+    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(13)
+    expect(map.blocked({ x: 0, z: 0 })).toBe(false)
   })
 
   it('마당 좌표는 오가도 그대로', () => {

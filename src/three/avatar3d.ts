@@ -624,6 +624,55 @@ function hat(look: AvatarLook) {
   return g
 }
 
+/**
+ * 마디마다 그 아래(다음 마디 전까지)의 조각을 재질별로 합친다. 마디 자체의 움직임은 그대로.
+ * 돌려주는 것: 새로 만든 지오메트리 (미니미를 지울 때 함께 지운다)
+ */
+function compactJoints(root: THREE.Object3D, joints: THREE.Object3D[]) {
+  root.updateMatrixWorld(true)
+  const isJoint = new Set(joints)
+  const made: THREE.BufferGeometry[] = []
+  for (const j of joints) {
+    const inv = new THREE.Matrix4().copy(j.matrixWorld).invert()
+    const buckets = new Map<string, { mat: THREE.Material; cast: boolean; meshes: THREE.Mesh[] }>()
+    const walk = (o: THREE.Object3D) => {
+      for (const c of o.children) {
+        if (isJoint.has(c)) continue
+        const m = c as THREE.Mesh
+        if (m.isMesh && !Array.isArray(m.material) && !m.name) {
+          const key = `${m.material.uuid}|${m.castShadow}`
+          let b = buckets.get(key)
+          if (!b) buckets.set(key, (b = { mat: m.material, cast: m.castShadow, meshes: [] }))
+          b.meshes.push(m)
+        }
+        walk(c)
+      }
+    }
+    walk(j)
+    for (const b of buckets.values()) {
+      if (b.meshes.length < 2) continue
+      const geos = b.meshes.map((m) => {
+        const g = m.geometry.index ? m.geometry.toNonIndexed() : new THREE.BufferGeometry().copy(m.geometry)
+        for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name)
+        if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2))
+        if (!g.attributes.normal) g.computeVertexNormals()
+        g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld))
+        return g
+      })
+      const g = mergeGeometries(geos)
+      for (const x of geos) x.dispose()
+      if (!g) continue
+      for (const m of b.meshes) m.parent?.remove(m)
+      const mesh = new THREE.Mesh(g, b.mat)
+      mesh.castShadow = b.cast
+      mesh.receiveShadow = !b.cast
+      j.add(mesh)
+      made.push(g)
+    }
+  }
+  return made
+}
+
 function stripeTexture(base: string) {
   return canvasTexture(64, 64, (ctx) => {
     ctx.fillStyle = base
@@ -858,6 +907,10 @@ export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
     if ((n as THREE.Mesh).isMesh && n.castShadow) n.receiveShadow = false
   })
 
+  // 움직이는 마디(몸·다리·무릎·팔·팔꿈치·머리)마다 같은 재질 조각을 하나로 합친다.
+  // 미니미 하나가 40조각 → 20조각 남짓이 되어, 여럿이 모여도 휴대폰에서 덜 버벅인다
+  const merged = compactJoints(root, [body, head, ...legs, ...knees, ...arms, ...elbows])
+
   const height =
     HEAD_Y +
     HEAD_R +
@@ -973,6 +1026,7 @@ export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
     height,
     animate,
     dispose() {
+      for (const g of merged) g.dispose()
       faceOpen.dispose()
       faceClosed.dispose()
       faceMat.dispose()

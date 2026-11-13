@@ -398,7 +398,7 @@ begin
       or (v.member_id = v_owner and v.room_id in (select id from rooms where owner_id = auth.uid()));
 end $$;
 
--- 동네 이웃 방 번호 (최근 순, 8개). 이 방에 놀러 온 회원의 가장 최근 방 + 이 방 주인이 놀러 간 방
+-- 동네 이웃 방 번호 (최근 순, 16개). 이 방에 놀러 온 회원의 가장 최근 방 + 이 방 주인이 놀러 간 방
 create or replace function public.neighbor_room_ids(p_room text)
 returns text[]
 language sql stable security definer set search_path = public
@@ -419,7 +419,7 @@ as $$
   one_per_owner as (
     select distinct on (owner_id) id, at from ranked order by owner_id, at desc
   )
-  select coalesce(array_agg(id order by at desc), '{}') from (select id, at from one_per_owner order by at desc limit 8) t
+  select coalesce(array_agg(id order by at desc), '{}') from (select id, at from one_per_owner order by at desc limit 16) t
 $$;
 
 revoke execute on function public.new_slug() from public;

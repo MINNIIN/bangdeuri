@@ -28,8 +28,8 @@ export type DropPlace = 'in' | 'yard' | 'mail'
 export const DROP_PLACES: DropPlace[] = ['in', 'yard', 'mail']
 export const isPlace = (s: unknown): s is DropPlace => s === 'in' || s === 'yard' || s === 'mail'
 
-/** 한 동네에 들어가는 집 수 (가운데 방 주인 집 포함) */
-export const MAX_HOUSES = 9
+/** 한 동네에 들어가는 집 수 (가운데 방 주인 집 포함: 친구 집 16채 + 내 집) */
+export const MAX_HOUSES = 17
 
 export const LOT_W = 13
 export const HOUSE_W = 7.2

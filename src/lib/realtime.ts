@@ -66,7 +66,7 @@ export const newCid = () =>
   Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => (b % 36).toString(36)).join('')
 
 /** 한 방에 같이 있을 수 있는 사람 수 (방 주인 빼고) */
-export const MAX_GUESTS = 10
+export const MAX_GUESTS = 20
 
 // ─── 로컬 모드: 같은 브라우저의 다른 탭끼리 BroadcastChannel로 ───
 

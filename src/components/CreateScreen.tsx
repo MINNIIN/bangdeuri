@@ -26,7 +26,7 @@ export function CreateScreen({ ctx }: { ctx: AppContext }) {
       const room = await backend.createRoom({ name: name.trim(), theme, motto: motto.trim() })
       // 방이 없을 때 이름을 밝히고 놀러 갔던 친구 방들과 이웃이 된다 (서로의 골목에 집이 생긴다)
       const named = store.visits().filter((v) => v.named && v.ownerId !== ctx.user?.id)
-      await Promise.allSettled(named.slice(0, 8).map((v) => backend.becomeNeighbor(v.id)))
+      await Promise.allSettled(named.slice(0, 16).map((v) => backend.becomeNeighbor(v.id)))
       ctx.go({ kind: 'room', slug: room.slug })
       ctx.toast('방이 생겼어요! 이제 친구들에게 링크를 보내 볼까요')
     } catch (e) {
