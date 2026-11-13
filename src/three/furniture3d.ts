@@ -391,6 +391,57 @@ const BUILDERS: Record<string, Build> = {
       part(cone(0.08, 0.16, 10), mat('#3b3a48', { rough: 0.3 }), [0, 0.52, 0]),
       part(torus(0.04, 0.012), mat('#ffd94a'), [0, 0.5, 0], { rot: [Math.PI / 2, 0, 0] }),
     ),
+  // 바선생: 반들반들한 타원 등딱지 + 머리 방패 + 다리 6개 + 긴 더듬이 (앞이 +z)
+  roach: () => {
+    const shell = mat('#5a2e17', { rough: 0.22, metal: 0.15 })
+    const edge = mat('#74391c', { rough: 0.3 })
+    const dark = mat('#2b1810', { rough: 0.5 })
+    const g = group(
+      // 등딱지(날개): 양쪽 반쪽이 가운데에서 살짝 겹친다
+      part(sphere(0.17, 24, 16), shell, [-0.028, 0.05, -0.02], { scale: [0.38, 0.27, 1] }),
+      part(sphere(0.17, 24, 16), shell, [0.028, 0.05, -0.02], { scale: [0.38, 0.27, 1] }),
+      // 배 (아래쪽 마디)
+      part(sphere(0.15, 20, 12), edge, [0, 0.035, -0.03], { scale: [0.62, 0.2, 0.95] }),
+      // 머리 방패 · 머리
+      part(sphere(0.07, 18, 12), edge, [0, 0.055, 0.15], { scale: [1.25, 0.45, 0.85] }),
+      part(sphere(0.035, 12, 8), dark, [0, 0.035, 0.205], { scale: [1.1, 0.8, 0.9] }),
+      // 꼬리 끝 두 가닥
+      part(cone(0.008, 0.06, 6), dark, [-0.03, 0.03, -0.19], { rot: [-Math.PI / 2 - 0.2, 0, 0.3] }),
+      part(cone(0.008, 0.06, 6), dark, [0.03, 0.03, -0.19], { rot: [-Math.PI / 2 - 0.2, 0, -0.3] }),
+    )
+    // 더듬이: 머리에서 앞·바깥·위로 길게 휘어 나간다
+    for (const s of [-1, 1]) {
+      const ant = new THREE.Group()
+      ant.position.set(s * 0.018, 0.045, 0.22)
+      ant.rotation.set(-0.35, s * 0.45, 0)
+      ant.add(part(cyl(0.0035, 0.002, 0.16, 5), dark, [0, 0, 0.08], { rot: [Math.PI / 2, 0, 0] }))
+      const tip = new THREE.Group()
+      tip.position.z = 0.16
+      tip.rotation.set(0.35, s * 0.35, 0)
+      tip.add(part(cyl(0.002, 0.0012, 0.14, 4), dark, [0, 0, 0.07], { rot: [Math.PI / 2, 0, 0] }))
+      ant.add(tip)
+      g.add(ant)
+    }
+    // 다리: 몸 옆에서 바깥으로 나가 꺾여 바닥을 짚는다 (앞·가운데·뒤)
+    for (const s of [-1, 1])
+      for (const [z, splay] of [
+        [0.09, 0.7],
+        [0.0, 0.05],
+        [-0.09, -0.6],
+      ] as const) {
+        const leg = new THREE.Group()
+        leg.position.set(s * 0.05, 0.04, z)
+        leg.rotation.y = s * (Math.PI / 2) - s * splay
+        // 넓적다리: 위로 살짝 들렸다가
+        leg.add(part(cyl(0.007, 0.006, 0.09, 6), dark, [0, 0.015, 0.045], { rot: [Math.PI / 2 - 0.35, 0, 0] }))
+        // 종아리: 바닥으로 내려간다
+        leg.add(part(cyl(0.005, 0.0025, 0.1, 6), dark, [0, 0.0, 0.12], { rot: [Math.PI / 2 + 0.75, 0, 0] }))
+        g.add(leg)
+      }
+    // 반짝임: 등딱지 위 가는 빛줄기
+    g.add(part(sphere(0.012, 10, 8), mat('#ffffff', { rough: 0.1, opacity: 0.35 }), [0.04, 0.094, 0.02], { scale: [0.7, 0.25, 3], shadow: false }))
+    return g
+  },
   poop: () =>
     group(
       part(torus(0.13, 0.065), mat('#8a5a38', { rough: 0.5 }), [0, 0.06, 0], { rot: [Math.PI / 2, 0, 0] }),
@@ -462,7 +513,6 @@ const VOXEL_H: Record<string, number> = {
   chicken: 0.35,
   tteokbokki: 0.3,
   socks: 0.3,
-  roach: 0.16,
 }
 
 /** 가구·아이템 하나를 만든다 (없는 아이템이면 null) */
