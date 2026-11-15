@@ -95,7 +95,7 @@ export function storeBuilding(a: PlaceAnims) {
     ctx.font = `700 54px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('방들이마트 24', w / 2, h / 2 + 2)
+    ctx.fillText('방들이편의점24', w / 2, h / 2 + 2)
     ctx.fillStyle = mint
     ctx.beginPath()
     ctx.arc(w / 2 - 210, h / 2 + 2, 16, 0, Math.PI * 2)
@@ -623,75 +623,99 @@ export function sandBeach(z: Zones) {
   return m
 }
 
-/** 바다: 잔물결 무늬가 흐르고, 물가엔 하얀 파도가 밀려왔다 밀려간다 */
+/**
+ * 바다: 물가는 옥빛으로 얕고 멀수록 짙은 파랑, 잔물결·반짝임이 흐르고,
+ * 물가엔 불규칙한 거품 파도가 밀려왔다 빠지고, 조금 먼 데서 한 줄 더 부서진다. 물결 따라 살짝 출렁인다.
+ * (조명·그림자·안개는 보통 재질 그대로 받는다)
+ */
 export function sea(z: Zones, a: PlaceAnims) {
   const g = new THREE.Group()
   g.name = 'sea'
-  const ripple = canvasTexture(
-    256,
-    256,
-    (ctx) => {
-      ctx.fillStyle = '#3fb4d6'
-      ctx.fillRect(0, 0, 256, 256)
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)'
-      ctx.lineWidth = 3
-      for (let i = 0; i < 40; i++) {
-        const x = (i * 71) % 256
-        const y = (i * 113) % 256
-        ctx.beginPath()
-        ctx.arc(x, y, 9 + (i % 4) * 3, Math.PI * 1.15, Math.PI * 1.85)
-        ctx.stroke()
-      }
-    },
-    [40, 40],
-  )
-  a.owned.push(ripple)
-  const water = new THREE.MeshStandardMaterial({ color: '#ffffff', map: ripple, roughness: 0.18, metalness: 0.05, transparent: true, opacity: 0.86 })
+  // 모래가 물 높이 아래로 들어가는 x (물가 선)
+  let shoreX = z.shore
+  while (shoreX < z.wet + 2 && groundY(z, shoreX, 0) > SEA_Y) shoreX += 0.05
+  const x0 = shoreX - 1.5
+  const x1 = shoreX + 170
+  const geo = new THREE.PlaneGeometry(x1 - x0, 200, 170, 100)
+  geo.rotateX(-Math.PI / 2)
+  geo.translate((x0 + x1) / 2, 0, 0)
+  a.owned.push(geo)
+  const uni = {
+    uTime: { value: 0 },
+    uShore: { value: shoreX },
+    uShallow: { value: new THREE.Color('#62dbd6') },
+    uDeep: { value: new THREE.Color('#1f78c8') },
+  }
+  const water = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.22, metalness: 0.08, transparent: true })
+  water.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, uni)
+    sh.vertexShader = sh.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform float uTime;
+uniform float uShore;
+varying vec2 vW;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vW = position.xz;
+float sdv = position.x - uShore;
+float amp = 0.045 * smoothstep(0.5, 7.0, sdv);
+transformed.y += amp * (sin(position.x * 0.8 + uTime * 1.25) + 0.6 * sin(position.z * 0.65 - uTime * 1.05 + position.x * 0.25));`,
+      )
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform float uTime;
+uniform float uShore;
+uniform vec3 uShallow;
+uniform vec3 uDeep;
+varying vec2 vW;`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+float sd = vW.x - uShore;
+float depthK = smoothstep(0.0, 22.0, sd);
+vec3 col = mix(uShallow, uDeep, depthK);
+// 잔물결: 두 방향 물결이 겹치는 밝은 줄
+float r1 = sin(vW.x * 1.9 + uTime * 1.5 + sin(vW.y * 1.1 + uTime * 0.3) * 1.6);
+float r2 = sin(vW.y * 1.6 - uTime * 1.1 + sin(vW.x * 0.7) * 1.4);
+col += vec3(0.07) * smoothstep(0.35, 0.95, r1 * r2);
+col -= vec3(0.03) * smoothstep(0.4, 0.95, -r1 * r2);
+// 햇빛 반짝임
+float sp = sin(vW.x * 6.3 + uTime * 2.7) * sin(vW.y * 5.7 - uTime * 2.2 + vW.x * 0.6);
+col += vec3(0.32) * smoothstep(0.93, 1.0, sp) * (0.4 + 0.6 * depthK);
+// 물가 거품: 밀려왔다 빠지는 앞줄 (물가를 따라 들쭉날쭉)
+float wave = 0.5 + 0.5 * sin(uTime * 0.85);
+float front = mix(0.15, 2.4, wave) + sin(vW.y * 0.8 + uTime * 0.6) * 0.4 + sin(vW.y * 2.1 + 1.3) * 0.18;
+float foam = smoothstep(front + 0.5, front - 0.05, sd) * smoothstep(-0.4, 0.15, sd);
+float lace = 0.5 + 0.5 * sin(vW.y * 8.0 + sin(vW.x * 5.0 + uTime) * 2.2) * sin(vW.x * 10.0 - uTime * 0.9 + vW.y);
+foam *= mix(0.45, 1.0, lace) * mix(0.7, 1.0, wave);
+// 빠지고 남은 얇은 거품 자국
+float trail = smoothstep(0.12, 0.0, abs(sd - front - 0.6)) * 0.35 * (1.0 - wave);
+// 조금 먼 데서 부서지는 두 번째 파도 줄
+float f2 = 5.0 + sin(uTime * 0.55 + vW.y * 0.35) * 1.3;
+float foam2 = smoothstep(0.45, 0.0, abs(sd - f2)) * 0.5 * (0.55 + 0.45 * sin(vW.y * 2.6 + uTime * 1.3));
+float fm = clamp(foam + trail + foam2, 0.0, 1.0);
+col = mix(col, vec3(1.0), fm);
+diffuseColor.rgb = col;
+// 물가는 얕아서 모래가 비친다
+diffuseColor.a = max(mix(0.5, 0.94, smoothstep(0.0, 4.0, sd)), fm * 0.95);`,
+      )
+  }
   a.owned.push(water)
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), water)
-  plane.rotation.x = -Math.PI / 2
-  plane.position.set(z.shore + 200, SEA_Y, 0)
+  const plane = new THREE.Mesh(geo, water)
+  plane.position.y = SEA_Y
   plane.receiveShadow = true
   plane.userData.ground = true
   plane.name = 'water'
   g.add(plane)
-  // 물가 파도 두 줄
-  // 거품 줄: 가운데가 진하고 가장자리로 갈수록 투명, 군데군데 거품 방울
-  const foamTex = canvasTexture(64, 256, (ctx) => {
-    for (let x = 0; x < 64; x++) {
-      const k = 1 - Math.abs(x - 32) / 32
-      ctx.fillStyle = `rgba(255,255,255,${(k * k * 0.9).toFixed(3)})`
-      ctx.fillRect(x, 0, 1, 256)
-    }
-    for (let i = 0; i < 120; i++) {
-      ctx.fillStyle = 'rgba(255,255,255,0.9)'
-      ctx.beginPath()
-      ctx.arc(8 + ((i * 37) % 48), (i * 53) % 256, 1 + (i % 3), 0, Math.PI * 2)
-      ctx.fill()
-    }
-  }, [1, 20])
-  a.owned.push(foamTex)
-  const foamMat = new THREE.MeshBasicMaterial({ color: '#ffffff', map: foamTex, transparent: true, opacity: 0.7, depthWrite: false })
-  a.owned.push(foamMat)
-  const foams: THREE.Mesh[] = []
-  for (let k = 0; k < 2; k++) {
-    const f = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 80, 1, 40), foamMat.clone())
-    a.owned.push(f.material as THREE.Material)
-    f.rotation.x = -Math.PI / 2
-    f.name = 'foam'
-    f.renderOrder = 2
-    foams.push(f)
-    g.add(f)
-  }
-  const edge = z.shore + 2.0
   a.tick.push((t) => {
-    ripple.offset.set((t * 0.004) % 1, (t * 0.002) % 1)
-    foams.forEach((f, k) => {
-      const ph = (t * 0.22 + k * 0.5) % 1
-      const x = edge + 0.6 - Math.sin(ph * Math.PI) * 1.3
-      f.position.set(x, SEA_Y + 0.012 + Math.max(0, groundY(z, x, 0) - SEA_Y), 0)
-      ;(f.material as THREE.MeshBasicMaterial).opacity = 0.6 * Math.sin(ph * Math.PI)
-    })
+    uni.uTime.value = t
   })
   return g
 }
@@ -997,51 +1021,143 @@ export function beachSign(a: PlaceAnims) {
   const tex = signTex(a, 512, 192, (ctx, w, h) => {
     ctx.fillStyle = '#5aa9e6'
     ctx.fillRect(0, 0, w, h)
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 6
+    ctx.strokeRect(10, 10, w - 20, h - 20)
     ctx.fillStyle = '#ffffff'
-    ctx.font = `700 64px ${FONT}`
+    ctx.font = `700 54px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('방들이 해수욕장', w / 2, h / 2 - 14)
-    ctx.font = `400 34px ${FONT}`
-    ctx.fillText('→ 바다 · 방파제 · 등대', w / 2, h / 2 + 50)
+    ctx.fillText('방들이 해수욕장', w / 2, h / 2 - 18)
+    ctx.font = `400 30px ${FONT}`
+    ctx.fillText('→ 바다 · 방파제 · 등대', w / 2, h / 2 + 42)
   })
+  // 기둥은 판 뒤(-z)에 세워 글씨를 가리지 않는다
+  const face = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 })
+  a.owned.push(face)
+  const edge = mat('#3d7fd6', { rough: 0.6 })
   return group(
-    part(cyl(0.06, 0.07, 2.2, 8), mat('#8a5a38'), [-0.9, 1.1, 0]),
-    part(cyl(0.06, 0.07, 2.2, 8), mat('#8a5a38'), [0.9, 1.1, 0]),
-    texMesh(a, box(2.2, 0.82, 0.08), tex, [0, 1.85, 0]),
+    part(cyl(0.06, 0.07, 2.25, 8), mat('#8a5a38'), [-0.85, 1.12, -0.1]),
+    part(cyl(0.06, 0.07, 2.25, 8), mat('#8a5a38'), [0.85, 1.12, -0.1]),
+    part(box(2.24, 0.86, 0.08), edge, [0, 1.85, -0.02]),
+    part(new THREE.PlaneGeometry(2.2, 0.82), face, [0, 1.85, 0.025], { shadow: false }),
   )
 }
 
-/** 갈매기 셋이 바닷가 위를 빙빙 돈다 */
+/** 갈매기 한 마리: 유선형 몸통 · 두 마디 날개(끝은 검정) · 부채 꼬리 · 노란 부리. 앞은 +z */
+function gull(a: PlaceAnims, mats: { white: THREE.Material; grey: THREE.Material; black: THREE.Material; beak: THREE.Material; eye: THREE.Material }) {
+  const b = new THREE.Group()
+  // 몸통: 꼬리 쪽이 가늘고 가슴이 통통한 물방울 (y축으로 돌려 깎고 눕힌다)
+  const prof = [[0, -0.46], [0.035, -0.4], [0.075, -0.26], [0.11, -0.1], [0.125, 0.04], [0.115, 0.15], [0.085, 0.24], [0.04, 0.29], [0, 0.3]].map(([r, y]) => new THREE.Vector2(r, y))
+  const bodyGeo = new THREE.LatheGeometry(prof, 14)
+  bodyGeo.rotateX(Math.PI / 2)
+  bodyGeo.scale(1, 0.85, 1)
+  a.owned.push(bodyGeo)
+  b.add(new THREE.Mesh(bodyGeo, mats.white))
+  // 등은 회색 (날개 사이)
+  const back = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), mats.grey)
+  back.scale.set(0.9, 0.35, 2.2)
+  back.position.set(0, 0.035, -0.06)
+  a.owned.push(back.geometry)
+  b.add(back)
+  // 머리 · 눈 · 부리
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10), mats.white)
+  head.position.set(0, 0.07, 0.3)
+  a.owned.push(head.geometry)
+  b.add(head)
+  for (const s of [-1, 1]) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), mats.eye)
+    e.position.set(s * 0.062, 0.1, 0.34)
+    a.owned.push(e.geometry)
+    b.add(e)
+  }
+  const beakGeo = new THREE.ConeGeometry(0.026, 0.13, 8)
+  beakGeo.rotateX(Math.PI / 2)
+  a.owned.push(beakGeo)
+  const beak = new THREE.Mesh(beakGeo, mats.beak)
+  beak.position.set(0, 0.055, 0.43)
+  beak.rotation.x = 0.12
+  b.add(beak)
+  // 부채 꼬리
+  const tail = new THREE.Shape()
+  tail.moveTo(-0.03, 0)
+  tail.lineTo(-0.1, -0.16)
+  tail.quadraticCurveTo(0, -0.2, 0.1, -0.16)
+  tail.lineTo(0.03, 0)
+  const tailGeo = new THREE.ShapeGeometry(tail)
+  tailGeo.rotateX(Math.PI / 2)
+  a.owned.push(tailGeo)
+  const tailM = new THREE.Mesh(tailGeo, mats.white)
+  tailM.position.set(0, 0.0, -0.4)
+  b.add(tailM)
+  // 날개: 안쪽 마디(몸에 붙은 넓은 판) + 바깥 마디(끝이 뾰족, 검은 끝)
+  const flat = (pts: [number, number][]) => {
+    const sh = new THREE.Shape()
+    sh.moveTo(pts[0][0], pts[0][1])
+    for (const [x, z] of pts.slice(1)) sh.lineTo(x, z)
+    const g = new THREE.ShapeGeometry(sh)
+    g.rotateX(Math.PI / 2)
+    a.owned.push(g)
+    return g
+  }
+  // (x: 몸에서 바깥, z: 앞이 +) — 앞가장자리는 둥글게 휘고 뒤는 곧게
+  const innerGeo = flat([[0, 0.12], [0.2, 0.13], [0.4, 0.1], [0.4, -0.1], [0.2, -0.14], [0, -0.14]])
+  const outerGeo = flat([[0, 0.1], [0.2, 0.08], [0.36, 0.02], [0.3, -0.04], [0.14, -0.08], [0, -0.1]])
+  const tipGeo = flat([[0.24, 0.055], [0.36, 0.02], [0.3, -0.04], [0.2, -0.065]])
+  const wings = [-1, 1].map((side) => {
+    const root = new THREE.Group()
+    root.position.set(side * 0.07, 0.04, 0.02)
+    root.scale.x = side
+    const inner = new THREE.Mesh(innerGeo, mats.grey)
+    root.add(inner)
+    const elbow = new THREE.Group()
+    elbow.position.x = 0.4
+    elbow.add(new THREE.Mesh(outerGeo, mats.grey))
+    const tip = new THREE.Mesh(tipGeo, mats.black)
+    tip.position.y = 0.002
+    elbow.add(tip)
+    root.add(elbow)
+    b.add(root)
+    return { root, elbow, side }
+  })
+  b.traverse((n) => {
+    if ((n as THREE.Mesh).isMesh) n.castShadow = false
+  })
+  b.scale.setScalar(1.15)
+  return { b, wings }
+}
+
+/** 갈매기 셋이 바닷가 위를 빙빙 돈다: 대부분 활공하다가 가끔 날갯짓 */
 export function gulls(z: Zones, a: PlaceAnims) {
   const g = new THREE.Group()
   g.name = 'gulls'
-  const white = mat('#ffffff', { rough: 0.6 })
-  const grey = mat('#c9cbd6', { rough: 0.6 })
+  const side = THREE.DoubleSide
+  const mk = (color: string, rough = 0.7) => {
+    const m = new THREE.MeshStandardMaterial({ color, roughness: rough, side })
+    a.owned.push(m)
+    return m
+  }
+  const mats = { white: mk('#ffffff'), grey: mk('#b9c1cc'), black: mk('#2b2b33'), beak: mk('#ffc23a', 0.4), eye: mk('#1b1b22', 0.3) }
   const birds = [0, 1, 2].map((i) => {
-    const b = new THREE.Group()
-    b.add(part(sphere(0.16, 12, 8), white, [0, 0, 0], { scale: [1, 0.8, 2], shadow: false }))
-    b.add(part(sphere(0.09, 10, 8), white, [0, 0.06, 0.3], { shadow: false }))
-    b.add(part(cone(0.03, 0.12, 6), mat('#ffb020'), [0, 0.05, 0.43], { rot: [Math.PI / 2, 0, 0], shadow: false }))
-    const wings = [-1, 1].map((s) => {
-      const w = new THREE.Group()
-      w.add(part(box(0.6, 0.02, 0.22), grey, [s * 0.3, 0, 0], { shadow: false }))
-      w.position.x = s * 0.08
-      b.add(w)
-      return w
-    })
-    g.add(b)
-    return { b, wings, r: 6 + i * 2.2, h: 6 + i * 0.9, sp: 0.35 + i * 0.07, ph: i * 2.1 }
+    const q = gull(a, mats)
+    g.add(q.b)
+    return { ...q, r: 6 + i * 2.4, h: 6.2 + i * 0.9, sp: 0.32 + i * 0.06, ph: i * 2.1 }
   })
   const cx = z.he + 17
   a.tick.push((t) => {
     for (const q of birds) {
       const an = t * q.sp + q.ph
-      q.b.position.set(cx + Math.cos(an) * q.r, q.h + Math.sin(t * 0.8 + q.ph) * 0.4, 2 + Math.sin(an) * q.r * 0.6)
-      q.b.rotation.y = -an
-      const f = Math.sin(t * 7 + q.ph) * 0.45
-      q.wings[0].rotation.z = f
-      q.wings[1].rotation.z = -f
+      q.b.position.set(cx + Math.cos(an) * q.r, q.h + Math.sin(t * 0.7 + q.ph) * 0.35, 2 + Math.sin(an) * q.r * 0.6)
+      // 원을 도는 방향으로 머리를 두고, 안쪽으로 살짝 기운다
+      q.b.rotation.set(0, Math.atan2(-Math.sin(an), Math.cos(an) * 0.6), 0.22, 'YXZ')
+      // 6초 중 1.6초만 날갯짓, 나머지는 날개를 살짝 올린 채 활공
+      const cyc = (t + q.ph * 3) % 6
+      const flap = cyc < 1.6 ? Math.sin(cyc * 9) : 0
+      const lift = 0.1 + Math.sin(t * 1.3 + q.ph) * 0.04
+      for (const w of q.wings) {
+        w.root.rotation.z = (lift + flap * 0.55) * w.side
+        w.elbow.rotation.z = -(flap * 0.35 + 0.08) * (1)
+      }
     }
   })
   return g

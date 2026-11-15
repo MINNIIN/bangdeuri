@@ -300,11 +300,9 @@ function VisitedRooms({ ctx }: { ctx: AppContext }) {
           </li>
         ))}
       </ul>
-      <p className="panel-tip">
-        {ctx.user
-          ? '내 계정에 저장돼서 카톡·인스타로 들어간 방도 어디서 열든 여기 모여요'
-          : '이 브라우저에서 들어간 방만 기억해요. 로그인하면 카톡·인스타 어디서 들어간 방이든 한곳에 모여요'}
-      </p>
+      {!ctx.user && (
+        <p className="panel-tip">이 브라우저에서 들어간 방만 기억해요. 로그인하면 카톡·인스타 어디서 들어간 방이든 한곳에 모여요</p>
+      )}
       <Sheet open={asking !== null} onClose={() => !busy && setAsking(null)} title="친구 방 지우기">
         {asking && (
           <>

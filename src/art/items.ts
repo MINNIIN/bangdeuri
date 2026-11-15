@@ -458,7 +458,7 @@ export const ITEMS: ItemDef[] = [
     id: 'sofa',
     cat: 'furniture',
     name: '소파',
-    hint: '여기서 같이 넷플 보자',
+    hint: '여기서 같이 영화 보자',
     sprite: {
       palette: { c: '#ff9b85', C: '#e0735f', L: '#ffc2b5', l: '#6b4a33' },
       rows: [

@@ -1,5 +1,5 @@
 /**
- * 편의점 안 3D (방들이마트 24). 집 안처럼 카메라 쪽(남·동) 벽은 낮게 잘라 안이 보이게 한다.
+ * 편의점 안 3D (방들이편의점24). 집 안처럼 카메라 쪽(남·동) 벽은 낮게 잘라 안이 보이게 한다.
  * 누를 수 있는 것마다 보이지 않는 누름 상자에 key(cvs/…)를 붙인다.
  */
 import * as THREE from 'three'
@@ -125,7 +125,7 @@ export function buildCvs3D(): Cvs3D {
   g.add(exitHit)
 
   // 북쪽 벽 위 간판 · 서쪽 벽 포스터
-  g.add(part(box(4.6, 0.55, 0.05), texMat(label('방들이마트 24', '#ffffff', '#2b2233', 512, 64, 44), { glow: 0.25 }), [-1.6, 2.62, -D + 0.03]))
+  g.add(part(box(4.6, 0.55, 0.05), texMat(label('방들이편의점24', '#ffffff', '#2b2233', 512, 64, 44), { glow: 0.25 }), [-1.6, 2.62, -D + 0.03]))
   g.add(part(box(0.05, 0.9, 0.7), texMat(label('1+1', '#ff3b5c', '#ffffff', 128, 160, 60)), [-W + 0.03, 1.9, -1.4]))
   g.add(part(box(0.05, 0.9, 0.7), texMat(label('2+1', '#ffd94a', '#2b2233', 128, 160, 60)), [-W + 0.03, 1.9, 0.6]))
   // 천장 대신 벽 위 형광등 줄
@@ -267,7 +267,8 @@ export function buildCvs3D(): Cvs3D {
     const zc = -0.35
     g.add(part(roundBox(0.7, 1.0, 2.5, 0.04), mat('#2fbfa0', { rough: 0.6 }), [cx, 0.5, zc]))
     g.add(part(roundBox(0.82, 0.06, 2.6, 0.03), mat('#c98f5a', { rough: 0.5 }), [cx, 1.03, zc]))
-    g.add(part(box(0.02, 0.3, 1.8), texMat(label('어서오세요 · 방들이마트', '#2fbfa0', '#ffffff', 512, 64, 34)), [cx - 0.36, 0.72, zc], { rot: [0, -Math.PI / 2, 0] }))
+    // 손님 쪽 앞판 글씨 (계산대 서쪽 면에 붙인다)
+    g.add(part(new THREE.PlaneGeometry(1.8, 0.3), texMat(label('어서오세요 · 방들이편의점24', '#2fbfa0', '#ffffff', 512, 64, 32)), [cx - 0.356, 0.72, zc], { rot: [0, -Math.PI / 2, 0], shadow: false }))
     // 포스기: 화면 + 받침 · 스캐너 · 카드기
     const screen = new THREE.MeshStandardMaterial({ color: '#1b2236', emissive: '#7fd0ff', emissiveIntensity: 0.6, roughness: 0.3 })
     owned.push(screen)
@@ -338,7 +339,7 @@ export function buildCvs3D(): Cvs3D {
   }
 }
 
-/** 편의점 알바생 (방들이마트 앞치마) */
+/** 편의점 알바생 (방들이편의점24 조끼) */
 export const CLERK_LOOK = {
   hair: 'short',
   hairColor: '#3a2a20',

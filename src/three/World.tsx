@@ -244,7 +244,7 @@ const camDefault = (area: AreaId, at: Vec2, k = 1): Cam =>
       : { target: new THREE.Vector3(0.3, 0.4, 0.6), yaw: Math.PI / 4, pitch: 0.9, dist: 19 * k }
 
 /** 편의점 알바생이 하는 말 */
-const CLERK_HELLO = ['어서오세요~ 방들이마트입니다!', '어서오세요~', '안녕하세요~ 천천히 둘러보세요']
+const CLERK_HELLO = ['어서오세요~ 방들이편의점24입니다!', '어서오세요~', '안녕하세요~ 천천히 둘러보세요']
 const CLERK_PAY = ['삑- 삑- 3,800원입니다!', '봉투 필요하세요?', '포인트 적립하시겠어요?', '감사합니다~ 또 오세요!']
 const CLERK_IDLE = ['1+1 행사 중이에요~', '컵라면은 저쪽 진열대에 있어요', '온수는 창가 쪽이에요', '(하품) 오늘 손님 많네']
 const CLERK_ID = 'npc:clerk'
@@ -602,8 +602,11 @@ function createWorld(
   const limits = () => (me.area === TOWN ? 'town' : 'house') as 'town' | 'house'
   const clampCam = (c: Cam, rubber = false) => {
     const l = limits()
-    const off = c.yaw - YAW_CENTER[l]
-    c.yaw = YAW_CENTER[l] + (rubber ? rubberTilt(off) : clampTilt(off))
+    // 골목(밖)은 좌우로 한 바퀴 자유롭게, 집·편의점 안은 벽이 잘린 쪽만 보이게 범위 안에서
+    if (l !== 'town') {
+      const off = c.yaw - YAW_CENTER[l]
+      c.yaw = YAW_CENTER[l] + (rubber ? rubberTilt(off) : clampTilt(off))
+    }
     c.pitch = rubberPitch(c.pitch, rubber)
     c.dist = Math.min(DIST_LIMIT[l][1], Math.max(DIST_LIMIT[l][0], c.dist))
     if (l === 'town') {
@@ -626,6 +629,11 @@ function createWorld(
     sun.target.position.copy(c.target)
   }
   const animateCam = (to: Cam, ms = 500) => {
+    // 골목에서 여러 바퀴 돌린 뒤에도 가까운 쪽으로 돈다
+    let d = (to.yaw - cam.yaw) % (Math.PI * 2)
+    if (d > Math.PI) d -= Math.PI * 2
+    if (d < -Math.PI) d += Math.PI * 2
+    to = { ...to, yaw: cam.yaw + d }
     camAnim = { from: { ...cam, target: cam.target.clone() }, to: clampCam(to), start: performance.now(), ms }
   }
 
@@ -1002,13 +1010,16 @@ function createWorld(
     return to
   }
 
+  /** 망원경을 다 보면 내 미니미 시점으로 카메라를 되돌린다 */
+  const backFromScope = (a: Actor) => {
+    if (a.id !== 'me' || me.area !== TOWN) return
+    follow = true
+    animateCam({ ...camDefault(TOWN, a.pos, portraitK()), yaw: cam.yaw, target: new THREE.Vector3(a.pos.x, 0.6 + floorY(TOWN, a.pos.x, a.pos.z), a.pos.z + 0.5) }, 1000)
+  }
   const endAct = (a: Actor) => {
     window.clearTimeout(a.actTimer)
     const cur = a.act
-    if (cur?.item === 'm_scope' && a.id === 'me' && cur.phase === 'doing') {
-      follow = true
-      animateCam({ ...camDefault(TOWN, a.pos, portraitK()), target: new THREE.Vector3(a.pos.x, 0.6 + floorY(TOWN, a.pos.x, a.pos.z), a.pos.z + 0.5) }, 900)
-    }
+    if (cur?.item === 'm_scope' && cur.phase === 'doing') backFromScope(a)
     if (cur?.phase === 'doing' && cur.inter.leave) {
       burstFx(cur.inter.leave.fx, a, cur)
       speak(a, cur.inter.leave.line)
@@ -1190,6 +1201,7 @@ function createWorld(
     if (inter.ms) {
       window.clearTimeout(a.actTimer)
       a.actTimer = window.setTimeout(() => {
+        if (t.item === 'm_scope') backFromScope(a)
         a.act = null
         // 미끄럼틀은 내려온 자리(아래 끝)에 선다
         const seat = t.item === 'p_slide' ? parkSeatOf(t.key) : null
