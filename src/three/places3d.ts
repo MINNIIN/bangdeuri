@@ -625,7 +625,7 @@ export function sandBeach(z: Zones) {
 
 /**
  * 바다: 물가는 옥빛으로 얕고 멀수록 짙은 파랑, 잔물결·반짝임이 흐르고,
- * 물가엔 불규칙한 거품 파도가 밀려왔다 빠지고, 조금 먼 데서 한 줄 더 부서진다. 물결 따라 살짝 출렁인다.
+ * 물가는 무늬 없이 맑아서 모래가 그대로 비친다. 물결 따라 살짝 출렁인다.
  * (조명·그림자·안개는 보통 재질 그대로 받는다)
  */
 export function sea(z: Zones, a: PlaceAnims) {
@@ -681,30 +681,19 @@ varying vec2 vW;`,
 float sd = vW.x - uShore;
 float depthK = smoothstep(0.0, 22.0, sd);
 vec3 col = mix(uShallow, uDeep, depthK);
+// 물가(얕은 데)는 무늬 없이 맑게: 잔물결·반짝임은 조금 먼 데부터 서서히
+float calm = smoothstep(2.0, 9.0, sd);
 // 잔물결: 두 방향 물결이 겹치는 밝은 줄
 float r1 = sin(vW.x * 1.9 + uTime * 1.5 + sin(vW.y * 1.1 + uTime * 0.3) * 1.6);
 float r2 = sin(vW.y * 1.6 - uTime * 1.1 + sin(vW.x * 0.7) * 1.4);
-col += vec3(0.07) * smoothstep(0.35, 0.95, r1 * r2);
-col -= vec3(0.03) * smoothstep(0.4, 0.95, -r1 * r2);
+col += vec3(0.06) * smoothstep(0.35, 0.95, r1 * r2) * calm;
+col -= vec3(0.025) * smoothstep(0.4, 0.95, -r1 * r2) * calm;
 // 햇빛 반짝임
 float sp = sin(vW.x * 6.3 + uTime * 2.7) * sin(vW.y * 5.7 - uTime * 2.2 + vW.x * 0.6);
-col += vec3(0.32) * smoothstep(0.93, 1.0, sp) * (0.4 + 0.6 * depthK);
-// 물가 거품: 밀려왔다 빠지는 앞줄 (물가를 따라 들쭉날쭉)
-float wave = 0.5 + 0.5 * sin(uTime * 0.85);
-float front = mix(0.15, 2.4, wave) + sin(vW.y * 0.8 + uTime * 0.6) * 0.4 + sin(vW.y * 2.1 + 1.3) * 0.18;
-float foam = smoothstep(front + 0.5, front - 0.05, sd) * smoothstep(-0.4, 0.15, sd);
-float lace = 0.5 + 0.5 * sin(vW.y * 8.0 + sin(vW.x * 5.0 + uTime) * 2.2) * sin(vW.x * 10.0 - uTime * 0.9 + vW.y);
-foam *= mix(0.45, 1.0, lace) * mix(0.7, 1.0, wave);
-// 빠지고 남은 얇은 거품 자국
-float trail = smoothstep(0.12, 0.0, abs(sd - front - 0.6)) * 0.35 * (1.0 - wave);
-// 조금 먼 데서 부서지는 두 번째 파도 줄
-float f2 = 5.0 + sin(uTime * 0.55 + vW.y * 0.35) * 1.3;
-float foam2 = smoothstep(0.45, 0.0, abs(sd - f2)) * 0.5 * (0.55 + 0.45 * sin(vW.y * 2.6 + uTime * 1.3));
-float fm = clamp(foam + trail + foam2, 0.0, 1.0);
-col = mix(col, vec3(1.0), fm);
+col += vec3(0.3) * smoothstep(0.93, 1.0, sp) * calm * (0.4 + 0.6 * depthK);
 diffuseColor.rgb = col;
-// 물가는 얕아서 모래가 비친다
-diffuseColor.a = max(mix(0.5, 0.94, smoothstep(0.0, 4.0, sd)), fm * 0.95);`,
+// 물가는 얕아서 모래가 비치고, 모래와 물 사이는 부드럽게 이어진다
+diffuseColor.a = mix(0.0, 0.94, smoothstep(-0.2, 4.0, sd));`,
       )
   }
   a.owned.push(water)
