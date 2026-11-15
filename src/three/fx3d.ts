@@ -77,7 +77,11 @@ interface Particle {
   vel: THREE.Vector3
   spin: number
   start: number
+  /** 불꽃: 중력으로 떨어지며 꼬리처럼 사라진다 */
+  fall?: boolean
 }
+
+const FIRE_COLORS = ['#ff5c8a', '#ffd94a', '#7fc8ff', '#9dffb0', '#c7a8ff', '#ff9f43']
 
 export class FxLayer {
   readonly group = new THREE.Group()
@@ -110,6 +114,41 @@ export class FxLayer {
     }
   }
 
+  /** 하늘에 불꽃 한 송이: 빛 알갱이가 둥글게 퍼졌다가 떨어지며 꺼진다 */
+  firework(at: THREE.Vector3, now: number) {
+    const color = FIRE_COLORS[Math.floor(Math.random() * FIRE_COLORS.length)]
+    const color2 = FIRE_COLORS[Math.floor(Math.random() * FIRE_COLORS.length)]
+    const n = 34
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.SpriteMaterial({ map: glowTexture(), color: i % 3 ? color : color2, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
+      const s = new THREE.Sprite(m)
+      s.scale.setScalar(0.55)
+      s.position.copy(at)
+      s.renderOrder = 11
+      this.group.add(s)
+      // 공 모양으로 고르게 (피보나치 구)
+      const y = 1 - (i / (n - 1)) * 2
+      const r = Math.sqrt(1 - y * y)
+      const th = i * 2.399963
+      const speed = 3.4 + Math.random() * 0.6
+      this.parts.push({
+        sprite: s,
+        born: now,
+        life: 1.7,
+        vel: new THREE.Vector3(Math.cos(th) * r, y, Math.sin(th) * r).multiplyScalar(speed),
+        spin: 0,
+        start: 0.55,
+        fall: true,
+      })
+    }
+    // 가운데 번쩍
+    const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: '#ffffff', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }))
+    flash.position.copy(at)
+    flash.scale.setScalar(3)
+    this.group.add(flash)
+    this.parts.push({ sprite: flash, born: now, life: 0.35, vel: new THREE.Vector3(), spin: 0, start: 3, fall: true })
+  }
+
   update(now: number, dt: number) {
     const keep: Particle[] = []
     for (const p of this.parts) {
@@ -127,6 +166,14 @@ export class FxLayer {
         continue
       }
       p.sprite.position.addScaledVector(p.vel, dt)
+      if (p.fall) {
+        p.vel.multiplyScalar(Math.exp(-dt * 1.6))
+        p.vel.y -= dt * 2.2
+        p.sprite.material.opacity = Math.max(0, 1 - k * k)
+        p.sprite.scale.setScalar(p.start * (1 - k * 0.5))
+        keep.push(p)
+        continue
+      }
       p.vel.y -= p.vel.y > 0.2 ? dt * 0.3 : 0
       p.sprite.material.rotation += p.spin * dt
       p.sprite.material.opacity = k < 0.15 ? k / 0.15 : 1 - Math.max(0, (k - 0.6) / 0.4)

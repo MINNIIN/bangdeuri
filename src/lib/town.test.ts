@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { CVS_ENTRANCE, CVS_EXIT, CVS_MAP, CVS_SPOTS } from './cvs'
 import {
   buildTown,
+  groundY,
+  HILL_H,
+  PIER_Y,
+  SEA_Y,
+  STORE_FRONT,
+  STORE_W,
   doorStep,
   findHouseWorldPath,
   findTownPath,
@@ -183,5 +190,80 @@ describe('공원 놀이터', () => {
     // 시소·모래놀이터는 막혀 있다
     const seesaw = map.props.find((p) => p.kind === 'seesaw')!
     expect(map.blocked({ x: seesaw.x, z: seesaw.z })).toBe(true)
+  })
+})
+
+describe('동네 장소 (편의점 · 포장마차 · 뒷산 · 바닷가)', () => {
+  const towns = { '집 한 채': ['host'], '집 열일곱 채': Array.from({ length: MAX_HOUSES }, (_, i) => `r${i}`) }
+
+  for (const [name, ids] of Object.entries(towns)) {
+    describe(name, () => {
+      const map = buildTown(ids)
+      const z = map.zones!
+      const seats = parkSeats(map.props).filter((s) => !s.item.startsWith('p_'))
+
+      it('집 수와 상관없이 다 있고, 집과 겹치지 않는다', () => {
+        for (const item of ['o_table', 'o_vending', 'o_pocha', 'm_pavilion', 'm_scope', 'm_summit', 'm_twister', 'm_spring', 'b_sunbed', 'b_ball', 'b_castle', 'b_shell', 'b_wade', 'b_firework', 'b_tower', 'b_fish'])
+          expect(seats.some((s) => s.item === item)).toBe(true)
+        const lotEdges = map.lots.map((l) => [l.x - 6.5, l.x + 6.5])
+        const westMost = Math.min(...lotEdges.map((e) => e[0]))
+        const eastMost = Math.max(...lotEdges.map((e) => e[1]))
+        // 편의점 건물 · 뒷산은 집들 서쪽, 모래사장은 동쪽
+        expect(z.storeX + STORE_W / 2).toBeLessThan(westMost)
+        expect(z.hill.x + z.hill.rx).toBeLessThan(z.storeX - STORE_W / 2)
+        expect(z.sand).toBeGreaterThan(eastMost)
+        for (const s of seats) expect(Math.abs(s.x) > z.he || s.x < z.hw).toBe(true)
+      })
+
+      it('손님 자리에서 모든 장소까지 걸어갈 수 있다 (편의점 문 · 뒷산 꼭대기 · 방파제 끝)', () => {
+        const start = guestSpot('promo')
+        const goals = [
+          z.storeStep,
+          { x: z.hill.x + 1.2, z: z.hill.z + 1.6 },
+          { x: z.pocha.x, z: z.pocha.z - 2.4 },
+          { x: z.he + 14.5, z: 4.2 },
+          { x: z.pier.x1 - 3, z: z.pier.z },
+        ]
+        for (const g of goals) {
+          expect(map.blocked(g)).toBe(false)
+          const path = findTownPath(map, start, g)
+          expect(path.length).toBeGreaterThan(0)
+          const end = path[path.length - 1]
+          expect(Math.hypot(end.x - g.x, end.z - g.z)).toBeLessThan(0.3)
+        }
+      })
+    })
+  }
+
+  it('땅 높이: 길은 평평, 뒷산 꼭대기는 높고, 물가는 물속으로, 방파제는 물 위', () => {
+    const map = buildTown(['host'])
+    const z = map.zones!
+    expect(groundY(z, 0, 0)).toBe(0)
+    expect(groundY(z, z.hill.x, z.hill.z)).toBeCloseTo(HILL_H)
+    // 산기슭(인도 앞)은 0에 가깝고 올라갈수록 높다
+    expect(groundY(z, z.hill.x, -5.5)).toBeLessThan(0.05)
+    expect(groundY(z, z.hill.x, -10)).toBeGreaterThan(groundY(z, z.hill.x, -7))
+    expect(groundY(z, z.wet - 0.2, 0)).toBeLessThan(SEA_Y)
+    expect(groundY(z, z.pier.x1 - 2, z.pier.z)).toBeCloseTo(PIER_Y)
+    // 바다 깊은 데는 못 들어가고, 방파제 위는 끝까지 간다
+    expect(map.blocked({ x: z.wet + 2, z: 0 })).toBe(true)
+    expect(map.blocked({ x: z.wet + 2, z: z.pier.z })).toBe(false)
+    // 편의점 건물 안은 골목에서 못 들어간다 (문으로만)
+    expect(map.blocked({ x: z.storeX, z: STORE_FRONT - 2 })).toBe(true)
+  })
+
+  it('편의점 안: 들어온 자리에서 모든 물건 앞까지 걸어갈 수 있고 나가는 매트까지도 간다', () => {
+    for (const s of CVS_SPOTS) {
+      const path = findTownPath(CVS_MAP, CVS_ENTRANCE, { x: s.x + Math.sin(s.yaw) * 0.75, z: s.z + Math.cos(s.yaw) * 0.75 })
+      expect(path.length).toBeGreaterThan(0)
+    }
+    expect(CVS_MAP.blocked(CVS_ENTRANCE)).toBe(false)
+    expect(CVS_MAP.blocked(CVS_EXIT)).toBe(false)
+    expect(new Set(CVS_SPOTS.map((s) => s.key)).size).toBe(CVS_SPOTS.length)
+  })
+
+  it('편의점은 실시간으로 주고받는 곳 이름으로 받는다', () => {
+    expect(isArea('cvs')).toBe(true)
+    expect(roomOfArea('cvs')).toBeNull()
   })
 })

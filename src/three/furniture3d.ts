@@ -22,12 +22,20 @@ export const SEAT: Record<string, number> = {
   bed: 0.5,
   bathtub: 0.08,
   p_bench: 0.47,
+  // 동네 장소 (뒷산·방파제는 그 자리 땅 높이 위로)
+  o_table: 0.47,
+  o_pocha: 0.47,
+  m_pavilion: 0.5,
+  b_sunbed: 0.36,
+  b_tower: 1.75,
+  b_fish: 0.0,
+  c_stool: 0.66,
 }
 
 /** 앉을 때 가구 가운데에서 앞으로 얼마나 나와 앉나 (등받이에 등이 닿게) */
-export const SEAT_FORWARD: Record<string, number> = { sofa: -0.02, chair: 0.03, toilet: 0.07, beanbag: 0.02, p_bench: 0.04 }
+export const SEAT_FORWARD: Record<string, number> = { sofa: -0.02, chair: 0.03, toilet: 0.07, beanbag: 0.02, p_bench: 0.04, o_table: 0.02, o_pocha: 0.02, m_pavilion: 0.12, b_tower: 0.04, b_fish: 0.2, c_stool: 0 }
 /** 앉을 때 무릎을 굽히는 정도: 깊은 소파는 다리를 앞으로 쭉, 의자·변기는 아래로 */
-export const SEAT_KNEE: Record<string, number> = { sofa: 0.25, beanbag: 0.45, chair: 1.25, toilet: 1.3, p_bench: 1.25 }
+export const SEAT_KNEE: Record<string, number> = { sofa: 0.25, beanbag: 0.45, chair: 1.25, toilet: 1.3, p_bench: 1.25, o_table: 1.25, o_pocha: 1.25, m_pavilion: 1.3, b_tower: 1.2, b_fish: 1.45, c_stool: 1.0 }
 /** 누울 때 발밑이 침대 가운데에서 얼마나 떨어지나 (머리가 베개에 오게) */
 export const LIE_FORWARD = 0.2
 

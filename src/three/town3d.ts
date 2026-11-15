@@ -21,8 +21,10 @@ import {
   SIDEWALK_S,
   type Prop,
   type TownMap,
+  townZones,
 } from '../lib/town'
 import { bakeStatic, box, canvasTexture, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint, torus } from './kit'
+import * as P from './places3d'
 
 const HOUSE_STYLE: Record<string, { wall: string; roof: string; trim: string; door: string }> = {
   pink: { wall: '#ffe1ec', roof: '#ff7fa6', trim: '#ffffff', door: '#c9577d' },
@@ -44,6 +46,12 @@ export interface Town3D {
   swingSeats: Map<string, THREE.Object3D>
   /** 시소 판 (park/seesaw0 → 가운데 축에 걸린 판). 타면 오르내린다 */
   seesawBoards: Map<string, THREE.Object3D>
+  /** 바닷가 비치볼 (park/ball0 → 공). 차면 튄다 */
+  balls: Map<string, THREE.Object3D>
+  /** 누가 아래에 있으면 비쳐 보이게 하는 지붕·파라솔 */
+  fades: Map<string, THREE.Object3D>
+  /** 바다 물결 · 갈매기 · 배 · 등대 빛줄기처럼 늘 움직이는 것 */
+  tick(t: number, night: boolean): void
   dispose(): void
 }
 
@@ -176,8 +184,26 @@ const HIT_BOX: Partial<Record<Prop['kind'], [number, number, number, number]>> =
   bench: [1.8, 1.0, 0.9, -0.05],
   seesaw: [2.7, 1.0, 0.8, 0],
   sandbox: [2.0, 0.6, 2.0, 0],
+  ptable: [2.2, 1.3, 1.2, 0],
+  vending: [1.0, 1.95, 0.85, 0],
+  pocha: [3.6, 2.5, 3.6, -0.3],
+  pavilion: [3.0, 3.4, 3.2, 0.1],
+  scope: [0.8, 1.6, 0.9, 0],
+  summit: [0.9, 1.5, 0.8, 0],
+  twister: [1.1, 1.3, 1.3, 0.2],
+  spring: [1.3, 1.4, 1.0, 0],
+  sunbeds: [2.4, 1.1, 2.6, 0],
+  ball: [0.9, 0.9, 0.9, 0],
+  castle: [1.4, 1.2, 1.4, 0],
+  shell: [0.9, 0.4, 0.9, 0],
+  wade: [1.6, 0.9, 1.6, 0],
+  fwbox: [0.9, 1.0, 0.9, 0],
+  tower: [1.8, 2.6, 1.6, 0],
+  fishing: [1.1, 1.3, 1.4, 0.3],
 }
 const HIT_MAT = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false })
+/** 누름 상자만 있는 층 (카메라는 안 그리고, 누름 검사만 본다) */
+export const HIT_LAYER = 1
 
 /** 시소가 쉴 때 기울기 */
 export const SEESAW_REST = 0.16
@@ -288,9 +314,86 @@ function buildProp(
   seats: Map<string, THREE.Object3D>,
   boards: Map<string, THREE.Object3D>,
   base: string,
+  zones: ReturnType<typeof townZones>,
+  anims: P.PlaceAnims,
 ) {
   let o: THREE.Object3D
   switch (p.kind) {
+    case 'ptable':
+      o = P.parasolTable(anims, base)
+      break
+    case 'vending':
+      o = P.vending(anims)
+      break
+    case 'bins':
+      o = P.recycleBins(anims)
+      break
+    case 'pocha':
+      o = P.pocha(anims)
+      break
+    case 'pavilion':
+      o = P.pavilion(anims, base)
+      break
+    case 'scope':
+      o = P.scope()
+      break
+    case 'summit':
+      o = P.summitStone(anims)
+      break
+    case 'twister':
+      o = P.twister()
+      break
+    case 'spring':
+      o = P.spring(anims)
+      break
+    case 'pine':
+      o = P.pine(0.85 + hashScale(i))
+      break
+    case 'trail':
+      // 계단은 산 땅 높이를 따라 제자리에 만든다
+      return P.trailSteps(zones)
+    case 'trailsign':
+      o = P.trailSign(anims)
+      break
+    case 'sunbeds':
+      o = P.sunbeds(anims, base)
+      break
+    case 'ball':
+      o = P.beachBall(anims, base)
+      break
+    case 'castle':
+      o = P.sandCastle()
+      break
+    case 'shell':
+      o = P.shells()
+      break
+    case 'wade':
+      o = P.tube(anims)
+      break
+    case 'fwbox':
+      o = P.fireworkBox(anims)
+      break
+    case 'tower':
+      o = P.lifeguardTower()
+      break
+    case 'fishing':
+      o = P.fishingSpot(anims)
+      break
+    case 'lighthouse':
+      o = P.lighthouse(anims)
+      break
+    case 'boat':
+      o = P.boat(anims)
+      break
+    case 'buoy':
+      o = P.buoy(anims)
+      break
+    case 'bollard':
+      o = P.bollard()
+      break
+    case 'beachsign':
+      o = P.beachSign(anims)
+      break
     case 'tree':
       o = tree(0.85 + ((i * 37) % 10) / 30, ((i * 53) % 100) / 100)
       break
@@ -340,14 +443,18 @@ function buildProp(
     const [w, h, d, z] = hit
     const m = new THREE.Mesh(box(w, h, d), HIT_MAT)
     m.name = 'hit'
+    // 누르기 전용 층: 화면엔 그리지 않고(그리기 호출 0) 누름 검사에만 걸린다
+    m.layers.set(HIT_LAYER)
     m.position.set(0, h / 2, z)
     m.userData.key = base
     o.add(m)
   }
-  o.position.set(p.x, 0, p.z)
+  o.position.set(p.x, P.propY(zones, p), p.z)
   o.rotation.y = p.rot ?? 0
   return o
 }
+
+const hashScale = (i: number) => ((i * 37) % 10) / 30
 
 /** rise: 방금 생긴 집들 — 합치지 않고 따로 두어 솟아오르게 한다 */
 export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: ReadonlySet<string> = new Set()): Town3D {
@@ -355,8 +462,14 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   const risers = new Map<string, THREE.Object3D>()
   const owned: { dispose(): void }[] = []
   const b = map.bounds
-  const W = b.maxX - b.minX
-  const cx = (b.minX + b.maxX) / 2
+  const zones = map.zones ?? townZones(map.lots)
+  const anims = P.newAnims()
+  // 잔디·길은 서쪽 끝 너머(안개 속)부터, 잔디는 모래사장까지 · 길은 길 끝까지
+  const gx0 = b.minX - 30
+  const W = zones.sand - gx0
+  const cx = (gx0 + zones.sand) / 2
+  const roadW = zones.roadEnd - gx0
+  const roadCx = (gx0 + zones.roadEnd) / 2
 
   // ─── 땅 ───
   const grassTex = canvasTexture(
@@ -372,12 +485,12 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
         ctx.fillRect(x, y, 3, 6)
       }
     },
-    [W / 6, 40 / 6],
+    [W / 6, 80 / 6],
   )
   owned.push(grassTex)
   const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 })
   owned.push(grassMat)
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W + 60, 80), grassMat)
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W, 80), grassMat)
   ground.rotation.x = -Math.PI / 2
   ground.position.set(cx, -0.01, 0)
   ground.receiveShadow = true
@@ -398,14 +511,14 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
       ctx.fillStyle = '#ffd94a'
       ctx.fillRect(0, 122, 64, 12)
     },
-    [(W + 60) / 4, 1],
+    [roadW / 4, 1],
   )
   owned.push(roadTex)
   const roadMat = new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.9 })
   owned.push(roadMat)
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(W + 60, ROAD_S - ROAD_N), roadMat)
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(roadW, ROAD_S - ROAD_N), roadMat)
   road.rotation.x = -Math.PI / 2
-  road.position.set(cx, 0.005, (ROAD_N + ROAD_S) / 2)
+  road.position.set(roadCx, 0.005, (ROAD_N + ROAD_S) / 2)
   road.receiveShadow = true
   road.userData.ground = true
   g.add(road)
@@ -438,7 +551,7 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
         ctx.stroke()
       }
     },
-    [(W + 60) / 1.6, 1],
+    [roadW / 1.6, 1],
   )
   owned.push(walkTex)
   const walkMat = new THREE.MeshStandardMaterial({ map: walkTex, roughness: 0.95 })
@@ -447,8 +560,8 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     [SIDEWALK_N, ROAD_N],
     [ROAD_S, SIDEWALK_S],
   ]) {
-    const s = new THREE.Mesh(box(W + 60, 0.12, z1 - z0), [walkMat, walkMat, walkMat, walkMat, mat('#cbbba6'), mat('#cbbba6')])
-    s.position.set(cx, 0.06, (z0 + z1) / 2)
+    const s = new THREE.Mesh(box(roadW, 0.12, z1 - z0), [walkMat, walkMat, walkMat, walkMat, mat('#cbbba6'), mat('#cbbba6')])
+    s.position.set(roadCx, 0.06, (z0 + z1) / 2)
     s.receiveShadow = true
     s.userData.ground = true
     g.add(s)
@@ -598,9 +711,10 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   }
 
   // ─── 공원 ───
-  const park = new THREE.Mesh(new THREE.PlaneGeometry(W, PARK_S - SIDEWALK_S - 0.6), mat('#a8de8f', { rough: 1 }))
+  const parkW = zones.sand - b.minX
+  const park = new THREE.Mesh(new THREE.PlaneGeometry(parkW, PARK_S - SIDEWALK_S - 0.6), mat('#a8de8f', { rough: 1 }))
   park.rotation.x = -Math.PI / 2
-  park.position.set(cx, 0.002, (SIDEWALK_S + PARK_S) / 2 + 0.3)
+  park.position.set((b.minX + zones.sand) / 2, 0.002, (SIDEWALK_S + PARK_S) / 2 + 0.3)
   park.receiveShadow = true
   park.userData.ground = true
   g.add(park)
@@ -616,17 +730,48 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   const swingSeats = new Map<string, THREE.Object3D>()
   const seesawBoards = new Map<string, THREE.Object3D>()
   const nth = new Map<string, number>()
+  // 골목 양 끝 장소는 따로 묶어 합친다: 화면 밖이면 통째로 안 그린다
+  const west = new THREE.Group()
+  const east = new THREE.Group()
+  const zoneOf = (x: number) => (x < zones.hw - 1.5 ? west : x > zones.he + 1.5 ? east : g)
   map.props.forEach((p, i) => {
     const k = nth.get(p.kind) ?? 0
     nth.set(p.kind, k + 1)
-    g.add(buildProp(p, i, heads, lampMat, swingSeats, seesawBoards, `park/${p.kind}${k}`))
+    zoneOf(p.x).add(buildProp(p, i, heads, lampMat, swingSeats, seesawBoards, `park/${p.kind}${k}`, zones, anims))
   })
-  // 골목 뒤 먼 산
-  for (let k = -3; k <= 3; k++) {
-    const hill = part(sphere(9, 24, 12), mat(k % 2 ? '#8fcf7e' : '#7fc271', { rough: 1 }), [cx + k * 14, -4, HOUSE_BACK_Z - 12], { shadow: false })
+  // 골목 뒤 먼 산 (집들 뒤만: 서쪽엔 뒷산, 동쪽엔 바다가 있다)
+  for (let x = zones.hw - 8; x <= zones.he + 4; x += 14) {
+    const k = Math.round(x / 14)
+    const hill = part(sphere(9, 24, 12), mat(k % 2 ? '#8fcf7e' : '#7fc271', { rough: 1 }), [x, -4, HOUSE_BACK_Z - 12], { shadow: false })
     hill.scale.set(1, 0.7, 0.6)
     g.add(hill)
   }
+
+  // ─── 동네 장소 ───
+  // 편의점 건물 (문을 누르면 들어간다)
+  const store = P.storeBuilding(anims)
+  store.position.x = zones.storeX
+  west.add(store)
+  // 뒷산: 땅 + 뒤로 이어지는 먼 능선
+  west.add(P.hillTerrain(zones, grassTex))
+  for (const [dx, h, sc] of [[-6, 7, 1.15], [5, 6, 1], [-16, 5, 0.9]] as const) {
+    const ridge = part(sphere(10, 28, 14), mat(dx < -10 ? '#7fc271' : '#74b866', { rough: 1 }), [zones.hill.x + dx, -2, zones.hill.z - 15], { shadow: false })
+    ridge.scale.set(sc, h / 10, 0.6)
+    west.add(ridge)
+  }
+  // 바닷가: 모래 · 바다 · 방파제 · 갈매기
+  east.add(P.sandBeach(zones))
+  east.add(P.sea(zones, anims))
+  east.add(P.pier(zones, anims))
+  east.add(P.gulls(zones, anims))
+  for (const [z, name] of [[west, 'zone-west'], [east, 'zone-east']] as const) {
+    bakeStatic(z)
+    z.name = name
+    g.add(z)
+  }
+  // 길 끝 연석 (차도가 모래사장 앞에서 끝난다)
+  g.add(part(box(0.3, 0.16, ROAD_S - ROAD_N + 3.2), mat('#cbbba6'), [zones.roadEnd + 0.15, 0.08, 0]))
+  owned.push(...anims.owned)
 
   // 움직이지 않는 것들은 재질별로 합친다 (휴대폰에서 부드럽게)
   bakeStatic(g)
@@ -637,9 +782,15 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     risers,
     swingSeats,
     seesawBoards,
+    balls: anims.balls,
+    fades: anims.fades,
+    tick(t, night) {
+      for (const f of anims.tick) f(t, night)
+    },
     setNight(night) {
       windowMat.emissiveIntensity = night ? 0.9 : 0
       lampMat.emissiveIntensity = night ? 2.2 : 0.15
+      for (const gl of anims.glows) gl.mat.emissiveIntensity = night ? gl.night : gl.day
     },
     setMail(roomId, count) {
       const f = flags.get(roomId)

@@ -148,17 +148,21 @@ export function svgTexture(svg: string, w: number, h: number, onReady?: () => vo
   return t
 }
 
-const FLAG_KEYS = ['house', 'door', 'mail', 'ground', 'yard', 'exit', 'key', 'drop'] as const
+const FLAG_KEYS = ['house', 'door', 'mail', 'ground', 'yard', 'exit', 'key', 'drop', 'shop'] as const
 
 /**
- * 움직이지 않는 메시들을 재질별로 하나로 합친다 (그리기 호출을 확 줄인다).
+ * 움직이지 않는 메시들을 하나로 합친다 (그리기 호출을 확 줄인다).
+ * 색만 다른 공용 재질(mat)끼리는 색을 꼭짓점에 칠해서 한 덩어리로 (색이 많아도 그리기 1번),
+ * 그림이 붙었거나 밤낮으로 바뀌는 재질(캐시 밖)은 재질마다 따로 합친다.
  * 누를 수 있는 표시(userData: 집·문·우편함 …)가 같은 것끼리만 합쳐서 누르기는 그대로 된다.
  * 이름이 있는 메시(화면·전구·깃발처럼 따로 바꾸는 것)와 userData.keep은 그대로 둔다.
  */
 export function bakeStatic(root: THREE.Object3D) {
   root.updateMatrixWorld(true)
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert()
-  const buckets = new Map<string, { mat: THREE.Material; cast: boolean; data: Record<string, unknown>; geos: THREE.BufferGeometry[] }>()
+  const cached = new Set<THREE.Material>(matCache.values())
+  type Bucket = { mat: THREE.Material; tinted: boolean; cast: boolean; data: Record<string, unknown>; geos: THREE.BufferGeometry[] }
+  const buckets = new Map<string, Bucket>()
   const done: THREE.Mesh[] = []
   root.traverse((n) => {
     const m = n as THREE.Mesh
@@ -168,24 +172,46 @@ export function bakeStatic(root: THREE.Object3D) {
     if (hidden) return
     const data: Record<string, unknown> = {}
     for (const k of FLAG_KEYS) if (m.userData[k] !== undefined) data[k] = m.userData[k]
-    const key = `${m.material.uuid}|${m.castShadow}|${JSON.stringify(data)}`
+    const sm = m.material as THREE.MeshStandardMaterial
+    // 공용 재질이고 그림이 없으면 색은 꼭짓점으로 (나머지 성질이 같은 것끼리 한 덩어리)
+    const tinted = cached.has(sm) && sm.isMeshStandardMaterial && !sm.map
+    const matKey = tinted
+      ? `t|${sm.roughness}|${sm.metalness}|${sm.emissive.getHexString()}|${sm.emissiveIntensity}|${sm.transparent}|${sm.opacity}|${sm.side}`
+      : sm.uuid
+    const key = `${matKey}|${m.castShadow}|${JSON.stringify(data)}`
     let b = buckets.get(key)
-    if (!b) buckets.set(key, (b = { mat: m.material, cast: m.castShadow, data, geos: [] }))
+    if (!b) buckets.set(key, (b = { mat: sm, tinted, cast: m.castShadow, data, geos: [] }))
     // clone()은 RoundedBoxGeometry 같은 걸 생성자부터 다시 만들어서 느리다 → 빈 BufferGeometry에 복사
     const g = m.geometry.index ? m.geometry.toNonIndexed() : new THREE.BufferGeometry().copy(m.geometry)
     for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name)
     if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2))
     if (!g.attributes.normal) g.computeVertexNormals()
+    if (tinted) {
+      const n3 = g.attributes.position.count
+      const col = new Float32Array(n3 * 3)
+      for (let i = 0; i < n3; i++) col.set([sm.color.r, sm.color.g, sm.color.b], i * 3)
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    }
     g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld))
     b.geos.push(g)
     done.push(m)
   })
   for (const m of done) m.parent?.remove(m)
   for (const b of buckets.values()) {
+    // 조각이 하나뿐이면 원래 재질 그대로 (꼭짓점 색 없이)
+    if (b.tinted && b.geos.length === 1) b.geos[0].deleteAttribute('color')
     const merged = mergeGeometries(b.geos)
     for (const g of b.geos) g.dispose()
     if (!merged) continue
-    const mesh = new THREE.Mesh(merged, b.mat)
+    let material = b.mat
+    if (b.tinted && b.geos.length > 1) {
+      const src = b.mat as THREE.MeshStandardMaterial
+      const t = src.clone()
+      t.color.set('#ffffff')
+      t.vertexColors = true
+      material = t
+    }
+    const mesh = new THREE.Mesh(merged, material)
     mesh.castShadow = b.cast
     mesh.receiveShadow = true
     Object.assign(mesh.userData, b.data)
