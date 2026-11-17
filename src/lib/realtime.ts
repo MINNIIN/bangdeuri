@@ -51,6 +51,8 @@ export type RoomEvent =
   | { t: 'song-stop'; cid: string }
   /** 달력 일정이 바뀌었다 (받으면 다시 불러온다) */
   | { t: 'cal'; cid: string }
+  /** 카페에서 음료를 시켰다 (받으면 바리스타가 그 사람 것을 만든다) */
+  | { t: 'brew'; cid: string; drink: string }
   /** 방 주인이 내보냈다 */
   | { t: 'kick'; cid: string }
 

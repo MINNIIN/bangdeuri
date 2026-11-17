@@ -35,7 +35,7 @@ import {
 import { bakeStatic, box, canvasTexture, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint, torus } from './kit'
 import * as P from './places3d'
 import { shopExterior } from './shops3d'
-import { BUS_STOP, busPhase, busProgress, CAT_SEEDS, catAt, catRoute } from '../lib/townLife'
+import { type BusNow, busAt, busPhase, CAT_SEEDS, catAt, catRoute } from '../lib/townLife'
 
 const HOUSE_STYLE: Record<string, { wall: string; roof: string; trim: string; door: string }> = {
   pink: { wall: '#ffe1ec', roof: '#ff7fa6', trim: '#ffffff', door: '#c9577d' },
@@ -65,6 +65,8 @@ export interface Town3D {
   tick(t: number, night: boolean): void
   /** 고양이 지금 자리 (번호 = CAT_SEEDS 순서) */
   catPos(i: number): { x: number; z: number } | null
+  /** 지금 버스 (안 다니면 null) */
+  bus(): BusNow | null
   dispose(): void
 }
 
@@ -880,9 +882,8 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   bus.userData.keep = true
   bus.visible = false
   g.add(bus)
-  const busX0 = b.minX - 6
-  const busX1 = zones.roadEnd - 3.5
-  const busZ = (ROAD_S + 0) / 2
+  const busRoute = { x0: b.minX - 6, x1: zones.roadEnd - 3.5 }
+  let busNow: BusNow | null = null
   // 고양이 길은 계산이 무거워서(골목 전체 길찾기 지도) 동네를 다 그린 뒤 한가할 때 만든다. 그 전엔 고양이를 숨긴다
   let route: ReturnType<typeof catRoute> | null = null
   let disposed = false
@@ -908,10 +909,10 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   anims.tick.push((t) => {
     const now = Date.now()
     const p = busPhase(now)
-    bus.visible = p !== null
-    if (p !== null) {
-      const k = busProgress(p)
-      bus.position.set(k <= 1 ? busX0 + (BUS_STOP.x - busX0) * k : BUS_STOP.x + (busX1 - BUS_STOP.x) * (k - 1), 0, busZ)
+    busNow = busAt(now, busRoute)
+    bus.visible = busNow !== null
+    if (busNow && p !== null) {
+      bus.position.set(busNow.x, 0, busNow.z)
       // 끝에서는 작아지며 사라진다
       bus.scale.setScalar(p > 0.94 ? Math.max(0.01, (1 - p) / 0.06) : 1)
     }
@@ -939,6 +940,7 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     tick(t, night) {
       for (const f of anims.tick) f(t, night)
     },
+    bus: () => busNow,
     catPos(i) {
       const c = cats[i]
       return c && route ? { x: c.obj.position.x, z: c.obj.position.z } : null

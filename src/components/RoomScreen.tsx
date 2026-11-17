@@ -17,7 +17,9 @@ import { bgm, bgmEnabled } from '../lib/music'
 import { isSafeSong } from '../lib/songs'
 import { timers } from '../lib/timers'
 import { type NowPlaying, turntable } from '../lib/turntable'
-import { type ToolId, toolFor } from '../lib/tools'
+import { gameFor, type ToolId, toolFor } from '../lib/tools'
+import { GameHost } from './games/GameHost'
+import type { GameId } from './games/kit'
 import { firstVisitThisSession, store } from '../lib/storage'
 import type { ChatMessage, Drop, Room } from '../lib/types'
 import { type ArrangeSel, type Ghost, type PlaceTap, type TownPlace, World, type WorldControl } from '../three/World'
@@ -161,6 +163,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
   const [arrSel, setArrSel] = useState<ArrangeSel | null>(null)
   /** 미니미가 가구에 도착해서 연 도구 창 (그 가구가 있는 집) */
   const [tool, setTool] = useState<ToolId | null>(null)
+  const [game, setGame] = useState<GameId | null>(null)
   const [toolRoom, setToolRoom] = useState<string | null>(null)
   /** 달력: 누가 일정을 바꾸면 올려서 다시 불러온다 */
   const [calVersion, setCalVersion] = useState(0)
@@ -502,6 +505,9 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           break
         case 'cal':
           setCalVersion((v) => v + 1)
+          break
+        case 'brew':
+          if (typeof e.drink === 'string') w.brew(e.cid, e.drink)
           break
         case 'song-stop':
           turntable.stop()
@@ -980,6 +986,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           name={entry?.name}
           badge={owner ? 'owner' : 'me'}
           spawn={spawn}
+          home={owner ? room.id : ((homes ?? []).find((h) => townMap.lots.some((l) => l.roomId === h)) ?? room.id)}
           drops={drops}
           ghost={ghost}
           selectedId={placing ? null : selected?.id}
@@ -1003,6 +1010,9 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
           onMeArrive={(key, it) => {
             // 친구가 놓은 전자레인지·알람시계도 쓸 수 있다. 놓기·꾸미기 중에는 열지 않는다
             if (mode !== 'view') return
+            // 오락실·PC방 기계: 진짜 미니게임이 열린다
+            const g = gameFor(it)
+            if (g) return setGame(g)
             setTool(toolFor(it) ?? null)
             setToolRoom(key.includes('/') ? key.split('/')[0] : (drops.find((d) => d.id === key)?.roomId ?? room.id))
           }}
@@ -1349,9 +1359,19 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
         </button>
       )}
 
+      <GameHost
+        game={game}
+        onResult={(_, r) => worldRef.current?.sayActor('me', r.line)}
+        onClose={() => setGame(null)}
+      />
       <ToolSheet
         tool={tool}
         onClose={() => setTool(null)}
+        onOrder={(drink) => {
+          setTool(null)
+          worldRef.current?.brew('me', drink)
+          send({ t: 'brew', cid, drink })
+        }}
         onPlaySong={(song) => {
           const np = { by: entry?.name ?? '나', song, at: Date.now() }
           void turntable.play(np)

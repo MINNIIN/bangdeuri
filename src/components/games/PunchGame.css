@@ -1,0 +1,14 @@
+/* 꽝꽝펀치 — 캔버스 한 장이 무대를 가득 채운다 */
+.punch-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  outline: none;
+}

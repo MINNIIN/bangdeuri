@@ -1,0 +1,126 @@
+.claw-root {
+  position: absolute;
+  inset: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.claw-root canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.claw-ctrl {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 104px;
+  padding: 0 16px max(10px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  pointer-events: none;
+}
+.claw-ctrl > * {
+  pointer-events: auto;
+}
+.claw-btn {
+  font-family: Galmuri11, system-ui, sans-serif;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  color: #3b2a4a;
+  border-radius: 22px;
+  height: 66px;
+  transition:
+    transform 0.06s,
+    box-shadow 0.06s,
+    opacity 0.2s,
+    filter 0.2s;
+}
+.claw-btn:focus-visible {
+  outline: 3px solid #fff3a6;
+  outline-offset: 3px;
+}
+.claw-btn:disabled {
+  opacity: 0.38;
+  filter: saturate(0.4);
+  cursor: default;
+}
+.claw-arrow {
+  width: 78px;
+  font-size: 26px;
+  background: linear-gradient(#bff5e6, #7fdcc3);
+  box-shadow:
+    0 6px 0 #3fa58c,
+    0 10px 18px rgba(0, 0, 0, 0.35),
+    inset 0 2px 0 rgba(255, 255, 255, 0.7);
+}
+.claw-arrow.on,
+.claw-arrow:not(:disabled):active {
+  transform: translateY(4px);
+  box-shadow:
+    0 2px 0 #3fa58c,
+    0 4px 8px rgba(0, 0, 0, 0.3),
+    inset 0 2px 0 rgba(255, 255, 255, 0.7);
+}
+.claw-go {
+  flex: 0 1 170px;
+  min-width: 128px;
+  height: 72px;
+  border-radius: 36px;
+  font-size: 24px;
+  color: #fff;
+  text-shadow: 0 2px 0 #c2366f;
+  background: radial-gradient(circle at 50% 28%, #ffb3cf, #ff5c9a 62%, #e64284);
+  box-shadow:
+    0 7px 0 #b02763,
+    0 12px 22px rgba(255, 92, 154, 0.35),
+    inset 0 3px 0 rgba(255, 255, 255, 0.55);
+}
+.claw-go:not(:disabled) {
+  animation: claw-go-pulse 1.2s ease-in-out infinite;
+}
+.claw-go:not(:disabled):active {
+  transform: translateY(5px);
+  box-shadow:
+    0 2px 0 #b02763,
+    0 4px 10px rgba(255, 92, 154, 0.3),
+    inset 0 3px 0 rgba(255, 255, 255, 0.55);
+}
+@keyframes claw-go-pulse {
+  50% {
+    filter: brightness(1.12);
+  }
+}
+.claw-res {
+  flex: 0 1 180px;
+  min-width: 120px;
+  height: 62px;
+  font-size: 19px;
+}
+.claw-res.again {
+  color: #fff;
+  text-shadow: 0 2px 0 #c2366f;
+  background: linear-gradient(#ff9cc2, #ff5c9a);
+  box-shadow:
+    0 6px 0 #b02763,
+    0 10px 18px rgba(0, 0, 0, 0.35);
+}
+.claw-res.quit {
+  background: linear-gradient(#ffffff, #e6e0f2);
+  box-shadow:
+    0 6px 0 #a79cc0,
+    0 10px 18px rgba(0, 0, 0, 0.35);
+}
+.claw-res:active {
+  transform: translateY(4px);
+}

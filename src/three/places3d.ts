@@ -7,7 +7,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { CVS_DOOR_X } from '../lib/cvs'
 import { groundY, HILL_H, PIER_Y, type Prop, SEA_Y, SIDEWALK_N, STORE_D, STORE_FRONT, STORE_W, type Zones } from '../lib/town'
-import { box, canvasTexture, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint, torus } from './kit'
+import { box, canvasTexture, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint, torus, fillFit } from './kit'
 
 /** 밤에만 빛나는 재질 (낮 세기 → 밤 세기) */
 export interface Glow {
@@ -95,7 +95,7 @@ export function storeBuilding(a: PlaceAnims) {
     ctx.font = `700 54px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('방들이편의점24', w / 2, h / 2 + 2)
+    fillFit(ctx, '방들이편의점24', w / 2, h / 2 + 2, w - 24)
     ctx.fillStyle = mint
     ctx.beginPath()
     ctx.arc(w / 2 - 210, h / 2 + 2, 16, 0, Math.PI * 2)
@@ -178,11 +178,11 @@ export function storeBuilding(a: PlaceAnims) {
     ctx.fillStyle = '#ff8a3d'
     ctx.font = `700 44px ${FONT}`
     ctx.textAlign = 'center'
-    ctx.fillText('오늘의', w / 2, 70)
-    ctx.fillText('컵라면', w / 2, 125)
+    fillFit(ctx, '오늘의', w / 2, 70, w - 24)
+    fillFit(ctx, '컵라면', w / 2, 125, w - 24)
     ctx.fillStyle = '#ff3b5c'
     ctx.font = `700 58px ${FONT}`
-    ctx.fillText('2+1', w / 2, 200)
+    fillFit(ctx, '2+1', w / 2, 200, w - 24)
   })
   g.add(texMesh(a, new THREE.PlaneGeometry(1.4, 1.4), ad, [W / 2 + 0.01, 1.7, 1.2], [0, Math.PI / 2, 0]))
   g.position.set(0, 0, STORE_FRONT - D / 2)
@@ -207,10 +207,10 @@ export function lotSign(a: PlaceAnims) {
     ctx.font = `700 44px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('입주 대기', w / 2, 58)
+    fillFit(ctx, '입주 대기', w / 2, 58, w - 24)
     ctx.fillStyle = '#ff7fa6'
     ctx.font = `700 28px ${FONT}`
-    ctx.fillText('친구를 초대해요!', w / 2, 112)
+    fillFit(ctx, '친구를 초대해요!', w / 2, 112, w - 24)
   })
   const g = new THREE.Group()
   g.add(part(box(0.1, 1.2, 0.1), wood, [-0.45, 0.6, 0]))
@@ -248,7 +248,7 @@ export function bungeoCart(a: PlaceAnims) {
     ctx.font = `700 46px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('붕어빵', w / 2, h / 2 + 2)
+    fillFit(ctx, '붕어빵', w / 2, h / 2 + 2, w - 24)
   })
   g.add(texMesh(a, new THREE.PlaneGeometry(0.9, 0.34), t, [0, 0.66, -0.48], [0, Math.PI, 0]))
   // 김: 위로 올라가며 사라지는 동그라미 셋
@@ -288,12 +288,12 @@ export function busStop(a: PlaceAnims) {
     ctx.fillStyle = '#ffffff'
     ctx.font = `700 26px ${FONT}`
     ctx.textAlign = 'center'
-    ctx.fillText('방들이동 정류장', w / 2, 26)
+    fillFit(ctx, '방들이동 정류장', w / 2, 26, w - 24)
     ctx.fillStyle = '#2b2233'
     ctx.font = `700 24px ${FONT}`
-    ctx.fillText('7 번 · 바닷가 ↔ 뒷산', w / 2, 72)
+    fillFit(ctx, '7 번 · 바닷가 ↔ 뒷산', w / 2, 72, w - 24)
     ctx.fillStyle = '#ff5a4f'
-    ctx.fillText('곧 도착', w / 2, 108)
+    fillFit(ctx, '곧 도착', w / 2, 108, w - 24)
   })
   const m = new THREE.MeshStandardMaterial({ map: t, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: 0.15, roughness: 0.5 })
   a.owned.push(m)
@@ -439,7 +439,7 @@ export function recycleBins(a: PlaceAnims) {
       ctx.font = `700 34px ${FONT}`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(t, w / 2, h / 2 + 2)
+      fillFit(ctx, t, w / 2, h / 2 + 2, w - 24)
     })
     const x = (i - 1) * 0.36
     g.add(part(roundBox(0.32, 0.72, 0.42, 0.04), mat(c, { rough: 0.6 }), [x, 0.36, 0]))
@@ -500,7 +500,7 @@ export function pocha(a: PlaceAnims) {
     ctx.font = `700 64px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('방들이 포차', w / 2, h / 2 + 4)
+    fillFit(ctx, '방들이 포차', w / 2, h / 2 + 4, w - 24)
   })
   const signMat = glowMat(a, '#ffffff', '#ffffff', 0.05, 0.8, { map: label })
   // 앞 처마 아래 매단 간판
@@ -602,7 +602,7 @@ export function trailSign(a: PlaceAnims) {
     ctx.font = `700 34px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('↑ 방들이산 정상', w / 2, h / 2 + 2)
+    fillFit(ctx, '↑ 방들이산 정상', w / 2, h / 2 + 2, w - 24)
   })
   return group(
     part(cyl(0.05, 0.06, 1.6, 8), mat('#8a5a38'), [0, 0.8, 0]),
@@ -675,9 +675,9 @@ export function summitStone(a: PlaceAnims) {
     ctx.fillStyle = '#2b2233'
     ctx.font = `700 34px ${FONT}`
     ctx.textAlign = 'center'
-    for (const [i, t] of ['방', '들', '이', '산'].entries()) ctx.fillText(t, w / 2, 48 + i * 42)
+    for (const [i, t] of ['방', '들', '이', '산'].entries()) fillFit(ctx, t, w / 2, 48 + i * 42, w - 24)
     ctx.font = `400 20px ${FONT}`
-    ctx.fillText('해발 52m', w / 2, h - 30)
+    fillFit(ctx, '해발 52m', w / 2, h - 30, w - 24)
   })
   return group(
     part(roundBox(0.7, 0.16, 0.5, 0.05), mat('#9b9690', { rough: 1 }), [0, 0.08, 0]),
@@ -710,7 +710,7 @@ export function spring(a: PlaceAnims) {
     ctx.font = `700 48px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('약수터', w / 2, h / 2 + 2)
+    fillFit(ctx, '약수터', w / 2, h / 2 + 2, w - 24)
   })
   const stream = part(cyl(0.02, 0.02, 0.42, 8), water, [0, 0.62, 0.22], { shadow: false, name: 'stream' })
   return group(
@@ -1053,7 +1053,7 @@ export function fireworkBox(a: PlaceAnims) {
     ctx.font = `700 26px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('불꽃놀이', w / 2, h / 2 + 2)
+    fillFit(ctx, '불꽃놀이', w / 2, h / 2 + 2, w - 24)
   })
   const g = group(
     part(roundBox(0.55, 0.32, 0.45, 0.03), mat('#c98f5a', { rough: 0.9 }), [0, 0.16, 0]),
@@ -1163,9 +1163,9 @@ export function beachSign(a: PlaceAnims) {
     ctx.font = `700 54px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('방들이 해수욕장', w / 2, h / 2 - 18)
+    fillFit(ctx, '방들이 해수욕장', w / 2, h / 2 - 18, w - 24)
     ctx.font = `400 30px ${FONT}`
-    ctx.fillText('→ 바다 · 방파제 · 등대', w / 2, h / 2 + 42)
+    fillFit(ctx, '→ 바다 · 방파제 · 등대', w / 2, h / 2 + 42, w - 24)
   })
   // 기둥은 판 뒤(-z)에 세워 글씨를 가리지 않는다
   const face = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 })

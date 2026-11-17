@@ -94,6 +94,20 @@ export function shadows(o: THREE.Object3D, cast = true, receive = true) {
 }
 
 /** 캔버스에 그려서 텍스처로 */
+/**
+ * 글씨가 maxW보다 넓으면 글자 크기를 줄여 그린다 (간판·팻말 글씨가 판 밖으로 잘리지 않게).
+ * ctx.font에 이미 'NNpx'가 들어 있어야 한다.
+ */
+export function fillFit(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number) {
+  const w = ctx.measureText(text).width
+  if (w > maxW) {
+    const font = ctx.font
+    ctx.font = font.replace(/(\d+(?:\.\d+)?)px/, (_, px: string) => `${Math.max(6, Math.floor((Number(px) * maxW) / w))}px`)
+    ctx.fillText(text, x, y)
+    ctx.font = font
+  } else ctx.fillText(text, x, y)
+}
+
 export function canvasTexture(w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void, repeat?: [number, number]) {
   const c = document.createElement('canvas')
   c.width = w

@@ -2,7 +2,7 @@
  * 동네에서 저절로 움직이는 것: 지나가는 버스 · 골목을 어슬렁거리는 고양이.
  * 네트워크로 주고받지 않고 "지금 시각"으로 자리를 계산한다 → 같은 시각이면 모든 화면에서 같은 자리.
  */
-import { findTownPath, nearestOpen, type TownMap, type Vec2 } from './town'
+import { findTownPath, nearestOpen, ROAD_S, type TownMap, type Vec2 } from './town'
 
 // ─── 버스 ───
 
@@ -27,6 +27,39 @@ export function busProgress(p: number): number {
   if (p < 0.6) return 1
   const k = (p - 0.6) / 0.4
   return 1 + k * k
+}
+
+/** 버스 크기 (길이 · 폭, m) · 다니는 차선 (큰길 남쪽 차선 가운데) */
+export const BUS_LEN = 6.2
+export const BUS_WIDTH = 2.3
+export const BUS_Z = ROAD_S / 2
+
+export interface BusNow {
+  x: number
+  z: number
+  /** 정류장에 서 있으면 false */
+  moving: boolean
+}
+
+/** 지금 버스 자리 (route: 서쪽 출발 x0 · 동쪽 끝 x1). 안 다니는 때면 null */
+export function busAt(nowMs: number, route: { x0: number; x1: number }): BusNow | null {
+  const p = busPhase(nowMs)
+  if (p === null) return null
+  const k = busProgress(p)
+  const x = k <= 1 ? route.x0 + (BUS_STOP.x - route.x0) * k : BUS_STOP.x + (route.x1 - BUS_STOP.x) * (k - 1)
+  return { x, z: BUS_Z, moving: p < 0.4 || p >= 0.6 }
+}
+
+/**
+ * 달리는 버스에 부딪혔나 (r = 미니미 몸 반지름).
+ * prevX: 지난 화면의 버스 x — 화면이 버벅여 버스가 한 번에 많이 움직여도 그 사이 지나간 자리를 다 본다
+ */
+export function busHits(bus: BusNow | null, p: Vec2, r = 0.3, prevX = bus?.x): boolean {
+  if (!bus?.moving) return false
+  if (Math.abs(p.z - bus.z) >= BUS_WIDTH / 2 + r) return false
+  const x0 = Math.min(bus.x, prevX ?? bus.x) - BUS_LEN / 2 - r
+  const x1 = Math.max(bus.x, prevX ?? bus.x) + BUS_LEN / 2 + r
+  return p.x > x0 && p.x < x1
 }
 
 // ─── 고양이 ───

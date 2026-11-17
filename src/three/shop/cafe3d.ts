@@ -208,14 +208,18 @@ function interior() {
     // 커피 머신 (은색 몸통 · 추출구 둘 · 빨간 불)
     const mx = 4.0
     const steel = mat('#cfd3d8', { metal: 0.6, rough: 0.3 })
-    g.add(part(roundBox(0.8, 0.5, 0.45, 0.05), steel, [mx, 1.25, zc]))
-    g.add(part(box(0.82, 0.06, 0.47), mat('#7a4a2e'), [mx, 1.53, zc]))
+    // 몸통을 다리 위로 올려 추출구 아래에 컵이 들어갈 자리를 둔다 (바리스타가 진짜로 커피를 내린다)
+    g.add(part(roundBox(0.8, 0.46, 0.45, 0.05), steel, [mx, 1.5, zc]))
+    g.add(part(box(0.82, 0.06, 0.47), mat('#7a4a2e'), [mx, 1.76, zc]))
+    for (const dx of [-0.36, 0.36]) g.add(small(box(0.06, 0.28, 0.4), steel, [mx + dx, 1.13, zc]))
+    // 물받이 판
+    g.add(part(box(0.66, 0.03, 0.36), mat('#3b3646', { metal: 0.5, rough: 0.4 }), [mx, 1.01, zc + 0.04]))
     for (const dx of [-0.2, 0.2]) {
-      g.add(small(cyl(0.05, 0.04, 0.08, 10), mat('#3b3646', { metal: 0.4 }), [mx + dx, 1.08, zc + 0.2]))
-      g.add(small(cyl(0.035, 0.03, 0.06, 10), mat('#ffffff'), [mx + dx, 1.03, zc + 0.24]))
+      g.add(small(cyl(0.05, 0.04, 0.08, 10), mat('#3b3646', { metal: 0.4 }), [mx + dx, 1.24, zc + 0.12]))
+      g.add(small(cyl(0.035, 0.03, 0.04, 10), mat('#ffffff'), [mx + dx, 1.19, zc + 0.12]))
     }
-    g.add(small(sphere(0.025, 8, 6), glow('#ff3b30', 1.2), [mx + 0.3, 1.4, zc + 0.23]))
-    g.add(small(cyl(0.012, 0.012, 0.25, 6), steel, [mx - 0.38, 1.2, zc + 0.22], { rot: [0.3, 0, 0] }))
+    g.add(small(sphere(0.025, 8, 6), glow('#ff3b30', 1.2), [mx + 0.3, 1.62, zc + 0.23]))
+    g.add(small(cyl(0.012, 0.012, 0.3, 6), steel, [mx - 0.38, 1.32, zc + 0.22], { rot: [0.3, 0, 0] }))
     // 그라인더
     g.add(part(roundBox(0.22, 0.32, 0.22, 0.03), mat('#3b3646'), [4.6, 1.16, zc]))
     g.add(small(cone(0.1, 0.22, 10), mat('#cfeef8', { opacity: 0.6 }), [4.6, 1.42, zc], { rot: [Math.PI, 0, 0] }))
@@ -315,7 +319,7 @@ function interior() {
     g.add(m)
     puffs.push({ m, mat: pm })
   }
-  const steamAt = { x: 4.0 - 0.38, y: 1.35, z: -D + 0.52 }
+  const steamAt = { x: 4.0 - 0.38, y: 1.5, z: -D + 0.52 }
 
   return {
     group: g,

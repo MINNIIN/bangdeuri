@@ -9,8 +9,16 @@ import { registerServiceWorker } from './lib/push'
 captureInstallPrompt()
 registerServiceWorker()
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+const root = createRoot(document.getElementById('root')!)
+// 개발용: ?game=claw 처럼 열면 미니게임 하나만 띄운다 (화면 확인용)
+const devGame = import.meta.env.DEV ? new URLSearchParams(location.search).get('game') : null
+if (devGame)
+  void import('./components/games/GameHost').then(({ GameHost }) =>
+    root.render(<GameHost game={devGame as never} onResult={(g, r) => console.log('[game]', g, JSON.stringify(r))} onClose={() => console.log('[game] close')} />),
+  )
+else
+  root.render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )

@@ -63,10 +63,15 @@ import { buildHouse3D, fixtureFacing, fixtureWorld, type House3D } from './house
 import { disposeTree, mat, part, torus } from './kit'
 import { buildTown3D, HIT_LAYER, SEESAW_REST, type Town3D } from './town3d'
 import { buildShop3D, type Shop3D, shopNpcLook } from './shops3d'
-import { BUS_STOP } from '../lib/townLife'
+import { BUS_STOP, type BusNow, busHits } from '../lib/townLife'
+import { busOuch } from '../lib/sfx'
+import { brewSteps, type BrewStep, type CupState, type Drink, drinkOf, SIPS, type Station } from '../lib/cafe'
+import { buildCup, type Cup3D, type CupLook } from './cup3d'
 
 const TAP_SLOP = 7
 const WALK_TOWN = 2.6
+/** 버스에 치여 날아가는 시간 (초) */
+const FLY_SEC = 1.1
 const WALK_HOUSE = 2.0
 const SNAP = 0.9
 const IDLE_FIXTURES = ['fx-sofa', 'fx-tv', 'fx-bed', 'fx-beanbag', 'fx-chair', 'fx-fridge', 'fx-counter', 'fx-bathtub', 'fx-bookshelf']
@@ -112,6 +117,8 @@ export interface WorldControl {
   actActor: (id: string, area: AreaId, key: string, from: Vec2) => void
   areaActor: (id: string, area: AreaId, at: Vec2) => void
   sayActor: (id: string, text: string) => void
+  /** 카페 주문: 바리스타가 만들어서 그 사람(id, 나는 'me') 손에 건넨다 */
+  brew: (id: string, drinkId: string) => void
   /** 주인 없는 집의 주인 미니미 (혼자 논다) */
   setNpc: (roomId: string, info: ActorInfo | null) => void
   snapshot: () => { area: AreaId; at: Vec2; act: string | null; outfit: number; room: SharedRoomState }
@@ -142,6 +149,8 @@ interface Props {
   badge?: ActorInfo['badge']
   /** 처음 서는 곳 */
   spawn: { area: AreaId; at: Vec2 }
+  /** 버스에 치이면 돌아가는 집 (방 번호) */
+  home?: string
   drops: Drop[]
   ghost?: Ghost | null
   selectedId?: string | null
@@ -205,7 +214,37 @@ interface Actor {
   idleTimer: number
   avatar: Avatar3D
   builtFor: string
+  /** 버스에 치여 날아가는 중 (시작 시각 · 날아가는 방향) */
+  fly?: { start: number; dx: number; dz: number } | null
+  /** 이때까지는 다시 치이지 않는다 */
+  safeUntil?: number
+  /** 가게 사람이 길찾기 없이 직접 걸어가는 중 (바리스타) */
+  stroll?: boolean
+  /** 들고 있는 카페 음료 */
+  cup?: HeldCup | null
 }
+
+interface HeldCup {
+  cup: Cup3D
+  look: CupLook
+  full: number
+  sips: number
+  /** 홀짝이기 시작한 시각 (-1 = 안 마시는 중) · 다음에 마실 시각 */
+  sipAt: number
+  next: number
+}
+
+/** 카페 바리스타가 서는 곳 (카페 안 좌표) · 그때 컵 자리 */
+const CAFE_STATION: Record<Station, { x: number; z: number; yaw: number; cup?: [number, number, number] }> = {
+  grinder: { x: 4.5, z: -2.55, yaw: Math.PI },
+  machine: { x: 3.85, z: -2.55, yaw: Math.PI, cup: [3.8, 1.025, -3.08] },
+  steam: { x: 3.5, z: -2.55, yaw: Math.PI },
+  syrup: { x: 1.7, z: -2.55, yaw: Math.PI, cup: [1.7, 0.995, -3.0] },
+  ice: { x: 1.2, z: -2.55, yaw: Math.PI, cup: [1.3, 0.995, -3.0] },
+  pickup: { x: 2.3, z: -2.45, yaw: 0, cup: [2.3, 1.06, -1.72] },
+}
+/** 바리스타 걷는 빠르기 (m/s) */
+const BARISTA_SPEED = 1.5
 
 const KEY_SEP = '/'
 /** 공원 놀이기구 이름 앞머리 */
@@ -278,6 +317,7 @@ export function World({
   name,
   badge,
   spawn,
+  home,
   drops,
   ghost,
   selectedId,
@@ -303,8 +343,8 @@ export function World({
   const [, bump] = useReducer((n: number) => n + 1, 0)
 
   // ─── 바뀌는 값은 ref로 들고, 그리기 루프가 읽는다 ───
-  const props = useRef({ drops, ghost, selectedId, freshId, walkable, arrange, onArrangeSelect, onArrangeBlocked, onPlaceTap, onDropTap, onMailTap, onBackgroundTap })
-  props.current = { drops, ghost, selectedId, freshId, walkable, arrange, onArrangeSelect, onArrangeBlocked, onPlaceTap, onDropTap, onMailTap, onBackgroundTap }
+  const props = useRef({ drops, ghost, selectedId, freshId, walkable, arrange, home, onArrangeSelect, onArrangeBlocked, onPlaceTap, onDropTap, onMailTap, onBackgroundTap })
+  props.current = { drops, ghost, selectedId, freshId, walkable, arrange, home, onArrangeSelect, onArrangeBlocked, onPlaceTap, onDropTap, onMailTap, onBackgroundTap }
   const cb = useRef({ onMeMove, onMeAct, onMeArrive, onMeArea })
   cb.current = { onMeMove, onMeAct, onMeArrive, onMeArea }
 
@@ -393,6 +433,7 @@ type PropsRef = {
     freshId?: string | null
     walkable: boolean
     arrange?: { roomId: string } | null
+    home?: string
     onArrangeSelect?: (sel: ArrangeSel | null) => void
     onArrangeBlocked?: () => void
     onPlaceTap?: (t: PlaceTap | null) => void
@@ -579,6 +620,11 @@ function createWorld(
   const removeActorObj = (a: Actor) => {
     window.clearTimeout(a.actTimer)
     window.clearTimeout(a.idleTimer)
+    if (a.cup) {
+      a.cup.cup.group.removeFromParent()
+      a.cup.cup.dispose()
+      a.cup = null
+    }
     actorGroup.remove(a.avatar.root)
     a.avatar.dispose()
   }
@@ -634,11 +680,19 @@ function createWorld(
     }
     return c
   }
+  /** 지난 화면의 버스 x (안 다니면 null) */
+  let lastBusX: number | null = null
+  /** 화면 흔들림 세기 (버스에 치였을 때) — 매 화면마다 줄어든다 */
+  let shake = 0
   const placeCamera = () => {
     const c = cam
     const off = new THREE.Vector3(Math.sin(c.yaw) * Math.cos(c.pitch), Math.sin(c.pitch), Math.cos(c.yaw) * Math.cos(c.pitch)).multiplyScalar(c.dist)
     camera.position.copy(c.target).add(off)
     camera.lookAt(c.target)
+    if (shake > 0) {
+      camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake))
+      shake = Math.max(0, shake - 0.02)
+    }
     // 해 그림자는 보는 곳을 따라간다
     sun.position.set(c.target.x + 9, 22, c.target.z + 12)
     sun.target.position.copy(c.target)
@@ -680,6 +734,9 @@ function createWorld(
       scene.add(s3.group)
     }
     for (const [id, s3] of shops3d) s3.group.visible = area === id
+    cafeProps.visible = area === 'cafe'
+    // 골목을 비웠던 동안의 버스 자리로 지나간 길을 재지 않게
+    lastBusX = null
     if (house && house.roomId !== rid) {
       scene.remove(house.h.group)
       disposeTree(house.h.group)
@@ -921,6 +978,240 @@ function createWorld(
       return
     }
     fx.burst(f, ON_HEAD.includes(f) ? headPos(a).add(new THREE.Vector3(0, 0.15, 0)) : itemTop(t), clock)
+  }
+
+  // ─── 버스에 치였다 ───
+  const busCrash = (a: Actor, bus: BusNow) => {
+    a.walk = null
+    endAct(a)
+    // 버스가 가는 쪽(동쪽)으로 조금, 차선 밖 인도 쪽으로 날아간다
+    const side = a.pos.z < bus.z ? -1 : 1
+    a.fly = { start: clock, dx: 2.2, dz: side * 2.6 }
+    a.safeUntil = clock + 4
+    a.yaw = side < 0 ? Math.PI : 0
+    speak(a, '으악!!', 2200)
+    if (a.area === me.area) {
+      fx.burst('shock', headPos(a).add(new THREE.Vector3(0, 0.15, 0)), clock)
+      fx.burst('sparkle', new THREE.Vector3(a.pos.x, 1, a.pos.z), clock)
+    }
+    if (a.id !== 'me') return
+    busOuch()
+    shake = 0.5
+    // 날아간 뒤 내 집에서 다시 깨어난다 (내 화면만 · 다른 사람들에게는 집으로 들어간 것으로 보인다)
+    window.setTimeout(() => {
+      if (me.area !== TOWN) return
+      me.fly = null
+      const home = props.current.home
+      if (home && rooms.has(home) && lotOf(home)) {
+        changeArea(me, houseArea(home), uvToHouse(HOUSE_ENTRANCE))
+        window.setTimeout(() => speak(me, anyOf(['휴… 살았다', '버스 조심해야지…', '아이고 허리야', '집이 최고야…'])), 700)
+      } else {
+        changeArea(me, TOWN, open(TOWN, spawn.at))
+        speak(me, '휴… 살았다')
+      }
+    }, FLY_SEC * 1000 + 350)
+  }
+
+  // ─── 카페: 주문하면 바리스타가 진짜로 만들어 건네준다 ───
+  const cafeProps = new THREE.Group()
+  cafeProps.visible = false
+  scene.add(cafeProps)
+  /** 에스프레소 · 물 줄기 (추출구 → 컵) */
+  const streamMat = new THREE.MeshStandardMaterial({ color: '#3a1f12', roughness: 0.3, transparent: true, opacity: 0.9 })
+  const stream = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1, 6), streamMat)
+  stream.visible = false
+  cafeProps.add(stream)
+  interface BrewJob {
+    who: string
+    drink: Drink
+    steps: BrewStep[]
+    i: number
+    phase: 'walk' | 'work'
+    t0: number
+    cup: Cup3D
+    look: CupLook
+    from: CupLook
+  }
+  const brewQueue: { who: string; drink: Drink }[] = []
+  let brew: BrewJob | null = null
+  /** 아무도 안 가져간 컵 (픽업대 위, 잠시 뒤 치운다) */
+  const leftCups: { cup: Cup3D; until: number }[] = []
+  const barista = () => {
+    const n = SHOPS.cafe.npc
+    return n ? actors.get(n.id) : undefined
+  }
+  const orderBrew = (who: string, drinkId: string) => {
+    const drink = drinkOf(drinkId)
+    if (!drink || brewQueue.length >= 4) return
+    brewQueue.push({ who, drink })
+    const b = barista()
+    if (b && brew) speak(b, `${drink.name} 주문 받았어요~ 잠시만요!`)
+  }
+  const cupAt = (place: CupState['place'], at: Station) => {
+    const b = barista()
+    if (!brew || !b) return
+    const g = brew.cup.group
+    if (place === 'hand') {
+      if (g.parent !== b.avatar.hand) b.avatar.hand.add(g)
+      return
+    }
+    const st = CAFE_STATION[place === 'counter' ? 'pickup' : at].cup ?? CAFE_STATION.machine.cup!
+    if (g.parent !== cafeProps) cafeProps.add(g)
+    g.position.set(...st)
+    g.quaternion.identity()
+  }
+  const mixColor = new THREE.Color()
+  const toColor = new THREE.Color()
+  const tickBrew = (dt: number) => {
+    const b = barista()
+    if (!b) return
+    // 남겨진 컵 치우기
+    for (let i = leftCups.length - 1; i >= 0; i--)
+      if (clock > leftCups[i].until) {
+        leftCups[i].cup.group.removeFromParent()
+        leftCups[i].cup.dispose()
+        leftCups.splice(i, 1)
+      }
+    if (!brew) {
+      const next = brewQueue.shift()
+      if (next) {
+        const cup = buildCup(next.drink.iced)
+        const look: CupLook = { fill: 0, color: next.drink.color, syrup: 0, syrupColor: next.drink.syrup ?? next.drink.color, ice: false }
+        brew = { ...next, steps: brewSteps(next.drink), i: 0, phase: 'walk', t0: clock, cup, look, from: { ...look } }
+        // 빈 컵은 머신 아래에 미리 놓는다
+        cafeProps.add(cup.group)
+        cup.group.position.set(...CAFE_STATION.machine.cup!)
+        cup.set(look)
+        speak(b, `${next.drink.name} 하나요~ 바로 만들어 드릴게요!`)
+      } else {
+        // 할 일이 없으면 제자리로
+        const home = SHOPS.cafe.npc!.spot
+        const d = Math.hypot(home.x - b.pos.x, home.z - b.pos.z)
+        if (d > 0.03) {
+          const v = Math.min(d, dt * BARISTA_SPEED)
+          b.yaw = Math.atan2(home.x - b.pos.x, home.z - b.pos.z)
+          b.pos = { x: b.pos.x + ((home.x - b.pos.x) / d) * v, z: b.pos.z + ((home.z - b.pos.z) / d) * v }
+          b.stroll = true
+        } else if (b.stroll) {
+          b.stroll = false
+          b.yaw = home.yaw
+        }
+        return
+      }
+    }
+    const job = brew!
+    const step = job.steps[job.i]
+    const st = CAFE_STATION[step.at]
+    if (job.phase === 'walk') {
+      const d = Math.hypot(st.x - b.pos.x, st.z - b.pos.z)
+      // 걷는 동안 컵은 손에 (처음 그라인더로 갈 때는 머신 아래 그대로)
+      if (job.i > 0) cupAt('hand', step.at)
+      if (d > 0.03) {
+        const v = Math.min(d, dt * BARISTA_SPEED)
+        b.yaw = Math.atan2(st.x - b.pos.x, st.z - b.pos.z)
+        b.pos = { x: b.pos.x + ((st.x - b.pos.x) / d) * v, z: b.pos.z + ((st.z - b.pos.z) / d) * v }
+        b.stroll = true
+        return
+      }
+      b.stroll = false
+      b.yaw = st.yaw
+      job.phase = 'work'
+      job.t0 = clock
+      job.from = { ...job.look }
+      speak(b, step.line, step.ms + 600)
+      if (!(step.at === 'grinder' && job.i === 0)) cupAt(step.cup.place, step.at)
+    }
+    const k = Math.min(1, ((clock - job.t0) * 1000) / step.ms)
+    const c = step.cup
+    const ease = k * k * (3 - 2 * k)
+    const L = job.look
+    if (c.fill !== undefined) L.fill = job.from.fill + (c.fill - job.from.fill) * ease
+    if (c.color) L.color = '#' + mixColor.set(job.from.color).lerp(toColor.set(c.color), ease).getHexString()
+    if (c.syrup !== undefined) L.syrup = job.from.syrup + (c.syrup - job.from.syrup) * ease
+    if (c.ice && k > 0.25) L.ice = true
+    if (c.top && k > 0.75) L.top = c.top
+    job.cup.set(L)
+    // 커피 머신: 추출구에서 컵으로 줄기가 떨어진다
+    const pouring = step.at === 'machine' && k > 0.08 && k < 0.92
+    stream.visible = pouring
+    if (pouring) {
+      const [x, y, z] = CAFE_STATION.machine.cup!
+      const top = 1.17
+      const bottom = y + 0.01 + L.fill * 0.16
+      stream.position.set(x, (top + bottom) / 2, z)
+      stream.scale.y = Math.max(0.01, top - bottom)
+      streamMat.color.set(job.from.fill > 0.2 ? '#c9a27e' : '#3a1f12')
+    }
+    if (k < 1) return
+    job.i++
+    if (job.i < job.steps.length) {
+      job.phase = 'walk'
+      return
+    }
+    // 다 됐다: 시킨 사람이 카페 안에 있으면 손에 쥐여 준다
+    stream.visible = false
+    brew = null
+    const who = actors.get(job.who)
+    if (who && who.area === 'cafe' && !who.cup) {
+      window.setTimeout(() => giveCup(who, job.cup, job.look), 500)
+    } else leftCups.push({ cup: job.cup, until: clock + 25 })
+  }
+  const giveCup = (a: Actor, cup: Cup3D, look: CupLook) => {
+    if (!actors.has(a.id)) {
+      cup.group.removeFromParent()
+      cup.dispose()
+      return
+    }
+    dropCup(a)
+    a.avatar.hand.add(cup.group)
+    cup.group.position.set(0, -0.03, 0)
+    // 손에 든 컵은 조금 크게 (멀리서도 보이게)
+    cup.group.scale.setScalar(1.35)
+    a.cup = { cup, look: { ...look }, full: look.fill, sips: 0, sipAt: -1, next: clock + 2.5 }
+    speak(a, anyOf(['잘 마실게요!', '우와 맛있겠다~', '향 너무 좋다', '감사합니다~']))
+  }
+  const dropCup = (a: Actor) => {
+    if (!a.cup) return
+    a.cup.cup.group.removeFromParent()
+    a.cup.cup.dispose()
+    a.cup = null
+  }
+  /** 컵 든 팔 높이 (null = 컵 없음) · 가끔 홀짝 */
+  const holdOf = (a: Actor): number | null => {
+    const h = a.cup
+    if (!h) return brew && brew.cup.group.parent === a.avatar.hand ? 0 : null
+    // 컵이 새 몸으로 바뀌었으면(옷 갈아입기) 다시 쥔다
+    if (h.cup.group.parent !== a.avatar.hand) a.avatar.hand.add(h.cup.group)
+    if (h.sipAt >= 0) {
+      const k = (clock - h.sipAt) / 1.5
+      if (k >= 1) {
+        h.sipAt = -1
+        h.sips++
+        h.look.fill = h.full * (1 - h.sips / SIPS)
+        h.cup.set(h.look)
+        if (h.sips >= SIPS) {
+          speak(a, anyOf(['다 마셨다~ 맛있다!', '한 잔 더 할까?', '카페인 충전 완료!']))
+          window.setTimeout(() => a.cup === h && dropCup(a), 1500)
+        }
+        return 0
+      }
+      return Math.sin(Math.PI * k)
+    }
+    if (!a.walk && clock > h.next && h.sips < SIPS) {
+      h.sipAt = clock
+      h.next = clock + 6 + Math.random() * 4
+    }
+    return 0
+  }
+  const handQ = new THREE.Quaternion()
+  const yawQ = new THREE.Quaternion()
+  const Y_AXIS = new THREE.Vector3(0, 1, 0)
+  /** 팔이 어떻게 굽든 컵은 똑바로 서 있게 */
+  const uprightCup = (a: Actor, g: THREE.Object3D) => {
+    a.avatar.root.updateMatrixWorld(true)
+    a.avatar.hand.getWorldQuaternion(handQ)
+    yawQ.setFromAxisAngle(Y_AXIS, a.avatar.root.rotation.y)
+    g.quaternion.copy(handQ.invert().multiply(yawQ))
   }
 
   // ─── 걷기 ───
@@ -1931,10 +2222,27 @@ function createWorld(
       if (doing?.inter.flee) y += Math.abs(Math.sin(clock * 14)) * 0.25
       // 골목 땅 높이 (뒷산을 오르고, 물가에선 발이 잠긴다)
       if (a.area === TOWN) y += floorY(TOWN, px, pz)
+      // 버스에 치여 포물선으로 날아가며 빙글빙글
+      if (a.fly) {
+        const k = Math.min(1, (clock - a.fly.start) / FLY_SEC)
+        const ease = 1 - (1 - k) * (1 - k)
+        px += a.fly.dx * ease
+        pz += a.fly.dz * ease
+        y += Math.sin(Math.PI * k) * 2.4
+        root.rotation.set(-k * Math.PI * 4, a.yaw, k * Math.PI * 1.5, 'YXZ')
+        if (k >= 1) {
+          a.pos = open(TOWN, { x: a.pos.x + a.fly.dx, z: a.pos.z + a.fly.dz })
+          a.fly = null
+        }
+      }
       root.position.set(px, y, pz)
       // 미끄럼틀 사다리를 오를 때는 걷는 동작으로 다리를 움직인다
       const climbing = doing?.item === 'p_slide' && animPose === null && y > 0.01
-      a.avatar.animate({ walking: !!a.walk || climbing, pose: a.walk ? null : animPose, t: clock + a.id.length, knee })
+      a.avatar.animate({ walking: !!a.walk || climbing || !!a.stroll, pose: a.walk ? null : animPose, t: clock + a.id.length, knee, hold: holdOf(a) })
+      {
+        const held = a.cup?.cup.group ?? (brew && brew.cup.group.parent === a.avatar.hand ? brew.cup.group : null)
+        if (held) uprightCup(a, held)
+      }
       // 효과
       if (doing && a.area === me.area && clock >= doing.fxAt) {
         doing.fxAt = clock + 1.1
@@ -1979,10 +2287,22 @@ function createWorld(
           ball.position.y = 0.28
         }
       }
-    if (town && me.area === TOWN) town.tick(clock, night)
+    if (town && me.area === TOWN) {
+      town.tick(clock, night)
+      // 달리는 버스에 부딪히면 으악! 하고 날아간다 (버스는 시각으로 움직여서 모든 화면에서 같은 사람이 치인다)
+      const bus = town.bus()
+      // 지난 화면 버스 자리부터 지금 자리까지 지나간 길을 본다 (버벅여도 뚫고 지나가지 않게)
+      const prevX = lastBusX ?? bus?.x
+      lastBusX = bus?.x ?? null
+      if (bus?.moving)
+        for (const a of actors.values())
+          if (a.area === TOWN && !a.fly && !a.id.startsWith('npc:') && clock >= (a.safeUntil ?? 0) && busHits(bus, a.pos, 0.3, prevX)) busCrash(a, bus)
+    }
     {
       const sh = shopOfArea(me.area)
       if (sh) shops3d.get(sh.id)?.tick?.(clock)
+      // 바리스타는 내가 카페 밖에 있어도 친구 주문을 만든다
+      tickBrew(dt)
     }
     // 정자 지붕·파라솔: 누가 그 아래 앉거나 누우면 살짝 비쳐서 미니미가 보이게
     if (town && me.area === TOWN)
@@ -2291,6 +2611,7 @@ function createWorld(
       changeArea(a, area, at)
       rerender()
     },
+    brew: (id, drinkId) => orderBrew(id, drinkId),
     sayActor: (id, text) => {
       const a = actors.get(id)
       if (a) speak(a, text, Math.min(6000, 2600 + text.length * 80))
@@ -2419,7 +2740,7 @@ function createWorld(
   }
 
   // 개발 중 확인용 (자동 스크린샷에서 상태를 본다)
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk, act: me.act ? me.act.key + ':' + me.act.phase : null }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), tapWalk: (x: number, z: number) => meWalk({ x, z }), tapWorld: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y) }, tapFixture: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) meAct(t); return !!t }, tapDrop: (id: string) => { const t = targetOf(id); if (t && t.area === me.area) meAct(t); return !!t }, lens: (o: { x?: number; z?: number; dist?: number; yaw?: number; pitch?: number; follow?: boolean; ms?: number }) => { follow = o.follow ?? false; animateCam({ ...cam, target: new THREE.Vector3(o.x ?? cam.target.x, cam.target.y, o.z ?? cam.target.z), dist: o.dist ?? cam.dist, yaw: o.yaw ?? cam.yaw, pitch: o.pitch ?? cam.pitch }, o.ms ?? 900) }, use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), bench: (n = 30) => { const gl = renderer.getContext(); renderer.render(scene, camera); gl.finish(); const t = performance.now(); for (let i = 0; i < n; i++) renderer.render(scene, camera); gl.finish(); return +((performance.now() - t) / n).toFixed(2) }, actorShadows: (on: boolean) => { for (const a of actors.values()) if (a.id !== "me") a.avatar.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = on }) }, screen: (x: number, z: number, y = 0) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, y, z)); return { x: r.left + s.x, y: r.top + s.y } }, zones: () => map.zones, cats: () => [0, 1].map((i) => town?.catPos(i)), tp: (x: number, z: number, area?: AreaId) => { if (area && area !== me.area) changeArea(me, area, { x, z }); else { endAct(me); me.walk = null; me.pos = { x, z } } follow = true }, night: (on: boolean) => { night = on }, meshes: () => { const out: Record<string, number> = {}; town?.group.traverse((n) => { if ((n as THREE.Mesh).isMesh && n.layers.test(camera.layers)) { let k = n.name || '(baked)'; for (let q = n.parent; q && q !== town!.group; q = q.parent) if (q.name) { k = q.name + '/' + k; break } out[k] = (out[k] ?? 0) + 1 } }); return out }, act: (key: string) => { const t = targetOf(key); if (t) meAct(t); return !!t }, tapAt: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y); return { x: r.left + q.x, y: r.top + q.y } } }
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk, act: me.act ? me.act.key + ':' + me.act.phase : null }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), tapWalk: (x: number, z: number) => meWalk({ x, z }), tapWorld: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y) }, tapFixture: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) meAct(t); return !!t }, tapDrop: (id: string) => { const t = targetOf(id); if (t && t.area === me.area) meAct(t); return !!t }, lens: (o: { x?: number; z?: number; dist?: number; yaw?: number; pitch?: number; follow?: boolean; ms?: number }) => { follow = o.follow ?? false; animateCam({ ...cam, target: new THREE.Vector3(o.x ?? cam.target.x, cam.target.y, o.z ?? cam.target.z), dist: o.dist ?? cam.dist, yaw: o.yaw ?? cam.yaw, pitch: o.pitch ?? cam.pitch }, o.ms ?? 900) }, use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), bench: (n = 30) => { const gl = renderer.getContext(); renderer.render(scene, camera); gl.finish(); const t = performance.now(); for (let i = 0; i < n; i++) renderer.render(scene, camera); gl.finish(); return +((performance.now() - t) / n).toFixed(2) }, actorShadows: (on: boolean) => { for (const a of actors.values()) if (a.id !== "me") a.avatar.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = on }) }, screen: (x: number, z: number, y = 0) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, y, z)); return { x: r.left + s.x, y: r.top + s.y } }, zones: () => map.zones, cats: () => [0, 1].map((i) => town?.catPos(i)), bus: () => town?.bus() ?? null, cafe: () => ({ step: brew ? `${brew.i}:${brew.steps[brew.i]?.at}:${brew.phase}` : null, fill: brew?.look.fill ?? null, q: brewQueue.length, meCup: me.cup ? { sips: me.cup.sips, fill: me.cup.look.fill, at: me.cup.cup.group.getWorldPosition(new THREE.Vector3()).toArray().map((n) => +n.toFixed(2)), scale: me.cup.cup.group.getWorldScale(new THREE.Vector3()).x, head: headPos(me).toArray().map((n) => +n.toFixed(2)) } : null, clock }), tp: (x: number, z: number, area?: AreaId) => { if (area && area !== me.area) changeArea(me, area, { x, z }); else { endAct(me); me.walk = null; me.pos = { x, z } } follow = true }, night: (on: boolean) => { night = on }, meshes: () => { const out: Record<string, number> = {}; town?.group.traverse((n) => { if ((n as THREE.Mesh).isMesh && n.layers.test(camera.layers)) { let k = n.name || '(baked)'; for (let q = n.parent; q && q !== town!.group; q = q.parent) if (q.name) { k = q.name + '/' + k; break } out[k] = (out[k] ?? 0) + 1 } }); return out }, act: (key: string) => { const t = targetOf(key); if (t) meAct(t); return !!t }, tapAt: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y); return { x: r.left + q.x, y: r.top + q.y } } }
 
 
   return {
@@ -2511,6 +2832,10 @@ function createWorld(
         s3.dispose()
       }
       shops3d.clear()
+      brew?.cup.dispose()
+      for (const c of leftCups) c.cup.dispose()
+      stream.geometry.dispose()
+      streamMat.dispose()
       for (const m of dropMeshes.values()) disposeTree(m)
       ring.geometry.dispose()
       ringMat.dispose()

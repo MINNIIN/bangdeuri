@@ -36,7 +36,9 @@ export interface Avatar3D {
    * 매 프레임: 걷는 중인지, 지금 자세, 시간(초).
    * knee: 앉을 때 무릎을 굽히는 정도 (0 = 다리를 앞으로 쭉, 1.3 = 의자처럼 아래로)
    */
-  animate(state: { walking: boolean; pose: Pose | null; t: number; speed?: number; knee?: number }): void
+  animate(state: { walking: boolean; pose: Pose | null; t: number; speed?: number; knee?: number; hold?: number | null }): void
+  /** 오른손 (컵 같은 걸 쥐여 줄 자리) */
+  hand: THREE.Object3D
   dispose(): void
 }
 
@@ -910,6 +912,10 @@ export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
   // 움직이는 마디(몸·다리·무릎·팔·팔꿈치·머리)마다 같은 재질 조각을 하나로 합친다.
   // 미니미 하나가 40조각 → 20조각 남짓이 되어, 여럿이 모여도 휴대폰에서 덜 버벅인다
   const merged = compactJoints(root, [body, head, ...legs, ...knees, ...arms, ...elbows])
+  // 오른손(앞에서 볼 때 왼쪽 팔) 끝: 컵을 쥐여 주는 자리 (합친 뒤에 붙여야 따로 남는다)
+  const grip = new THREE.Group()
+  grip.position.set(0, -FOREARM - 0.06, 0.035)
+  elbows[0].add(grip)
 
   const height =
     HEAD_Y +
@@ -920,7 +926,7 @@ export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
   const seed = (look.hairColor.charCodeAt(2) + look.skin.charCodeAt(3)) % 17
   let shut = false
 
-  const animate: Avatar3D['animate'] = ({ walking, pose, t, speed = 1, knee }) => {
+  const animate: Avatar3D['animate'] = ({ walking, pose, t, speed = 1, knee, hold }) => {
     const seated = pose === 'sit' || pose === 'watch' || pose === 'floor' || pose === 'bath'
     body.position.set(0, 0, 0)
     body.rotation.set(0, 0, 0)
@@ -1012,6 +1018,13 @@ export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
       elbows[0].rotation.x = elbows[1].rotation.x = -0.7
     }
 
+    // 컵을 들고 있으면 오른팔을 앞으로 (hold 0 = 가슴 앞, 1 = 입가에서 홀짝)
+    if (hold !== undefined && hold !== null) {
+      const k = Math.max(0, Math.min(1, hold))
+      arms[0].rotation.set(-0.55 - k * 0.75, 0, -0.18 + k * 0.32)
+      elbows[0].rotation.set(-1.25 - k * 0.75, 0, 0)
+    }
+
     // 깜빡: 3~5초마다 0.12초, 잘 때는 계속 감는다
     const period = 3.4 + (seed % 5) * 0.35
     const closed = pose === 'lie' || (t + seed) % period < 0.12
@@ -1025,6 +1038,7 @@ export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
     root,
     height,
     animate,
+    hand: grip,
     dispose() {
       for (const g of merged) g.dispose()
       faceOpen.dispose()

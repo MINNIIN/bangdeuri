@@ -2,7 +2,7 @@
  * 가게 3D 모음: 가게 id → 안 · 골목 건물 · 가게 사람 생김새.
  * 새 가게는 three/shop/<id>3d.ts를 만들고 여기 한 줄 더한다.
  */
-import type * as THREE from 'three'
+import * as THREE from 'three'
 import type { AvatarLook } from '../art/avatar'
 import type { ShopId } from '../lib/town'
 import { buildCvs3D, CLERK_LOOK } from './cvs3d'
@@ -19,7 +19,12 @@ export type { Shop3D } from './shop/common'
 const ART: Record<ShopId, ShopArt> = {
   cvs: {
     interior: buildCvs3D,
-    exterior: storeBuilding,
+    // storeBuilding은 안에서 z를 앞면 자리로 옮겨 두므로, 칸 자리(town3d가 바꾸는 위치)는 바깥 묶음에 준다
+    exterior: (a) => {
+      const outer = new THREE.Group()
+      outer.add(storeBuilding(a))
+      return outer
+    },
     npcLook: { ...CLERK_LOOK },
   },
   pc: PC_ART,

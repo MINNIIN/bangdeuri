@@ -5,7 +5,7 @@
 import * as THREE from 'three'
 import { CVS_DOOR_X, CVS_HD, CVS_HW, CVS_WALL_H } from '../lib/cvs'
 import { HIT_LAYER } from './town3d'
-import { bakeStatic, box, canvasTexture, cone, cyl, mat, part, roundBox, sphere, tint, torus } from './kit'
+import { bakeStatic, box, canvasTexture, cone, cyl, mat, part, roundBox, sphere, tint, torus, fillFit } from './kit'
 
 const FONT = 'Galmuri11, system-ui, sans-serif'
 const HIT = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false })
@@ -38,7 +38,7 @@ export function buildCvs3D(): Cvs3D {
       ctx.font = `700 ${size}px ${FONT}`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(text, w / 2, h / 2 + 2)
+      fillFit(ctx, text, w / 2, h / 2 + 2, w - 24)
     })
   /** 누름 상자 (가운데·크기, key) */
   const hit = (key: string, x: number, z: number, w: number, h: number, d: number) => {

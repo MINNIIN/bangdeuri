@@ -6,6 +6,7 @@ import { AlarmTool } from './AlarmTool'
 import { CalendarTool } from './CalendarTool'
 import { TimerTool } from './TimerTool'
 import { TurntableTool } from './TurntableTool'
+import { CafeMenu } from './CafeMenu'
 import type { Song } from '../../lib/songs'
 
 const TITLES: Record<ToolId, string> = {
@@ -17,6 +18,7 @@ const TITLES: Record<ToolId, string> = {
   turntable: '턴테이블',
   calendar: '달력',
   alarm: '알람 시계',
+  cafe: '카페 방들이 메뉴',
 }
 
 export interface ToolProps {
@@ -25,6 +27,7 @@ export interface ToolProps {
   onStopSong?: () => void
   calendar?: ComponentProps<typeof CalendarTool>
   alarm?: ComponentProps<typeof AlarmTool>
+  onOrder?: (drinkId: string) => void
 }
 
 /** 가구에 도착하면 열리는 도구 창 */
@@ -53,6 +56,8 @@ function renderTool(tool: ToolId, p: ToolProps) {
       return p.alarm ? <AlarmTool {...p.alarm} /> : null
     case 'calendar':
       return p.calendar ? <CalendarTool {...p.calendar} /> : null
+    case 'cafe':
+      return p.onOrder ? <CafeMenu onOrder={p.onOrder} /> : null
     case 'turntable':
       return p.onPlaySong && p.onStopSong ? <TurntableTool onPlay={p.onPlaySong} onStop={p.onStopSong} /> : null
     default:

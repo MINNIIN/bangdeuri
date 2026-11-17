@@ -17,7 +17,7 @@ import {
   PC_SHOP,
 } from '../../lib/shop/pc'
 import { STORE_DOOR_DX, STORE_W } from '../../lib/town'
-import { bakeStatic, box, canvasTexture, cyl, mat, part, roundBox, sphere } from '../kit'
+import { bakeStatic, box, canvasTexture, cyl, mat, part, roundBox, sphere, fillFit } from '../kit'
 import type { PlaceAnims } from '../places3d'
 import { FONT, type ShopArt, shopFront, shopKit, shopRoom } from './common'
 
@@ -252,7 +252,7 @@ function interior() {
         ctx.fillStyle = '#ffd94a'
         ctx.font = `700 26px ${FONT}`
         ctx.textAlign = 'center'
-        ctx.fillText('메뉴', w / 2, 34)
+        fillFit(ctx, '메뉴', w / 2, 34, w - 24)
         ctx.fillStyle = '#ffffff'
         ctx.font = `700 20px ${FONT}`
         ctx.textAlign = 'left'
@@ -307,7 +307,7 @@ function exterior(a: PlaceAnims) {
               ctx.textBaseline = 'middle'
               text.forEach((s, i) => {
                 ctx.font = `700 ${i === 0 ? 34 : 20}px ${FONT}`
-                ctx.fillText(s, w / 2, (h * (i + 0.8)) / (text.length + 0.6))
+                fillFit(ctx, s, w / 2, (h * (i + 0.8)) / (text.length + 0.6), w - 12)
               })
             }),
           ) as THREE.Texture

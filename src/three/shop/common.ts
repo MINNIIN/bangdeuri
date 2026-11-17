@@ -9,7 +9,7 @@ import * as THREE from 'three'
 import type { ShopDef } from '../../lib/shops'
 import { STORE_D, STORE_DOOR_DX, STORE_FRONT, STORE_W } from '../../lib/town'
 import type { AvatarLook as Look } from '../../art/avatar'
-import { box, canvasTexture, mat, part, roundBox } from '../kit'
+import { box, canvasTexture, mat, part, roundBox, fillFit } from '../kit'
 import type { PlaceAnims } from '../places3d'
 import { HIT_LAYER } from '../town3d'
 
@@ -50,7 +50,7 @@ export function shopKit(g: THREE.Group, owned: { dispose(): void }[]) {
       ctx.font = `700 ${size}px ${FONT}`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(text, w / 2, h / 2 + 2)
+      fillFit(ctx, text, w / 2, h / 2 + 2, w - 24)
     })
   /** 빛나는 재질 (화면 · 네온): 밝기를 바꿔 깜빡일 수 있게 따로 만든다 */
   const glow = (color: string, intensity = 1.2) => {
@@ -164,10 +164,10 @@ export function shopFront(id: ShopDef['id'], style: FrontStyle, a: PlaceAnims) {
     ctx.fillRect(0, 0, 1024, 14)
     ctx.fillRect(0, 114, 1024, 14)
     ctx.fillStyle = style.signFg
-    ctx.font = `700 60px ${FONT}`
+    ctx.font = `700 56px ${FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(style.name, 512, 66)
+    fillFit(ctx, style.name, 512, 66, 1024 - 140)
   })
   a.owned.push(signT)
   const signMat = new THREE.MeshStandardMaterial({ map: signT, emissive: '#ffffff', emissiveMap: signT, emissiveIntensity: 0.2, roughness: 0.5 })
@@ -240,7 +240,8 @@ export function shopFront(id: ShopDef['id'], style: FrontStyle, a: PlaceAnims) {
   for (const x of [-0.36, 0.36]) door.add(part(new THREE.PlaneGeometry(0.66, 2.1), doorGlass, [x, 1.15, 0.06], { shadow: false }))
   door.add(part(box(0.05, 2.2, 0.08), frameMat, [0, 1.15, 0.07]))
   for (const x of [-0.1, 0.1]) door.add(part(box(0.04, 0.5, 0.06), mat('#d9dde2', { metal: 0.6, rough: 0.3 }), [x, 1.15, 0.12]))
-  door.add(part(roundBox(2.1, 0.08, 0.7, 0.03), mat(style.accent, { rough: 0.5 }), [0, 2.72, 0.32]))
+  // 차양은 문틀 바로 위 (간판 아래 끝 2.45보다 낮게 — 높으면 위에서 볼 때 간판 글씨를 가린다)
+  door.add(part(roundBox(2.1, 0.08, 0.7, 0.03), mat(style.accent, { rough: 0.5 }), [0, 2.4, 0.32]))
   door.add(part(box(1.9, 0.06, 1.0), mat('#5c5f6b', { rough: 0.95 }), [0, 0.03, 0.62]))
   door.position.set(doorX, 0, D / 2)
   g.add(door)

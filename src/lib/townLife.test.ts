@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { interactionFor } from './interactions'
 import { buildTown, findTownPath, guestSpot, MAX_HOUSES, parkSeats } from './town'
-import { BUS_PERIOD, busPhase, CAT_SEEDS, catAt, catRoute } from './townLife'
+import { BUS_PERIOD, BUS_RUN, BUS_STOP, busAt, busHits, busPhase, CAT_SEEDS, catAt, catRoute } from './townLife'
 
 const towns = { '집 한 채': ['host'], '집 열일곱 채': Array.from({ length: MAX_HOUSES }, (_, i) => `r${i}`) }
 
@@ -43,6 +43,45 @@ describe('버스', () => {
         expect(p).toBeLessThanOrEqual(1)
       }
     }
+  })
+  // 한 주기의 시작 (busPhase가 0인 때)
+  const t0 = Math.ceil(1_700_000_000_000 / BUS_PERIOD) * BUS_PERIOD
+  const route = { x0: -90, x1: 90 }
+
+  it('버스 자리: 서쪽에서 와서 정류장에 섰다가 동쪽으로 간다, 안 다닐 때는 없다', () => {
+    expect(busAt(t0 + BUS_RUN + 1000, route)).toBeNull()
+    const start = busAt(t0, route)!
+    expect(start.x).toBeCloseTo(route.x0)
+    expect(start.moving).toBe(true)
+    const stop = busAt(t0 + BUS_RUN * 0.5, route)!
+    expect(stop.x).toBeCloseTo(BUS_STOP.x)
+    expect(stop.moving).toBe(false)
+    const late = busAt(t0 + BUS_RUN * 0.9, route)!
+    expect(late.x).toBeGreaterThan(BUS_STOP.x)
+    expect(late.moving).toBe(true)
+    // 큰길 남쪽 차선 (인도가 아니다)
+    expect(start.z).toBeGreaterThan(0)
+    expect(start.z).toBeLessThan(3.4)
+  })
+
+  it('달리는 버스 앞을 지나가면 부딪힌다, 서 있는 버스나 인도는 괜찮다', () => {
+    const run = busAt(t0 + BUS_RUN * 0.2, route)!
+    expect(busHits(run, { x: run.x + 1, z: run.z })).toBe(true)
+    expect(busHits(run, { x: run.x, z: run.z + 1.2 })).toBe(true)
+    // 버스 옆 인도
+    expect(busHits(run, { x: run.x, z: 5.5 })).toBe(false)
+    expect(busHits(run, { x: run.x + 6, z: run.z })).toBe(false)
+    const stop = busAt(t0 + BUS_RUN * 0.5, route)!
+    expect(busHits(stop, { x: stop.x, z: stop.z })).toBe(false)
+    expect(busHits(null, { x: 0, z: 1.7 })).toBe(false)
+  })
+
+  it('화면이 버벅여 버스가 한 번에 많이 움직여도 지나간 자리에 있던 사람은 치인다', () => {
+    const run = busAt(t0 + BUS_RUN * 0.2, route)!
+    // 지난 화면에선 12m 뒤에 있었고, 그 사이에 서 있던 사람
+    expect(busHits(run, { x: run.x - 8, z: run.z }, 0.3, run.x - 12)).toBe(true)
+    // 지나간 길 밖이면 안 치인다
+    expect(busHits(run, { x: run.x - 20, z: run.z }, 0.3, run.x - 12)).toBe(false)
   })
 })
 

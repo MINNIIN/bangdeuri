@@ -22,7 +22,7 @@ import {
   TAMB_DX,
   TAMB_Z,
 } from '../../lib/shop/sing'
-import { bakeStatic, box, cyl, mat, part, roundBox, sphere, torus } from '../kit'
+import { bakeStatic, box, cyl, mat, part, roundBox, sphere, torus, fillFit } from '../kit'
 import { FONT, type ShopArt, shopFront, shopKit, shopRoom } from './common'
 
 const DEF = SING_SHOP
@@ -76,7 +76,7 @@ function interior() {
           ctx.fillStyle = '#ffd94a'
           ctx.font = `700 26px ${FONT}`
           ctx.textAlign = 'center'
-          ctx.fillText('이번 주 인기곡', w / 2, 40)
+          fillFit(ctx, '이번 주 인기곡', w / 2, 40, w - 24)
           ctx.font = `700 20px ${FONT}`
           ctx.textAlign = 'left'
           ;['방들이 블루스', '편의점 앞에서', '새벽 세 시의 컵라면', '우리 동네 골목길'].forEach((s, i) => {
@@ -124,14 +124,14 @@ function interior() {
       ctx.fillStyle = '#ffffff'
       ctx.font = `700 40px ${FONT}`
       ctx.textAlign = 'center'
-      ctx.fillText(song, w / 2, 90)
+      fillFit(ctx, song, w / 2, 90, w - 24)
       ctx.font = `400 24px ${FONT}`
       ctx.fillStyle = '#b9b3d6'
-      ctx.fillText('노래 방들이 · 작곡 미니미', w / 2, 130)
+      fillFit(ctx, '노래 방들이 · 작곡 미니미', w / 2, 130, w - 24)
       // 가사 줄 (랄라 흥얼)
       ctx.font = `700 30px ${FONT}`
       ctx.fillStyle = '#7fd0ff'
-      ctx.fillText('라 라 라 ~ 랄 라 라 ♪', w / 2, 210)
+      fillFit(ctx, '라 라 라 ~ 랄 라 라 ♪', w / 2, 210, w - 24)
       ctx.fillStyle = '#ff8fd0'
       ctx.fillRect(110, 228, 180, 6)
       ctx.fillStyle = '#5a4f7a'
