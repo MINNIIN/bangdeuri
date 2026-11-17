@@ -1,13 +1,16 @@
 /**
- * 골목 3D: 잔디 · 차도 · 인도 · 친구들 집(마당·울타리·대문·우편함) · 공원.
+ * 골목 3D: 잔디 · 큰길(차도·인도) · 뒷골목 · 샛길 · 친구들 집(마당·울타리·대문·우편함) · 가게 건물 · 빈 집터 · 공원.
  * 집 겉모습은 그 방 테마 색을 따르고, 대문 위에 "OO네" 문패가 붙는다.
  */
 import * as THREE from 'three'
 import type { Room } from '../lib/types'
 import {
+  ALLEY_W,
   CROSSWALK_HALF,
+  emptySlots,
   FENCE_Z,
   GATE_HALF,
+  groundY,
   HOUSE_BACK_Z,
   HOUSE_D,
   HOUSE_FRONT_Z,
@@ -16,6 +19,12 @@ import {
   mailboxSpot,
   PARK_S,
   ROAD_N,
+  ROWS,
+  rowOff,
+  SHOP_IDS,
+  shopRect,
+  STREET_W,
+  STREET_X,
   ROAD_S,
   SIDEWALK_N,
   SIDEWALK_S,
@@ -25,6 +34,8 @@ import {
 } from '../lib/town'
 import { bakeStatic, box, canvasTexture, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint, torus } from './kit'
 import * as P from './places3d'
+import { shopExterior } from './shops3d'
+import { BUS_STOP, busPhase, busProgress, CAT_SEEDS, catAt, catRoute } from '../lib/townLife'
 
 const HOUSE_STYLE: Record<string, { wall: string; roof: string; trim: string; door: string }> = {
   pink: { wall: '#ffe1ec', roof: '#ff7fa6', trim: '#ffffff', door: '#c9577d' },
@@ -50,8 +61,10 @@ export interface Town3D {
   balls: Map<string, THREE.Object3D>
   /** 누가 아래에 있으면 비쳐 보이게 하는 지붕·파라솔 */
   fades: Map<string, THREE.Object3D>
-  /** 바다 물결 · 갈매기 · 배 · 등대 빛줄기처럼 늘 움직이는 것 */
+  /** 바다 물결 · 갈매기 · 배 · 등대 빛줄기 · 버스 · 고양이처럼 늘 움직이는 것 */
   tick(t: number, night: boolean): void
+  /** 고양이 지금 자리 (번호 = CAT_SEEDS 순서) */
+  catPos(i: number): { x: number; z: number } | null
   dispose(): void
 }
 
@@ -186,6 +199,9 @@ const HIT_BOX: Partial<Record<Prop['kind'], [number, number, number, number]>> =
   sandbox: [2.0, 0.6, 2.0, 0],
   ptable: [2.2, 1.3, 1.2, 0],
   vending: [1.0, 1.95, 0.85, 0],
+  lotsign: [1.2, 1.6, 0.8, 0.2],
+  bungeo: [1.9, 2.3, 1.3, 0],
+  busstop: [3.4, 2.4, 1.3, 0],
   pocha: [3.6, 2.5, 3.6, -0.3],
   pavilion: [3.0, 3.4, 3.2, 0.1],
   scope: [0.8, 1.6, 0.9, 0],
@@ -331,6 +347,15 @@ function buildProp(
     case 'pocha':
       o = P.pocha(anims)
       break
+    case 'lotsign':
+      o = P.lotSign(anims)
+      break
+    case 'bungeo':
+      o = P.bungeoCart(anims)
+      break
+    case 'busstop':
+      o = P.busStop(anims)
+      break
     case 'pavilion':
       o = P.pavilion(anims, base)
       break
@@ -464,8 +489,13 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   const b = map.bounds
   const zones = map.zones ?? townZones(map.lots)
   const anims = P.newAnims()
+  const groundAt = (x: number, z: number) => groundY(zones, x, z)
   // 잔디·길은 서쪽 끝 너머(안개 속)부터, 잔디는 모래사장까지 · 길은 길 끝까지
   const gx0 = b.minX - 30
+  // 잔디는 맨 뒷줄 뒤 숲부터 공원 앞 끝까지
+  const GROUND_Z0 = b.minZ - 12
+  const GROUND_D = 40 - GROUND_Z0
+  const GROUND_Z = (GROUND_Z0 + 40) / 2
   const W = zones.sand - gx0
   const cx = (gx0 + zones.sand) / 2
   const roadW = zones.roadEnd - gx0
@@ -485,14 +515,14 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
         ctx.fillRect(x, y, 3, 6)
       }
     },
-    [W / 6, 80 / 6],
+    [W / 6, GROUND_D / 6],
   )
   owned.push(grassTex)
   const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 })
   owned.push(grassMat)
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W, 80), grassMat)
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(W, GROUND_D), grassMat)
   ground.rotation.x = -Math.PI / 2
-  ground.position.set(cx, -0.01, 0)
+  ground.position.set(cx, -0.01, GROUND_Z)
   ground.receiveShadow = true
   ground.userData.ground = true
   g.add(ground)
@@ -567,6 +597,54 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     g.add(s)
   }
 
+  // ─── 뒷골목 · 샛길 (차 없는 보도블록 길) ───
+  const alleyTex = canvasTexture(
+    128,
+    128,
+    (ctx) => {
+      ctx.fillStyle = '#e6dccb'
+      ctx.fillRect(0, 0, 128, 128)
+      ctx.strokeStyle = '#d2c4ae'
+      ctx.lineWidth = 3
+      for (let i = 0; i <= 128; i += 32) {
+        ctx.beginPath()
+        ctx.moveTo(0, i)
+        ctx.lineTo(128, i)
+        ctx.stroke()
+        for (let k = 0; k < 128; k += 64) {
+          const x = k + ((i / 32) % 2 ? 32 : 0)
+          ctx.beginPath()
+          ctx.moveTo(x, i)
+          ctx.lineTo(x, i + 32)
+          ctx.stroke()
+        }
+      }
+    },
+    [1, 1],
+  )
+  owned.push(alleyTex)
+  const paths: [number, number, number, number][] = []
+  for (let r = 1; r < ROWS; r++) {
+    const z0 = FENCE_Z + rowOff(r)
+    paths.push([zones.hw, z0, zones.he, z0 + ALLEY_W])
+  }
+  const streetZ0 = FENCE_Z + rowOff(ROWS - 1)
+  for (const x of [zones.hw + STREET_W / 2, ...STREET_X, zones.he - STREET_W / 2]) paths.push([x - STREET_W / 2, streetZ0, x + STREET_W / 2, SIDEWALK_N])
+  for (const [x0, z0, x1, z1] of paths) {
+    const t = alleyTex.clone()
+    t.needsUpdate = true
+    t.repeat.set((x1 - x0) / 2, (z1 - z0) / 2)
+    owned.push(t)
+    const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 })
+    owned.push(m)
+    const path = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), m)
+    path.rotation.x = -Math.PI / 2
+    path.position.set((x0 + x1) / 2, 0.004, (z0 + z1) / 2)
+    path.receiveShadow = true
+    path.userData.ground = true
+    g.add(path)
+  }
+
   // ─── 집들 ───
   const windowMat = new THREE.MeshStandardMaterial({ color: '#cfe9ff', roughness: 0.15, metalness: 0.1, emissive: '#ffcf7a', emissiveIntensity: 0 })
   const lampMat = new THREE.MeshStandardMaterial({ color: '#fff3c4', roughness: 0.4, emissive: '#ffd27a', emissiveIntensity: 0.2 })
@@ -578,7 +656,10 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     const room = rooms.get(lot.roomId)
     const style = HOUSE_STYLE[room?.theme ?? 'studio'] ?? HOUSE_STYLE.studio
     const hx = lot.x
-    const hz = (HOUSE_FRONT_Z + HOUSE_BACK_Z) / 2
+    // 줄마다 z가 밀린다 (줄0 = 큰길 앞)
+    const FRONT = HOUSE_FRONT_Z + lot.zOff
+    const FENCE = FENCE_Z + lot.zOff
+    const hz = (HOUSE_FRONT_Z + HOUSE_BACK_Z) / 2 + lot.zOff
     const house = new THREE.Group()
     house.userData.house = lot.roomId
     const wallH = 2.9
@@ -646,21 +727,21 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
       const signMat = new THREE.MeshStandardMaterial({ map: label, roughness: 0.6 })
       owned.push(signMat)
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), signMat)
-      sign.position.set(hx, 2.75, HOUSE_FRONT_Z + 0.06)
+      sign.position.set(hx, 2.75, FRONT + 0.06)
       sign.userData.door = lot.roomId
       g.add(sign)
     }
 
     // 마당: 잔디 조금 밝게 + 디딤돌 길
-    const yard = new THREE.Mesh(new THREE.PlaneGeometry(LOT_W - 1, FENCE_Z - HOUSE_FRONT_Z), mat('#b3e39c', { rough: 1 }))
+    const yard = new THREE.Mesh(new THREE.PlaneGeometry(LOT_W - 1, FENCE - FRONT), mat('#b3e39c', { rough: 1 }))
     yard.rotation.x = -Math.PI / 2
-    yard.position.set(hx, 0.003, (HOUSE_FRONT_Z + FENCE_Z) / 2)
+    yard.position.set(hx, 0.003, (FRONT + FENCE) / 2)
     yard.receiveShadow = true
     yard.userData.ground = true
     yard.userData.yard = lot.roomId
     g.add(yard)
     for (let k = 0; k < 4; k++) {
-      const z = HOUSE_FRONT_Z + 1.1 + k * 1.05
+      const z = FRONT + 1.1 + k * 1.05
       g.add(part(cyl(0.38, 0.4, 0.06, 12), mat('#ddd3c4', { rough: 1 }), [hx + (k % 2 ? 0.12 : -0.12), 0.03, z], { scale: [1, 1, 0.8], shadow: false }))
     }
 
@@ -684,14 +765,14 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
       fg.add(rail, rail2)
       g.add(fg)
     }
-    fenceRun(l, FENCE_Z, hx - GATE_HALF, FENCE_Z)
-    fenceRun(hx + GATE_HALF, FENCE_Z, r, FENCE_Z)
-    fenceRun(l, FENCE_Z, l, HOUSE_FRONT_Z)
-    fenceRun(r, FENCE_Z, r, HOUSE_FRONT_Z)
+    fenceRun(l, FENCE, hx - GATE_HALF, FENCE)
+    fenceRun(hx + GATE_HALF, FENCE, r, FENCE)
+    fenceRun(l, FENCE, l, FRONT)
+    fenceRun(r, FENCE, r, FRONT)
     // 대문 기둥
     for (const x of [hx - GATE_HALF, hx + GATE_HALF]) {
-      g.add(part(roundBox(0.24, 1.0, 0.24, 0.05), mat(style.wall), [x, 0.5, FENCE_Z]))
-      g.add(part(sphere(0.13, 12, 8), mat(style.roof), [x, 1.08, FENCE_Z]))
+      g.add(part(roundBox(0.24, 1.0, 0.24, 0.05), mat(style.wall), [x, 0.5, FENCE]))
+      g.add(part(sphere(0.13, 12, 8), mat(style.roof), [x, 1.08, FENCE]))
     }
 
     // 우편함 (깃발이 서 있으면 편지가 있다)
@@ -708,6 +789,28 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     mailbox.traverse((n) => (n.userData.mail = lot.roomId))
     flags.set(lot.roomId, flag)
     g.add(mailbox)
+  }
+
+  // ─── 빈 집터 (입주 대기): 밝은 잔디 + 낮은 돌 테두리 ───
+  for (const s of emptySlots(map.lots)) {
+    const f = FENCE_Z + s.zOff
+    const front = HOUSE_FRONT_Z + s.zOff
+    const lawn = new THREE.Mesh(new THREE.PlaneGeometry(LOT_W - 1.4, f - front + HOUSE_D - 0.6), mat('#c4eaa8', { rough: 1 }))
+    lawn.rotation.x = -Math.PI / 2
+    lawn.position.set(s.x, 0.003, (f + front - HOUSE_D + 0.6) / 2)
+    lawn.receiveShadow = true
+    lawn.userData.ground = true
+    g.add(lawn)
+    for (const sx of [-1, 1]) g.add(part(box(0.18, 0.16, f - front + HOUSE_D - 0.6), mat('#d8d2c4'), [s.x + sx * (LOT_W / 2 - 0.7), 0.08, (f + front - HOUSE_D + 0.6) / 2]))
+  }
+
+  // ─── 가게 건물 (문을 누르면 들어간다) ───
+  for (const id of SHOP_IDS) {
+    const r = shopRect(id)
+    const shop = shopExterior(id, anims)
+    shop.position.set(r.x, 0, r.zOff)
+    // 이름을 붙이면 합치기(bakeStatic)에서 빠진다 → 이름 없이 둔다 (문 누르기는 userData.shop으로 그대로 된다)
+    g.add(shop)
   }
 
   // ─── 공원 ───
@@ -739,19 +842,15 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     nth.set(p.kind, k + 1)
     zoneOf(p.x).add(buildProp(p, i, heads, lampMat, swingSeats, seesawBoards, `park/${p.kind}${k}`, zones, anims))
   })
-  // 골목 뒤 먼 산 (집들 뒤만: 서쪽엔 뒷산, 동쪽엔 바다가 있다)
+  // 맨 뒷줄 뒤 먼 산
   for (let x = zones.hw - 8; x <= zones.he + 4; x += 14) {
     const k = Math.round(x / 14)
-    const hill = part(sphere(9, 24, 12), mat(k % 2 ? '#8fcf7e' : '#7fc271', { rough: 1 }), [x, -4, HOUSE_BACK_Z - 12], { shadow: false })
+    const hill = part(sphere(9, 24, 12), mat(k % 2 ? '#8fcf7e' : '#7fc271', { rough: 1 }), [x, -4, HOUSE_BACK_Z + rowOff(ROWS - 1) - 12], { shadow: false })
     hill.scale.set(1, 0.7, 0.6)
     g.add(hill)
   }
 
   // ─── 동네 장소 ───
-  // 편의점 건물 (문을 누르면 들어간다)
-  const store = P.storeBuilding(anims)
-  store.position.x = zones.storeX
-  west.add(store)
   // 뒷산: 땅 + 뒤로 이어지는 먼 능선
   west.add(P.hillTerrain(zones, grassTex))
   for (const [dx, h, sc] of [[-6, 7, 1.15], [5, 6, 1], [-16, 5, 0.9]] as const) {
@@ -776,6 +875,59 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   // 움직이지 않는 것들은 재질별로 합친다 (휴대폰에서 부드럽게)
   bakeStatic(g)
 
+  // ─── 저절로 움직이는 것 (합치지 않는다): 버스 · 고양이. 시각으로 자리를 정해 모든 화면에서 같다 ───
+  const bus = P.townBus()
+  bus.userData.keep = true
+  bus.visible = false
+  g.add(bus)
+  const busX0 = b.minX - 6
+  const busX1 = zones.roadEnd - 3.5
+  const busZ = (ROAD_S + 0) / 2
+  // 고양이 길은 계산이 무거워서(골목 전체 길찾기 지도) 동네를 다 그린 뒤 한가할 때 만든다. 그 전엔 고양이를 숨긴다
+  let route: ReturnType<typeof catRoute> | null = null
+  let disposed = false
+  const later = (f: () => void) => (typeof window !== 'undefined' && window.requestIdleCallback ? window.requestIdleCallback(f, { timeout: 2000 }) : setTimeout(f, 800))
+  later(() => {
+    if (!disposed) route = catRoute(map)
+  })
+  const cats = CAT_SEEDS.map((seed, i) => {
+    const c = i === 0 ? P.cat('#f2a65a', '#fff3e0') : P.cat('#5c5a66', '#e8e6ee')
+    c.userData.keep = true
+    c.visible = false
+    c.traverse((n) => (n.userData.cat = i))
+    // 손가락보다 작아서 보이지 않는 누름 상자를 씌운다
+    const hit = new THREE.Mesh(box(0.9, 0.8, 0.9), HIT_MAT)
+    hit.layers.set(HIT_LAYER)
+    hit.name = 'hit'
+    hit.position.y = 0.4
+    hit.userData.cat = i
+    c.add(hit)
+    g.add(c)
+    return { seed, obj: c, body: c.getObjectByName('catbody')!, tail: c.getObjectByName('cattail')! }
+  })
+  anims.tick.push((t) => {
+    const now = Date.now()
+    const p = busPhase(now)
+    bus.visible = p !== null
+    if (p !== null) {
+      const k = busProgress(p)
+      bus.position.set(k <= 1 ? busX0 + (BUS_STOP.x - busX0) * k : BUS_STOP.x + (busX1 - BUS_STOP.x) * (k - 1), 0, busZ)
+      // 끝에서는 작아지며 사라진다
+      bus.scale.setScalar(p > 0.94 ? Math.max(0.01, (1 - p) / 0.06) : 1)
+    }
+    if (!route) return
+    for (const c of cats) {
+      c.obj.visible = true
+      const at = catAt(route, now, c.seed)
+      c.obj.position.set(at.pos.x, groundAt(at.pos.x, at.pos.z), at.pos.z)
+      c.obj.rotation.y = at.yaw
+      // 쉴 때는 납작 엎드려 꼬리만 살랑, 걸을 때는 통통
+      c.body.scale.y = at.nap ? 0.62 : 1
+      c.body.position.y = at.nap ? -0.02 : Math.abs(Math.sin(t * 9)) * 0.03
+      c.tail.rotation.z = Math.sin(t * (at.nap ? 1.5 : 4)) * 0.5
+    }
+  })
+
   return {
     group: g,
     lampHeads: heads,
@@ -787,6 +939,10 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     tick(t, night) {
       for (const f of anims.tick) f(t, night)
     },
+    catPos(i) {
+      const c = cats[i]
+      return c && route ? { x: c.obj.position.x, z: c.obj.position.z } : null
+    },
     setNight(night) {
       windowMat.emissiveIntensity = night ? 0.9 : 0
       lampMat.emissiveIntensity = night ? 2.2 : 0.15
@@ -797,6 +953,7 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
       if (f) f.visible = count > 0
     },
     dispose() {
+      disposed = true
       for (const o of owned) o.dispose()
       g.traverse((n) => {
         const m = n as THREE.Mesh

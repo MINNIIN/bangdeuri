@@ -1,25 +1,31 @@
 /**
- * 동네: 방 주인 집을 가운데 두고, 서로 놀러 간 적 있는 친구들 집이 한 줄로 늘어선 골목.
+ * 동네: 큰길 + 뒷골목 두 줄 + 샛길로 나뉜 격자 동네 (9칸 × 3줄). 크기는 친구 수와 상관없이 늘 같다.
  *
- *   (북)  ┌집┐ ┌집┐ ┌집┐ ┌집┐ ┌집┐      ← 집 (문은 남쪽 = 길 쪽)
- *         마당  마당  마당  마당  마당    ← 울타리 · 대문 · 우편함
- *   ═══════════════ 인도 ═══════════════
- *   ─────────────── 차도 ───────────────
- *   ═══════════════ 인도 ═══════════════
- *   (남)      공원 · 나무 · 벤치 · 가로등
+ *   (북)  줄2  [빨래방][집][집] ┃ [집][노래방][집] ┃ [집][집][집]
+ *         ─────────────── 뒷골목2 ─────────────────
+ *         줄1  [집][오락실][집] ┃ [집][집][집]     ┃ [집][카페][집]
+ *         ─────────────── 뒷골목1 ─────────────────
+ *         줄0  [집][집][편의점] ┃ [집][내집][집]   ┃ [PC방][집][집]   ← 문은 남쪽 = 길 쪽
+ *   ════════════════════ 큰길 (인도 · 차도 · 인도) ════════════════════
+ *   (남)      포장마차 · 공원 · 놀이터
  *
- * 골목 양 끝에는 집 수와 상관없이 늘 동네 장소가 있다:
- *   서쪽 끝 = 뒷산(걸어 올라간다) · 편의점(들어간다) · 포장마차, 동쪽 끝 = 바닷가(모래사장 · 방파제 · 등대).
+ * 가게 칸은 늘 같은 자리. 집은 남은 칸을 내 집(줄0 가운데)에서 가까운 순으로 채운다 (빈 칸은 "입주 대기" 집터).
+ * 격자 서쪽 = 뒷산(걸어 올라간다), 동쪽 = 바닷가(모래사장 · 방파제 · 등대).
  *
- * 단위는 m. x가 동쪽, z가 남쪽(화면 앞쪽). 집 안과 편의점 안은 따로 떨어진 공간(area)이다.
+ * 단위는 m. x가 동쪽, z가 남쪽(화면 앞쪽). 집 안과 가게 안은 따로 떨어진 공간(area)이다.
  */
 
 import { type Blocker, findPath as findHousePath, nearestFree as nearestHouseFree, type UV } from './home'
 
 export type Vec2 = { x: number; z: number }
 
-/** 지금 있는 곳: 골목 · 편의점 안 · 어느 집 안 */
-export type AreaId = 'town' | 'cvs' | `house:${string}`
+/** 들어갈 수 있는 가게 (가게 안 = 따로 떨어진 공간) */
+export type ShopId = 'cvs' | 'pc' | 'sing' | 'arcade' | 'laundry' | 'cafe'
+export const SHOP_IDS: ShopId[] = ['cvs', 'pc', 'sing', 'arcade', 'laundry', 'cafe']
+export const isShopId = (s: unknown): s is ShopId => typeof s === 'string' && (SHOP_IDS as string[]).includes(s)
+
+/** 지금 있는 곳: 골목 · 가게 안 · 어느 집 안 */
+export type AreaId = 'town' | ShopId | `house:${string}`
 
 export const TOWN: AreaId = 'town'
 /** 골목 편의점 안 */
@@ -27,7 +33,7 @@ export const CVS: AreaId = 'cvs'
 export const houseArea = (roomId: string): AreaId => `house:${roomId}`
 export const roomOfArea = (a: AreaId): string | null => (a.startsWith('house:') ? a.slice(6) : null)
 export const isArea = (s: unknown): s is AreaId =>
-  typeof s === 'string' && (s === 'town' || s === 'cvs' || /^house:[A-Za-z0-9_-]{1,40}$/.test(s))
+  typeof s === 'string' && (s === 'town' || isShopId(s) || /^house:[A-Za-z0-9_-]{1,40}$/.test(s))
 
 /** 친구가 선물을 둔 곳: 집 안 · 마당 · 우편함 */
 export type DropPlace = 'in' | 'yard' | 'mail'
@@ -55,40 +61,107 @@ export const GATE_HALF = 1.3
 /** 횡단보도 폭의 절반 (골목 가운데 x=0에서 길을 가로지른다) */
 export const CROSSWALK_HALF = 1.6
 
-export interface Lot {
+// ─── 격자: 칸(집터) · 줄 · 샛길 ───
+
+/** 줄 수 · 줄마다 칸 수 (칸 번호 -4 ~ 4) */
+export const ROWS = 3
+export const COLS = 9
+/** 줄 사이 간격 (집 깊이 + 마당 + 뒷골목) */
+export const ROW_PITCH = 16
+/** 뒷골목 폭 (줄1·2 울타리 앞) · 샛길 폭 */
+export const ALLEY_W = 4
+export const STREET_W = 4
+/** 샛길 가운데 x (칸 -2|-1 사이, 1|2 사이) */
+export const STREET_X = [-21.5, 21.5] as const
+/** 격자 양 끝 (끝 칸 바깥에 샛길 폭만큼 길이 더 있다) */
+export const GRID_W = 4 * LOT_W + 4 + LOT_W / 2 + STREET_W
+
+/** 칸 번호 → 가운데 x (샛길 자리만큼 바깥 칸은 벌어진다) */
+export const colX = (c: number) => c * LOT_W + (c >= 2 ? STREET_W : c <= -2 ? -STREET_W : 0)
+/** 줄 번호 → z 이동 (줄0 = 큰길 앞, 뒤로 갈수록 북쪽) */
+export const rowOff = (r: number) => (r === 0 ? 0 : -r * ROW_PITCH)
+
+export interface Slot {
+  row: number
+  col: number
+  x: number
+  /** 줄0 기준에서 z 이동 (집·마당·울타리 z에 더한다) */
+  zOff: number
+}
+
+/** 가게 칸 (늘 같은 자리) */
+export const SHOP_SLOTS: Record<ShopId, { row: number; col: number }> = {
+  cvs: { row: 0, col: -2 },
+  pc: { row: 0, col: 2 },
+  arcade: { row: 1, col: -3 },
+  cafe: { row: 1, col: 3 },
+  sing: { row: 2, col: 0 },
+  laundry: { row: 2, col: -4 },
+}
+
+const slotOf = (row: number, col: number): Slot => ({ row, col, x: colX(col), zOff: rowOff(row) })
+
+/** 모든 칸 */
+export const ALL_SLOTS: Slot[] = Array.from({ length: ROWS * COLS }, (_, i) => slotOf(Math.floor(i / COLS), (i % COLS) - 4))
+const shopAtSlot = (s: { row: number; col: number }) => SHOP_IDS.find((id) => SHOP_SLOTS[id].row === s.row && SHOP_SLOTS[id].col === s.col)
+
+let houseSlotCache: Slot[] | null = null
+/** 집이 들어갈 칸: 내 집 칸(줄0 가운데)에서 가까운 순 (같으면 서쪽 먼저, 그다음 앞줄 먼저) */
+export function houseSlots(): Slot[] {
+  if (!houseSlotCache)
+    houseSlotCache = ALL_SLOTS.filter((s) => !shopAtSlot(s)).sort(
+      (a, b) => Math.hypot(a.x, a.zOff) - Math.hypot(b.x, b.zOff) || a.x - b.x || b.zOff - a.zOff,
+    )
+  return houseSlotCache.map((s) => ({ ...s }))
+}
+
+export interface Lot extends Slot {
   /** 그 집 방 번호 */
   roomId: string
   index: number
-  /** 집 가운데 x */
-  x: number
 }
 
-/** 0, -1, 1, -2, 2 … 순서로 가운데부터 양옆으로 채운다 */
-export function slotX(index: number) {
-  if (index === 0) return 0
-  const k = Math.ceil(index / 2)
-  return (index % 2 === 1 ? -k : k) * LOT_W
-}
-
+/** 방 목록 순서대로 집 칸을 채운다 (친구가 늘면 뒤 칸만 새로 찬다) */
 export function layoutLots(roomIds: string[]): Lot[] {
   const seen = new Set<string>()
   const out: Lot[] = []
+  const slots = houseSlots()
   for (const id of roomIds) {
     if (seen.has(id) || out.length >= MAX_HOUSES) continue
     seen.add(id)
-    out.push({ roomId: id, index: out.length, x: slotX(out.length) })
+    out.push({ ...slots[out.length], roomId: id, index: out.length })
   }
   return out
 }
 
-// ─── 동네 장소 (골목 양 끝) ───
+/** 집도 가게도 없는 빈 집터 */
+export function emptySlots(lots: Lot[]): Slot[] {
+  const used = new Set(lots.map((l) => `${l.row}:${l.col}`))
+  return houseSlots().filter((s) => !used.has(`${s.row}:${s.col}`))
+}
 
-/** 편의점 건물 (가로 · 깊이 · 앞면 z) */
+// ─── 가게 건물 ───
+
+/** 가게 건물 (가로 · 깊이 · 줄0 앞면 z) */
 export const STORE_W = 10
 export const STORE_D = 7
 export const STORE_FRONT = -7.4
-/** 편의점 문: 건물 가운데에서 동쪽으로 */
+/** 가게 문: 건물 가운데에서 동쪽으로 */
 export const STORE_DOOR_DX = 2
+
+/** 가게 건물 자리: 가운데 x · 앞면 z1 · 뒷면 z0 */
+export function shopRect(id: ShopId) {
+  const s = slotOf(SHOP_SLOTS[id].row, SHOP_SLOTS[id].col)
+  const z1 = STORE_FRONT + s.zOff
+  return { x: s.x, z1, z0: z1 - STORE_D, zOff: s.zOff }
+}
+/** 가게 문 앞 (골목 쪽) */
+export const shopDoor = (id: ShopId): Vec2 => {
+  const r = shopRect(id)
+  return { x: r.x + STORE_DOOR_DX, z: r.z1 + 0.9 }
+}
+
+// ─── 동네 장소 (격자 양 끝) ───
 /** 뒷산 높이 · 꼭대기 평지(타원 반지름 비율) */
 export const HILL_H = 4.2
 const HILL_TOP = 0.3
@@ -98,13 +171,9 @@ export const SEA_Y = -0.12
 export const PIER_Y = 0.36
 
 export interface Zones {
-  /** 집들이 있는 골목 서쪽·동쪽 끝 */
+  /** 격자 서쪽·동쪽 끝 */
   hw: number
   he: number
-  /** 편의점 가운데 x (건물은 z STORE_FRONT-STORE_D ~ STORE_FRONT) */
-  storeX: number
-  /** 편의점 문 앞 (골목 쪽) */
-  storeStep: Vec2
   /** 뒷산 꼭대기 가운데 · 타원 반지름 */
   hill: { x: number; z: number; rx: number; rz: number }
   /** 포장마차 가운데 */
@@ -119,18 +188,15 @@ export interface Zones {
   pier: { x0: number; x1: number; z: number; half: number }
 }
 
-export function townZones(lots: Lot[]): Zones {
-  const xs = lots.map((l) => l.x)
-  const hw = Math.min(0, ...xs) - LOT_W / 2
-  const he = Math.max(0, ...xs) + LOT_W / 2
-  const storeX = hw - 11
+/** 동네 장소 자리 (격자 크기가 고정이라 늘 같다) */
+export function townZones(_lots?: Lot[]): Zones {
+  const hw = -GRID_W
+  const he = GRID_W
   return {
     hw,
     he,
-    storeX,
-    storeStep: { x: storeX + STORE_DOOR_DX, z: STORE_FRONT + 0.9 },
-    hill: { x: hw - 36, z: -15, rx: 12.5, rz: 9.6 },
-    pocha: { x: hw - 10, z: 8.6 },
+    hill: { x: hw - 16, z: -15, rx: 12.5, rz: 9.6 },
+    pocha: { x: hw - 8, z: 8.6 },
     roadEnd: he + 7,
     sand: he + 5,
     shore: he + 18,
@@ -167,7 +233,7 @@ export function groundY(z: Zones, x: number, zz: number): number {
 /** 골목 양 끝 x (서쪽 뒷산 ~ 동쪽 방파제 끝) */
 export function townBounds(lots: Lot[]) {
   const z = townZones(lots)
-  return { minX: z.hill.x - z.hill.rx, maxX: z.pier.x1 + 1.8, minZ: -23, maxZ: PARK_S }
+  return { minX: z.hill.x - z.hill.rx, maxX: z.pier.x1 + 1.8, minZ: rowOff(ROWS - 1) + HOUSE_BACK_Z - 3, maxZ: PARK_S }
 }
 
 /**
@@ -181,13 +247,13 @@ export function guestSpot(cid: string): Vec2 {
 }
 
 /** 대문 앞(인도) — 집에서 나오면 여기 선다 */
-export const doorStep = (lot: Lot): Vec2 => ({ x: lot.x, z: HOUSE_FRONT_Z + 1.1 })
-export const gateSpot = (lot: Lot): Vec2 => ({ x: lot.x, z: FENCE_Z + 1 })
-export const mailboxSpot = (lot: Lot): Vec2 => ({ x: lot.x + GATE_HALF + 0.9, z: FENCE_Z - 0.5 })
+export const doorStep = (lot: Slot): Vec2 => ({ x: lot.x, z: HOUSE_FRONT_Z + lot.zOff + 1.1 })
+export const gateSpot = (lot: Slot): Vec2 => ({ x: lot.x, z: FENCE_Z + lot.zOff + 1 })
+export const mailboxSpot = (lot: Slot): Vec2 => ({ x: lot.x + GATE_HALF + 0.9, z: FENCE_Z + lot.zOff - 0.5 })
 
 /** 마당 사각형 (울타리 안쪽) */
-export function yardRect(lot: Lot) {
-  return { x0: lot.x - LOT_W / 2 + 0.7, x1: lot.x + LOT_W / 2 - 0.7, z0: HOUSE_FRONT_Z + 0.5, z1: FENCE_Z - 0.4 }
+export function yardRect(lot: Slot) {
+  return { x0: lot.x - LOT_W / 2 + 0.7, x1: lot.x + LOT_W / 2 - 0.7, z0: HOUSE_FRONT_Z + lot.zOff + 0.5, z1: FENCE_Z + lot.zOff - 0.4 }
 }
 
 /** 마당 좌표(0~1) ↔ 골목 좌표. u: 서→동, v: 집→울타리 */
@@ -215,8 +281,10 @@ export function lotAtYard(lots: Lot[], p: Vec2): { lot: Lot; uv: UV } | null {
 export interface Prop {
   kind:
     | 'tree' | 'bench' | 'lamp' | 'flower' | 'swing' | 'slide' | 'bush' | 'signal' | 'seesaw' | 'sandbox' | 'mat' | 'stones' | 'trash'
-    // 편의점 앞 · 포장마차
-    | 'ptable' | 'vending' | 'bins' | 'pocha'
+    // 편의점 앞 · 포장마차 · 빈 집터
+    | 'ptable' | 'vending' | 'bins' | 'pocha' | 'lotsign'
+    // 큰길: 붕어빵 노점 · 버스정류장
+    | 'bungeo' | 'busstop'
     // 뒷산
     | 'pavilion' | 'scope' | 'summit' | 'twister' | 'spring' | 'pine' | 'trail' | 'trailsign'
     // 바닷가
@@ -251,7 +319,7 @@ export function townProps(lots: Lot[]): Prop[] {
   out.push({ kind: 'signal', x: -CROSSWALK_HALF - 0.35, z: ROAD_S + 0.35, r: 0.2, rot: Math.PI })
   // 집 사이 나무, 마당 꽃
   for (const lot of lots) {
-    out.push({ kind: 'tree', x: lot.x + LOT_W / 2, z: HOUSE_BACK_Z + 1.5, r: 0.7 })
+    out.push({ kind: 'tree', x: lot.x + LOT_W / 2, z: HOUSE_BACK_Z + lot.zOff + 1.5, r: 0.7 })
     const r = yardRect(lot)
     out.push({ kind: 'bush', x: r.x0 + 0.6, z: r.z1 - 0.5, r: 0.5 })
     out.push({ kind: 'flower', x: r.x1 - 1.2, z: r.z0 + 0.8, r: 0 })
@@ -289,6 +357,17 @@ export function townProps(lots: Lot[]): Prop[] {
     else out.push({ kind: 'tree', x: x + (hash01(i + 9) - 0.5) * 2, z, r: 0.7 })
     if (hash01(i + 3) > 0.55) out.push({ kind: 'flower', x: x + 1.6, z: z - 1.4, r: 0 })
   }
+  // 빈 집터: "입주 대기" 팻말 + 꽃·덤불
+  for (const s of emptySlots(lots)) {
+    const fz = FENCE_Z + s.zOff
+    out.push({ kind: 'lotsign', x: s.x + 2.6, z: fz - 1.2, r: 0.25 })
+    out.push({ kind: 'bush', x: s.x - 4.2, z: fz - 2.6, r: 0.5 })
+    out.push({ kind: 'flower', x: s.x - 1.8, z: fz - 1.6, r: 0 })
+    out.push({ kind: 'flower', x: s.x + 4.4, z: fz - 3.2, r: 0 })
+  }
+  // 뒷골목 가로등: 골목 북쪽 가장자리 (칸 사이 경계)
+  for (let r = 1; r < ROWS; r++)
+    for (let c = -4; c <= 3; c += 2) out.push({ kind: 'lamp', x: colX(c) + LOT_W / 2, z: FENCE_Z + rowOff(r) - 0.3, r: 0.25 })
   out.push(...placeProps(zn))
   return out
 }
@@ -296,17 +375,21 @@ export function townProps(lots: Lot[]): Prop[] {
 /** 동네 장소들 (편의점 앞 · 포장마차 · 뒷산 · 바닷가). 집 수가 바뀌면 같이 옮겨 간다 */
 function placeProps(z: Zones): Prop[] {
   const out: Prop[] = []
-  const S = z.storeX
+  const cvs = shopRect('cvs')
+  const S = cvs.x
   // ─── 편의점 앞: 파라솔 테이블 둘 · 자판기 · 분리수거함 ───
-  out.push({ kind: 'ptable', x: S - 3.3, z: -6.2, r: 0.5 })
-  out.push({ kind: 'ptable', x: S - 0.6, z: -6.2, r: 0.5 })
-  out.push({ kind: 'vending', x: S + 4.2, z: STORE_FRONT + 0.42, r: 0, box: [0.48, 0.36] })
-  out.push({ kind: 'bins', x: S - 4.35, z: STORE_FRONT + 0.36, r: 0, box: [0.55, 0.3] })
+  out.push({ kind: 'ptable', x: S - 3.3, z: cvs.z1 + 1.2, r: 0.5 })
+  out.push({ kind: 'ptable', x: S - 0.6, z: cvs.z1 + 1.2, r: 0.5 })
+  out.push({ kind: 'vending', x: S + 4.2, z: cvs.z1 + 0.42, r: 0, box: [0.48, 0.36] })
+  out.push({ kind: 'bins', x: S - 4.35, z: cvs.z1 + 0.36, r: 0, box: [0.55, 0.3] })
   // 길 건너 포장마차 (밤에 불이 켜진다): 화면 쪽(남)으로 열려 있고, 손님은 남쪽 의자에 앉아 안쪽 조리대를 본다
   out.push({ kind: 'pocha', x: z.pocha.x, z: z.pocha.z, r: 0, rot: Math.PI, box: [1.75, 1.15] })
   // 포장마차·뒷산 앞 공원 나무
   for (const [dx, dz, k] of [[-6, 11.5, 'tree'], [-12, 9.2, 'tree'], [-17, 13.2, 'tree'], [-22.5, 9.6, 'tree'], [-28, 12.8, 'tree'], [-33.5, 9.4, 'tree'], [3.6, 12.8, 'bush'], [-3.4, 13.6, 'bush'], [-14.4, 11.4, 'flower'], [-25.4, 11.4, 'flower'], [-36, 14.2, 'bush'], [2.8, 6.4, 'flower']] as const)
     out.push({ kind: k, x: z.pocha.x + dx, z: dz, r: k === 'tree' ? 0.7 : k === 'bush' ? 0.5 : 0 })
+  // ─── 큰길 남쪽: 붕어빵 노점 (손님은 길 쪽에 서서 산다) · 버스정류장 (벤치에 앉아 길을 본다) ───
+  out.push({ kind: 'bungeo', x: 16.2, z: SIDEWALK_S + 1.0, r: 0, box: [0.85, 0.55] })
+  out.push({ kind: 'busstop', x: -9, z: 5.75, r: 0, box: [1.6, 0.42] })
   // ─── 뒷산 ───
   const H = z.hill
   out.push({ kind: 'trail', x: H.x + 2.2, z: -5.9, r: 0 })
@@ -380,6 +463,11 @@ const SEATS: Partial<Record<Prop['kind'], { item: string; at: [number, number, n
   // 편의점 앞 파라솔 테이블: 마주 보고 앉는 의자 둘
   ptable: { item: 'o_table', at: [[-0.74, 0, Math.PI / 2], [0.74, 0, -Math.PI / 2]] },
   vending: { item: 'o_vending', at: [[0, 0, 0]] },
+  // 붕어빵 노점: 북쪽(길 쪽)에 서서 수레를 본다 · 버스정류장 벤치: 길(북)을 보고 앉는다
+  bungeo: { item: 'o_bungeo', at: [[0, 0, Math.PI]] },
+  busstop: { item: 'o_bus', at: [[-0.75, -0.05, Math.PI], [0, -0.05, Math.PI], [0.75, -0.05, Math.PI]] },
+  // 빈 집터 팻말: 앞(남)에 서서 읽는다
+  lotsign: { item: 'e_lotsign', at: [[0, 0, 0]] },
   // 포장마차: 여는 쪽 의자에 나란히 앉아 안쪽 조리대를 본다
   pocha: { item: 'o_pocha', at: [[-0.85, -1.5, 0], [0, -1.5, 0], [0.85, -1.5, 0]] },
   // 정자: 마루 끝에 걸터앉아 동네(남)를 내려다본다
@@ -422,14 +510,16 @@ export function parkSeats(props: Prop[]): ParkSeat[] {
 type Seg = { a: Vec2; b: Vec2 }
 
 /** 울타리 선분들 (대문 자리는 비운다) */
-export function fenceSegments(lot: Lot): Seg[] {
+export function fenceSegments(lot: Slot): Seg[] {
   const l = lot.x - LOT_W / 2 + 0.3
   const r = lot.x + LOT_W / 2 - 0.3
+  const f = FENCE_Z + lot.zOff
+  const h = HOUSE_FRONT_Z + lot.zOff
   return [
-    { a: { x: l, z: FENCE_Z }, b: { x: lot.x - GATE_HALF, z: FENCE_Z } },
-    { a: { x: lot.x + GATE_HALF, z: FENCE_Z }, b: { x: r, z: FENCE_Z } },
-    { a: { x: l, z: FENCE_Z }, b: { x: l, z: HOUSE_FRONT_Z } },
-    { a: { x: r, z: FENCE_Z }, b: { x: r, z: HOUSE_FRONT_Z } },
+    { a: { x: l, z: f }, b: { x: lot.x - GATE_HALF, z: f } },
+    { a: { x: lot.x + GATE_HALF, z: f }, b: { x: r, z: f } },
+    { a: { x: l, z: f }, b: { x: l, z: h } },
+    { a: { x: r, z: f }, b: { x: r, z: h } },
   ]
 }
 
@@ -469,20 +559,29 @@ export function buildTown(roomIds: string[]): TownMap {
   const solids = props.filter((p) => p.r > 0 && !p.box)
   const boxes = props.filter((p) => p.box)
   const zones = townZones(lots)
+  const shops = SHOP_IDS.map(shopRect)
+  /** 칸마다 막힌 띠 (집 · 가게 건물 · 빈 집터 뒤쪽): 띠 앞 z부터 칸 뒤 끝까지 막힌다 */
+  const houseAt = new Set(lots.map((l) => `${l.row}:${l.col}`))
+  const bands = ALL_SLOTS.map((s) => {
+    const shop = shopAtSlot(s)
+    return { x: s.x, back: HOUSE_BACK_Z + s.zOff - 1, front: shop ? shopRect(shop).z1 : HOUSE_FRONT_Z + s.zOff, house: houseAt.has(`${s.row}:${s.col}`) }
+  })
+  const gridBack = rowOff(ROWS - 1) + HOUSE_BACK_Z - 1
   const blocked = (p: Vec2) => {
     if (p.x < bounds.minX + 0.5 || p.x > bounds.maxX - 0.5 || p.z < bounds.minZ + 0.5 || p.z > bounds.maxZ - 0.5) return true
-    // 집 뒤쪽 끝(숲)은 못 간다: 뒷산만 산기슭까지 올라간다
-    if (p.z < HOUSE_BACK_Z - 1 && !(p.x < zones.hw && hillE(zones, p.x, p.z) < 0.97)) return true
-    // 편의점 건물
-    if (Math.abs(p.x - zones.storeX) < STORE_W / 2 + PAD && p.z < STORE_FRONT + PAD && p.z > STORE_FRONT - STORE_D - PAD) return true
+    const inGrid = p.x >= zones.hw && p.x <= zones.he
+    // 격자 안: 맨 뒷줄 뒤(숲)는 못 간다. 격자 밖: 앞줄 뒤로는 숲, 뒷산만 산기슭까지 올라간다
+    if (inGrid ? p.z < gridBack : p.z < HOUSE_BACK_Z - 1 && !(p.x < zones.hw && hillE(zones, p.x, p.z) < 0.97)) return true
+    // 가게 건물
+    for (const r of shops) if (Math.abs(p.x - r.x) < STORE_W / 2 + PAD && p.z < r.z1 + PAD && p.z > r.z0 - PAD) return true
     // 바다: 물가 얕은 데까지만 (방파제 위는 끝까지)
     if (p.x > zones.wet && !onPier(zones, p)) return true
     if (boxes.some((b) => inBox(p, b.x, b.z, b.box![0], b.box![1], b.rot ?? 0, PAD))) return true
-    // 집 (+ 집 뒤는 못 간다)
-    for (const lot of lots) {
-      if (Math.abs(p.x - lot.x) < HOUSE_W / 2 + PAD && p.z < HOUSE_FRONT_Z + PAD) return true
-      // 집 사이 뒷마당도 막는다 (마당 울타리 안쪽 끝까지만)
-      if (p.z < HOUSE_FRONT_Z && Math.abs(p.x - lot.x) < LOT_W / 2) return true
+    // 칸: 집은 앞에 조금 더 넉넉히, 집·가게 사이 뒷마당과 집 뒤는 다음 골목까지 막는다
+    for (const b of bands) {
+      if (p.z < b.back || Math.abs(p.x - b.x) >= LOT_W / 2) continue
+      if (p.z < b.front) return true
+      if (b.house && Math.abs(p.x - b.x) < HOUSE_W / 2 + PAD && p.z < b.front + PAD) return true
     }
     if (fences.some((s) => segDist(p, s) < PAD)) return true
     for (const lot of lots) {
@@ -508,8 +607,21 @@ export function nearestOpen(map: TownMap, p: Vec2): Vec2 {
   return c
 }
 
+/**
+ * a→b 직선이 막힌 데를 안 지나는지.
+ * 먼저 미리 재 둔 칸 지도로 빠르게 걸러 내고(대부분 여기서 끝난다), 통과한 선만 정확히 다시 본다.
+ * (격자 동네는 꺾이는 길이 많아 줄 당기기가 이 검사를 아주 많이 부른다)
+ */
 function clearRun(map: TownMap, a: Vec2, b: Vec2) {
   const steps = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.15)
+  const { nx, nz, g } = townGrid(map)
+  for (let k = 1; k < steps; k++) {
+    const t = k / steps
+    const i = Math.floor((a.x + (b.x - a.x) * t - map.bounds.minX) / CELL)
+    const j = Math.floor((a.z + (b.z - a.z) * t - map.bounds.minZ) / CELL)
+    if (i < 0 || j < 0 || i >= nx || j >= nz) return false
+    if (g[j * nx + i] && map.blocked({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t })) return false
+  }
   for (let k = 1; k < steps; k++) {
     const t = k / steps
     if (map.blocked({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t })) return false

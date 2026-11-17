@@ -7,7 +7,8 @@ import { FIXTURES } from '../lib/home'
 import { interactionFor } from '../lib/interactions'
 import { mergeLayout } from '../lib/layout'
 import { CHARACTER_SPOT } from '../lib/iso'
-import { type AreaId, buildTown, CVS, guestSpot, houseArea, isArea, roomOfArea, safeVec, TOWN, uvToHouse } from '../lib/town'
+import { type AreaId, buildTown, guestSpot, houseArea, isArea, isShopId, roomOfArea, safeVec, SHOP_IDS, TOWN, uvToHouse } from '../lib/town'
+import { SHOPS } from '../lib/shops'
 import { RETURN_KEY, roomUrl } from '../lib/links'
 import { MAX_GUESTS, newCid, type Peer, type RoomChannel, type RoomEvent } from '../lib/realtime'
 import { charLength, clip, errorText, inviteText, kstDate, MAX_DROPS, MESSAGE_MAX, MOTTO_MAX, sealLetter, todayCount } from '../lib/rules'
@@ -106,10 +107,11 @@ const PLACE_NAME = { in: '집 안', yard: '마당', mail: '우편함' } as const
 
 /** 동네 지도에서 바로 가는 장소 */
 const TOWN_PLACES: { id: TownPlace; icon: string; name: string; desc: string }[] = [
-  { id: 'cvs', icon: '🏪', name: '편의점', desc: '들어가서 장보기' },
+  ...SHOP_IDS.map((id) => ({ id, icon: SHOPS[id].icon, name: SHOPS[id].name, desc: SHOPS[id].desc })),
   { id: 'pocha', icon: '🏮', name: '포장마차', desc: '밤에 불 켜져요' },
   { id: 'hill', icon: '⛰️', name: '뒷산', desc: '정자 · 망원경' },
   { id: 'beach', icon: '🌊', name: '바닷가', desc: '물놀이 · 불꽃놀이' },
+  { id: 'bus', icon: '🚏', name: '버스정류장', desc: '붕어빵 · 마을버스' },
 ]
 
 export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
@@ -954,7 +956,13 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
     </button>
   )
 
-  const where = areaRoom ? (areaRoom === room.id ? `${room.name}의 미니룸` : `${nickOf(areaRoom)}네 집`) : `${room.owner.nickname}네 동네`
+  const where = areaRoom
+    ? areaRoom === room.id
+      ? `${room.name}의 미니룸`
+      : `${nickOf(areaRoom)}네 집`
+    : isShopId(area)
+      ? SHOPS[area].name
+      : `${room.owner.nickname}네 동네`
   const mailList = mailbox ? drops.filter((d) => d.roomId === mailbox && d.place === 'mail').reverse() : []
   /** 같은 동네 사람들이 어디 있는지 (명단에 붙인다) */
   const giftIcon = ITEMS.find((i) => i.id === 'gift')!.sprite
@@ -1073,7 +1081,7 @@ export function RoomScreen({ ctx, slug }: { ctx: AppContext; slug: string }) {
       {/* 어디로 갈지: 집 안이면 밖으로, 골목이면 동네 집 목록 */}
       {entered && !placing && !arranging && (
         <nav className="hud-where" aria-label="이동">
-          {areaRoom || area === CVS ? (
+          {areaRoom || isShopId(area) ? (
             <button className="chip is-on" onClick={() => worldRef.current?.goOut()}>
               <Icon id="back" size={12} /> 밖으로 나가기
             </button>

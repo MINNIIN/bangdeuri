@@ -1,14 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { CVS_ENTRANCE, CVS_EXIT, CVS_MAP, CVS_SPOTS } from './cvs'
+import { interactionFor } from './interactions'
+import { itemDepth } from '../three/furniture3d'
+import { SHOPS, shopMap, shopOfArea, shopOfKey } from './shops'
 import {
   buildTown,
   groundY,
   HILL_H,
   PIER_Y,
   SEA_Y,
-  STORE_FRONT,
-  STORE_W,
+  colX,
   doorStep,
+  emptySlots,
+  houseSlots,
+  rowOff,
+  SHOP_IDS,
+  SHOP_SLOTS,
+  shopDoor,
+  shopRect,
   findHouseWorldPath,
   findTownPath,
   guestSpot,
@@ -16,34 +24,75 @@ import {
   isArea,
   isPlace,
   layoutLots,
+  nearestOpen,
   lotAtYard,
   MAX_HOUSES,
   obstacleBlocker,
   parkSeats,
   roomOfArea,
   safeVec,
-  slotX,
   uvToHouse,
   yardToTown,
 } from './town'
 
 describe('동네 배치', () => {
-  it('가운데부터 양옆으로 집을 채우고, 같은 방은 한 번만', () => {
-    expect([0, 1, 2, 3, 4].map(slotX)).toEqual([0, -13, 13, -26, 26])
+  it('칸 표: 내 집 칸(줄0 가운데)부터 가까운 순, 가게 칸은 빠진다', () => {
+    const slots = houseSlots()
+    expect(slots).toHaveLength(21)
+    expect(slots[0]).toEqual({ row: 0, col: 0, x: 0, zOff: 0 })
+    expect(slots.slice(1, 3).map((s) => [s.row, s.col])).toEqual([[0, -1], [0, 1]])
+    expect([slots[3].row, slots[3].col]).toEqual([1, 0])
+    for (const id of SHOP_IDS) expect(slots.some((s) => s.row === SHOP_SLOTS[id].row && s.col === SHOP_SLOTS[id].col)).toBe(false)
+    expect([-4, -2, -1, 0, 1, 2, 4].map(colX)).toEqual([-56, -30, -13, 0, 13, 30, 56])
+    expect([0, 1, 2].map(rowOff)).toEqual([0, -16, -32])
+  })
+
+  it('같은 방은 한 번만, 내 집은 가운데', () => {
     const lots = layoutLots(['host', 'a', 'b', 'a', 'c'])
     expect(lots.map((l) => l.roomId)).toEqual(['host', 'a', 'b', 'c'])
     expect(lots[0].x).toBe(0)
+    expect(lots[0].zOff).toBe(0)
   })
 
-  it('집은 최대 17채 (친구 집 16 + 내 집)', () => {
+  it('친구가 늘어도 원래 집은 제자리', () => {
+    const ids = Array.from({ length: 17 }, (_, i) => `r${i}`)
+    const all = layoutLots(ids)
+    layoutLots(ids.slice(0, 5)).forEach((l, i) => {
+      expect(all[i].x).toBe(l.x)
+      expect(all[i].zOff).toBe(l.zOff)
+    })
+  })
+
+  it('집은 최대 17채 (친구 집 16 + 내 집), 서로 다른 칸', () => {
     const ids = Array.from({ length: 20 }, (_, i) => `r${i}`)
-    expect(layoutLots(ids)).toHaveLength(MAX_HOUSES)
+    const lots = layoutLots(ids)
+    expect(lots).toHaveLength(MAX_HOUSES)
     expect(MAX_HOUSES).toBe(17)
-    // 집이 다 차도 골목·공원이 만들어지고, 집끼리 겹치지 않는다
+    expect(new Set(lots.map((l) => `${l.x},${l.zOff}`)).size).toBe(17)
+    // 남은 칸은 빈 집터
+    expect(emptySlots(lots)).toHaveLength(21 - 17)
+    expect(emptySlots(layoutLots(['host']))).toHaveLength(20)
     const map = buildTown(ids)
-    const xs = map.lots.map((l) => l.x).sort((a, b) => a - b)
-    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(13)
     expect(map.blocked({ x: 0, z: 0 })).toBe(false)
+  })
+
+  it('뒷골목·샛길은 열려 있고, 뒷줄 집 안은 막혀 있다', () => {
+    const map = buildTown(Array.from({ length: 17 }, (_, i) => `r${i}`))
+    for (const p of [{ x: 0, z: -19 }, { x: 5, z: -35 }, { x: 21.5, z: -30 }, { x: -21.5, z: -12 }, { x: -64.5, z: -25 }, { x: 64.5, z: -25 }])
+      expect(map.blocked(p)).toBe(false)
+    expect(map.blocked({ x: 0, z: -29 })).toBe(true)
+    expect(map.blocked({ x: 0, z: -45 })).toBe(true)
+    // 맨 뒷줄 뒤는 숲
+    expect(map.blocked({ x: 0, z: -50 })).toBe(true)
+  })
+
+  it('가게 건물은 문으로만 들어간다', () => {
+    const map = buildTown(['host'])
+    for (const id of SHOP_IDS) {
+      const r = shopRect(id)
+      expect(map.blocked({ x: r.x, z: r.z1 - 2 })).toBe(true)
+      expect(map.blocked(shopDoor(id))).toBe(false)
+    }
   })
 
   it('마당 좌표는 오가도 그대로', () => {
@@ -205,20 +254,18 @@ describe('동네 장소 (편의점 · 포장마차 · 뒷산 · 바닷가)', () 
       it('집 수와 상관없이 다 있고, 집과 겹치지 않는다', () => {
         for (const item of ['o_table', 'o_vending', 'o_pocha', 'm_pavilion', 'm_scope', 'm_summit', 'm_twister', 'm_spring', 'b_sunbed', 'b_ball', 'b_castle', 'b_shell', 'b_wade', 'b_firework', 'b_tower', 'b_fish'])
           expect(seats.some((s) => s.item === item)).toBe(true)
-        const lotEdges = map.lots.map((l) => [l.x - 6.5, l.x + 6.5])
-        const westMost = Math.min(...lotEdges.map((e) => e[0]))
-        const eastMost = Math.max(...lotEdges.map((e) => e[1]))
-        // 편의점 건물 · 뒷산은 집들 서쪽, 모래사장은 동쪽
-        expect(z.storeX + STORE_W / 2).toBeLessThan(westMost)
-        expect(z.hill.x + z.hill.rx).toBeLessThan(z.storeX - STORE_W / 2)
-        expect(z.sand).toBeGreaterThan(eastMost)
-        for (const s of seats) expect(Math.abs(s.x) > z.he || s.x < z.hw).toBe(true)
+        // 뒷산은 격자 서쪽, 모래사장은 동쪽 (집 수와 상관없이 같은 자리)
+        expect(z.hill.x + z.hill.rx).toBeLessThan(z.hw)
+        expect(z.sand).toBeGreaterThan(z.he)
+        expect(z.hw).toBe(-66.5)
+        expect(z.he).toBe(66.5)
       })
 
-      it('손님 자리에서 모든 장소까지 걸어갈 수 있다 (편의점 문 · 뒷산 꼭대기 · 방파제 끝)', () => {
+      it('손님 자리에서 모든 문 · 가게 · 장소까지 걸어갈 수 있다', () => {
         const start = guestSpot('promo')
         const goals = [
-          z.storeStep,
+          ...map.lots.map(doorStep),
+          ...SHOP_IDS.map(shopDoor),
           { x: z.hill.x + 1.2, z: z.hill.z + 1.6 },
           { x: z.pocha.x, z: z.pocha.z - 2.4 },
           { x: z.he + 14.5, z: 4.2 },
@@ -248,22 +295,61 @@ describe('동네 장소 (편의점 · 포장마차 · 뒷산 · 바닷가)', () 
     // 바다 깊은 데는 못 들어가고, 방파제 위는 끝까지 간다
     expect(map.blocked({ x: z.wet + 2, z: 0 })).toBe(true)
     expect(map.blocked({ x: z.wet + 2, z: z.pier.z })).toBe(false)
-    // 편의점 건물 안은 골목에서 못 들어간다 (문으로만)
-    expect(map.blocked({ x: z.storeX, z: STORE_FRONT - 2 })).toBe(true)
-  })
-
-  it('편의점 안: 들어온 자리에서 모든 물건 앞까지 걸어갈 수 있고 나가는 매트까지도 간다', () => {
-    for (const s of CVS_SPOTS) {
-      const path = findTownPath(CVS_MAP, CVS_ENTRANCE, { x: s.x + Math.sin(s.yaw) * 0.75, z: s.z + Math.cos(s.yaw) * 0.75 })
-      expect(path.length).toBeGreaterThan(0)
-    }
-    expect(CVS_MAP.blocked(CVS_ENTRANCE)).toBe(false)
-    expect(CVS_MAP.blocked(CVS_EXIT)).toBe(false)
-    expect(new Set(CVS_SPOTS.map((s) => s.key)).size).toBe(CVS_SPOTS.length)
   })
 
   it('편의점은 실시간으로 주고받는 곳 이름으로 받는다', () => {
     expect(isArea('cvs')).toBe(true)
     expect(roomOfArea('cvs')).toBeNull()
+  })
+})
+
+describe('가게 안 (가게 목록 전체)', () => {
+  it('모든 가게: 들어온 자리에서 모든 물건 앞까지 걸어가고, 나가는 매트까지도 간다', () => {
+    for (const id of SHOP_IDS) {
+      const def = SHOPS[id]
+      expect(def.id).toBe(id)
+      const map = shopMap(def)
+      expect(map.blocked(def.entrance)).toBe(false)
+      expect(map.blocked(def.exit)).toBe(false)
+      expect(def.spots.length).toBeGreaterThan(0)
+      for (const s of def.spots) {
+        expect(s.key.startsWith(id + '/')).toBe(true)
+        const goal = { x: s.x + Math.sin(s.yaw) * 0.75, z: s.z + Math.cos(s.yaw) * 0.75 }
+        const path = findTownPath(map, def.entrance, goal)
+        expect(path.length, `${s.key}`).toBeGreaterThan(0)
+      }
+      expect(new Set(def.spots.map((s) => s.key)).size).toBe(def.spots.length)
+      // 누름 자리 item은 동작이 있다
+      for (const s of def.spots) expect(interactionFor(s.item), s.item).toBeDefined()
+      if (def.npc) expect(map.blocked(def.npc.spot)).toBe(true)
+    }
+  })
+
+  it('앉는 자리는 의자 가까이에서 앉는다 (책상 건너편으로 돌아가지 않는다)', () => {
+    for (const id of SHOP_IDS) {
+      const def = SHOPS[id]
+      const map = shopMap(def)
+      for (const s of def.spots) {
+        const inter = interactionFor(s.item)!
+        if (inter.pose !== 'sit') continue
+        // World.standSpot와 같은 계산
+        const d = itemDepth(s.item) * 0.7 + 0.35
+        const want = inter.exact ? { x: s.x, z: s.z } : { x: s.x + Math.sin(s.yaw) * d, z: s.z + Math.cos(s.yaw) * d }
+        const at = nearestOpen(map, want)
+        expect(Math.hypot(at.x - s.x, at.z - s.z), s.key).toBeLessThan(1.2)
+      }
+    }
+  })
+
+  it('가게 이름으로 받고, 이상한 값은 버린다', () => {
+    for (const id of SHOP_IDS) {
+      expect(isArea(id)).toBe(true)
+      expect(shopOfArea(id)?.id).toBe(id)
+      expect(shopOfKey(SHOPS[id].spots[0].key)?.id).toBe(id)
+    }
+    expect(isArea('shop:x')).toBe(false)
+    expect(isArea('pcbang')).toBe(false)
+    expect(shopOfArea('town')).toBeNull()
+    expect(shopOfKey('park/swing0:1')).toBeNull()
   })
 })

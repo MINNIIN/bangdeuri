@@ -2,6 +2,7 @@
  * 가구·아이템마다 미니미가 하는 일.
  * 누르면 미니미가 그 앞(또는 위)으로 걸어가서 자세를 잡고, 효과가 나오고, 한마디를 한다.
  */
+import { SHOP_DEFS } from './shop'
 
 export type Pose =
   /** 그 앞에 서서 (정면) */
@@ -190,6 +191,10 @@ export const INTERACTIONS: Record<string, Interaction> = {
   o_table: sit(5, ['컵라면은 편의점 앞에서 먹어야 제맛', '삼각김밥 포장 한 번에 성공!', '여기서 수다 떨다 가자', '딸기 우유 하나 더?'], '앉기'),
   o_vending: { verb: '음료 뽑기', pose: 'back', fx: ['ring'], lines: ['덜컹! 캔커피 나왔다', '500원 넣었는데 안 나와…', '이온음료 원샷', '버튼 아무거나 눌러 봄'], ms: 2600 },
   o_pocha: { ...sit(5, ['떡볶이 1인분이요!', '어묵 국물은 무한 리필', '오늘 하루도 고생했다', '이모 여기 순대도요~']), fx: ['steam'] },
+  // ─── 큰길 · 빈 집터 ───
+  o_bungeo: { verb: '붕어빵 사기', pose: 'back', fx: ['steam'], lines: ['팥붕 vs 슈붕, 오늘은 팥붕!', '세 마리 천 원이요~', '앗 뜨거 호호', '겨울엔 역시 붕어빵'], ms: 2800 },
+  o_bus: sit(5, ['버스 언제 와?', '다음 버스 곧 도착한대', '창밖 구경하며 기다리는 중', '어디로 놀러 갈까~'], '앉기'),
+  e_lotsign: { verb: '팻말 읽기', pose: 'back', fx: ['sparkle'], lines: ['여기 비어 있네! 친구를 초대하면 집이 생겨요', '누가 이사 오면 좋겠다~', '입주 대기 중… 친구야 놀러 와!'], ms: 3000 },
   // ─── 뒷산 ───
   m_pavilion: sit(6, ['산바람 시원하다~', '여기서 한숨 돌리자', '동네가 다 내려다보여', '도시락 싸 올걸']),
   m_scope: { verb: '망원경 보기', pose: 'back', fx: ['sparkle'], lines: ['우리 동네 한눈에 보인다!', '저기 우리 집이다!', '바다까지 보여', '누가 놀러 오나 감시 중'], ms: 5200 },
@@ -218,7 +223,10 @@ export const INTERACTIONS: Record<string, Interaction> = {
   c_stool: { ...sit(5, ['컵라면엔 삼각김밥이지', '창밖 구경하며 후루룩', '편의점 야식 최고']), fx: ['steam'] },
 }
 
-export const interactionFor = (item: string): Interaction | undefined => INTERACTIONS[item]
+/** 가게에서만 쓰는 item 동작 (가게 정의에 들어 있다) */
+const SHOP_ITEMS: Record<string, Interaction> = Object.assign({}, ...Object.values(SHOP_DEFS).map((d) => d.items))
+
+export const interactionFor = (item: string): Interaction | undefined => INTERACTIONS[item] ?? SHOP_ITEMS[item]
 
 export const pickLine = (inter: Interaction, n = Math.random()) => inter.lines[Math.floor(n * inter.lines.length) % inter.lines.length]
 

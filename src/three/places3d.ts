@@ -192,6 +192,152 @@ export function storeBuilding(a: PlaceAnims) {
   return g
 }
 
+// ─── 빈 집터 ───
+
+/** "입주 대기" 나무 팻말 (누르면 친구를 초대하면 집이 생긴다고 알려 준다) */
+export function lotSign(a: PlaceAnims) {
+  const wood = mat('#b98a5e', { rough: 0.9 })
+  const t = signTex(a, 256, 160, (ctx, w, h) => {
+    ctx.fillStyle = '#fff7e8'
+    ctx.fillRect(0, 0, w, h)
+    ctx.strokeStyle = '#c9a27e'
+    ctx.lineWidth = 10
+    ctx.strokeRect(5, 5, w - 10, h - 10)
+    ctx.fillStyle = '#2b2233'
+    ctx.font = `700 44px ${FONT}`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('입주 대기', w / 2, 58)
+    ctx.fillStyle = '#ff7fa6'
+    ctx.font = `700 28px ${FONT}`
+    ctx.fillText('친구를 초대해요!', w / 2, 112)
+  })
+  const g = new THREE.Group()
+  g.add(part(box(0.1, 1.2, 0.1), wood, [-0.45, 0.6, 0]))
+  g.add(part(box(0.1, 1.2, 0.1), wood, [0.45, 0.6, 0]))
+  g.add(part(roundBox(1.15, 0.72, 0.08, 0.03), wood, [0, 1.05, 0]))
+  g.add(texMesh(a, new THREE.PlaneGeometry(1.02, 0.62), t, [0, 1.05, 0.045]))
+  return g
+}
+
+// ─── 큰길: 붕어빵 노점 · 버스정류장 · 버스 ───
+
+/** 붕어빵 수레: 빨간 천막 지붕 · 붕어빵 틀 · 김 (손님은 북쪽 길 쪽에 선다) */
+export function bungeoCart(a: PlaceAnims) {
+  const g = new THREE.Group()
+  const red = mat('#e8463c', { rough: 0.6 })
+  g.add(part(roundBox(1.6, 0.85, 0.95, 0.05), mat('#f4ede2', { rough: 0.8 }), [0, 0.62, 0]))
+  g.add(part(box(1.64, 0.12, 0.99), red, [0, 1.0, 0]))
+  for (const x of [-0.6, 0.6]) g.add(part(cyl(0.16, 0.16, 0.08, 14), mat('#3b3646'), [x, 0.16, 0.5], { rot: [Math.PI / 2, 0, 0] }))
+  // 붕어빵 틀 (까만 철판) + 붕어빵 다섯
+  g.add(part(box(1.2, 0.08, 0.5), mat('#2b2a30', { metal: 0.5, rough: 0.4 }), [0, 1.1, -0.12]))
+  for (let i = 0; i < 5; i++) {
+    const fish = part(sphere(0.09, 10, 8), mat('#d99a4e', { rough: 0.7 }), [-0.44 + i * 0.22, 1.17, -0.12], { scale: [1.6, 0.6, 1] })
+    g.add(fish)
+    g.add(part(cone(0.06, 0.1, 6), mat('#c9873f'), [-0.44 + i * 0.22 + 0.17, 1.17, -0.12], { rot: [0, 0, Math.PI / 2] }))
+  }
+  // 천막 지붕 + 기둥 + 간판
+  for (const x of [-0.75, 0.75]) g.add(part(cyl(0.03, 0.03, 1.2, 8), mat('#8a5a38'), [x, 1.6, 0.4]))
+  const roof = part(box(1.9, 0.08, 1.2), red, [0, 2.22, 0.05], { rot: [-0.18, 0, 0] })
+  g.add(roof)
+  for (let i = 0; i < 5; i++) g.add(part(box(0.19, 0.081, 1.21), mat('#ffffff', { rough: 0.6 }), [-0.76 + i * 0.38, 2.225, 0.05], { rot: [-0.18, 0, 0] }))
+  const t = signTex(a, 256, 96, (ctx, w, h) => {
+    ctx.fillStyle = '#fff3d6'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#c0392b'
+    ctx.font = `700 46px ${FONT}`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('붕어빵', w / 2, h / 2 + 2)
+  })
+  g.add(texMesh(a, new THREE.PlaneGeometry(0.9, 0.34), t, [0, 0.66, -0.48], [0, Math.PI, 0]))
+  // 김: 위로 올라가며 사라지는 동그라미 셋
+  const steamMat = new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: 0.5, roughness: 1 })
+  a.owned.push(steamMat)
+  const puffs = [0, 1, 2].map((i) => {
+    const m = part(sphere(0.09, 8, 6), steamMat, [-0.3 + i * 0.3, 1.3, -0.12], { shadow: false, name: 'steam' })
+    g.add(m)
+    return m
+  })
+  a.tick.push((time) => {
+    puffs.forEach((m, i) => {
+      const k = (time * 0.5 + i / 3) % 1
+      m.position.y = 1.25 + k * 0.7
+      m.scale.setScalar(0.6 + k)
+    })
+  })
+  return g
+}
+
+/** 버스정류장: 지붕 · 뒷벽 유리 · 벤치 · 노선 안내판 (벤치는 북쪽 길을 본다) */
+export function busStop(a: PlaceAnims) {
+  const g = new THREE.Group()
+  const frame = mat('#4a6fa5', { rough: 0.5, metal: 0.3 })
+  for (const x of [-1.5, 1.5]) g.add(part(box(0.1, 2.3, 0.1), frame, [x, 1.15, 0.3]))
+  g.add(part(roundBox(3.4, 0.1, 1.2, 0.04), frame, [0, 2.32, 0.05]))
+  g.add(part(box(3.0, 1.6, 0.05), mat('#cfeef8', { rough: 0.05, opacity: 0.35 }), [0, 1.2, 0.32], { shadow: false }))
+  // 벤치
+  g.add(part(roundBox(2.4, 0.08, 0.42, 0.03), mat('#c9784a', { rough: 0.7 }), [0, 0.45, 0.0]))
+  for (const x of [-1, 1]) g.add(part(box(0.08, 0.45, 0.36), mat('#7d828c'), [x, 0.22, 0.0]))
+  // 노선 안내판 (밤에 빛난다)
+  const t = signTex(a, 256, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = '#4a6fa5'
+    ctx.fillRect(0, 0, w, 34)
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `700 26px ${FONT}`
+    ctx.textAlign = 'center'
+    ctx.fillText('방들이동 정류장', w / 2, 26)
+    ctx.fillStyle = '#2b2233'
+    ctx.font = `700 24px ${FONT}`
+    ctx.fillText('7 번 · 바닷가 ↔ 뒷산', w / 2, 72)
+    ctx.fillStyle = '#ff5a4f'
+    ctx.fillText('곧 도착', w / 2, 108)
+  })
+  const m = new THREE.MeshStandardMaterial({ map: t, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: 0.15, roughness: 0.5 })
+  a.owned.push(m)
+  a.glows.push({ mat: m, day: 0.15, night: 0.9 })
+  g.add(part(box(0.06, 0.6, 1.2), frame, [1.62, 1.45, 0.05]))
+  g.add(part(new THREE.PlaneGeometry(1.1, 0.55), m, [1.66, 1.45, 0.05], { rot: [0, Math.PI / 2, 0], shadow: false }))
+  return g
+}
+
+/** 동네 버스 (초록 마을버스): 가운데 x=0, 앞이 +x (동쪽으로 달린다) */
+export function townBus() {
+  const g = new THREE.Group()
+  const body = mat('#59c26b', { rough: 0.5 })
+  g.add(part(roundBox(6.2, 2.3, 2.3, 0.25), body, [0, 1.45, 0]))
+  g.add(part(box(6.24, 0.5, 2.34), mat('#ffffff', { rough: 0.5 }), [0, 0.65, 0]))
+  const glass = mat('#bfe3ff', { rough: 0.1, metal: 0.2 })
+  for (let i = 0; i < 4; i++) for (const side of [-1, 1]) g.add(part(box(1.1, 0.8, 0.04), glass, [-2.2 + i * 1.35, 1.85, side * 1.16]))
+  g.add(part(box(0.04, 1.0, 1.9), glass, [3.11, 1.8, 0]))
+  for (const x of [-2.1, 2.1]) for (const side of [-1, 1]) g.add(part(cyl(0.42, 0.42, 0.3, 16), mat('#2b2a30'), [x, 0.42, side * 1.05], { rot: [Math.PI / 2, 0, 0] }))
+  g.add(part(box(0.06, 0.3, 1.2), mat('#2b2233'), [3.12, 2.45, 0]))
+  return g
+}
+
+/** 동네 고양이: 몸 · 머리 · 귀 · 꼬리 (앞이 +z) */
+export function cat(fur: string, belly: string) {
+  const g = new THREE.Group()
+  const f = mat(fur, { rough: 0.9 })
+  const body = new THREE.Group()
+  body.name = 'catbody'
+  body.add(part(capsule(0.13, 0.32), f, [0, 0.22, 0], { rot: [Math.PI / 2, 0, 0] }))
+  body.add(part(sphere(0.12, 12, 10), mat(belly, { rough: 0.9 }), [0, 0.18, 0.08], { scale: [0.9, 0.7, 1.2] }))
+  body.add(part(sphere(0.15, 14, 10), f, [0, 0.38, 0.26]))
+  for (const x of [-0.08, 0.08]) {
+    body.add(part(cone(0.05, 0.1, 6), f, [x, 0.52, 0.25]))
+    body.add(part(sphere(0.022, 8, 6), mat('#2b2233'), [x * 0.7, 0.4, 0.4]))
+  }
+  body.add(part(sphere(0.02, 6, 6), mat('#ff8fb8'), [0, 0.36, 0.41]))
+  const tail = part(capsule(0.035, 0.32), f, [0, 0.36, -0.28], { rot: [-0.6, 0, 0], name: 'cattail' })
+  body.add(tail)
+  for (const [x, z] of [[-0.07, 0.12], [0.07, 0.12], [-0.07, -0.12], [0.07, -0.12]] as const) body.add(part(cyl(0.035, 0.035, 0.14, 8), f, [x, 0.07, z]))
+  g.add(body)
+  return g
+}
+
 // ─── 편의점 앞 ───
 
 /**

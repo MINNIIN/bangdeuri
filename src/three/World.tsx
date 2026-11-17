@@ -1,7 +1,7 @@
 /**
  * 3D 동네 화면. 골목과 친구들 집 안을 같이 돌아다닌다.
  *
- * - 한 번에 한 곳(area)만 그린다: 골목(town) · 편의점 안(cvs) · 어느 집 안(house:방번호). 문을 지나면 바뀐다.
+ * - 한 번에 한 곳(area)만 그린다: 골목(town) · 가게 안(cvs · pc · sing …) · 어느 집 안(house:방번호). 문을 지나면 바뀐다.
  * - 골목 양 끝엔 동네 장소가 있다: 뒷산(걸어 올라가면 땅 높이를 따라 오른다) · 편의점 · 포장마차 · 바닷가.
  * - 다른 사람 미니미는 나와 같은 곳에 있을 때만 보인다 (어디 있는지는 이름표 목록으로 안다).
  * - 바닥을 누르면 걸어가고, 가구를 누르면 가서 쓰고, 집 문을 누르면 들어가고, 현관 매트를 누르면 나간다.
@@ -19,11 +19,13 @@ import { type Blocker, hitsWall } from '../lib/home'
 import { makeSpot, type Spot } from '../lib/layout'
 import type { SharedRoomState } from '../lib/realtime'
 import { toolFor } from '../lib/tools'
-import { CLERK_SPOT, CVS_ENTRANCE, CVS_EXIT, CVS_MAP, CVS_PREFIX, cvsGroup, cvsSpot } from '../lib/cvs'
+import { type ShopDef, shopGroup, shopMap, shopOfArea, shopOfKey, SHOPS, shopSpot } from '../lib/shops'
 import {
   type AreaId,
-  CVS,
   doorStep,
+  SHOP_IDS,
+  shopDoor,
+  type ShopId,
   groundY,
   findHouseWorldPath,
   findTownPath,
@@ -60,7 +62,8 @@ import { FxLayer, glowTexture, ON_HEAD } from './fx3d'
 import { buildHouse3D, fixtureFacing, fixtureWorld, type House3D } from './house3d'
 import { disposeTree, mat, part, torus } from './kit'
 import { buildTown3D, HIT_LAYER, SEESAW_REST, type Town3D } from './town3d'
-import { buildCvs3D, CLERK_LOOK, type Cvs3D } from './cvs3d'
+import { buildShop3D, type Shop3D, shopNpcLook } from './shops3d'
+import { BUS_STOP } from '../lib/townLife'
 
 const TAP_SLOP = 7
 const WALK_TOWN = 2.6
@@ -99,7 +102,7 @@ export interface ArrangeSel {
 }
 
 /** 동네 지도에서 바로 가는 곳 */
-export type TownPlace = 'cvs' | 'pocha' | 'hill' | 'beach'
+export type TownPlace = ShopId | 'pocha' | 'hill' | 'beach' | 'bus'
 
 export interface WorldControl {
   interactDrop: (id: string) => void
@@ -239,15 +242,18 @@ interface Cam {
 const camDefault = (area: AreaId, at: Vec2, k = 1): Cam =>
   area === TOWN
     ? { target: new THREE.Vector3(at.x, 0.6, at.z + 1), yaw: 0.22, pitch: 0.86, dist: 20 * k }
-    : area === CVS
-      ? { target: new THREE.Vector3(0.2, 0.5, 0.1), yaw: Math.PI / 4, pitch: 0.9, dist: (k > 1.4 ? 22 : 17) * k }
+    : shopOfArea(area)
+      ? { target: new THREE.Vector3(0.2, 0.5, 0.1), yaw: Math.PI / 4, pitch: 0.9, dist: (k > 1.4 ? 22 : 17) * k * (shopOfArea(area)!.hw / 5) }
       : { target: new THREE.Vector3(0.3, 0.4, 0.6), yaw: Math.PI / 4, pitch: 0.9, dist: 19 * k }
 
-/** 편의점 알바생이 하는 말 */
-const CLERK_HELLO = ['어서오세요~ 방들이편의점24입니다!', '어서오세요~', '안녕하세요~ 천천히 둘러보세요']
-const CLERK_PAY = ['삑- 삑- 3,800원입니다!', '봉투 필요하세요?', '포인트 적립하시겠어요?', '감사합니다~ 또 오세요!']
-const CLERK_IDLE = ['1+1 행사 중이에요~', '컵라면은 저쪽 진열대에 있어요', '온수는 창가 쪽이에요', '(하품) 오늘 손님 많네']
-const CLERK_ID = 'npc:clerk'
+/** 가게 안 조명 */
+const SHOP_LIGHT = {
+  white: { bg: '#cfe6ee', bgNight: '#232a44', hemi: 1.7, hemiColor: '#ffffff', ground: '#d9dde2', sun: 2.0, sunColor: '#ffffff', fill: 0.4 },
+  warm: { bg: '#f3e2cc', bgNight: '#2e2433', hemi: 1.45, hemiColor: '#fff0dc', ground: '#c9a27e', sun: 1.9, sunColor: '#ffdcae', fill: 0.35 },
+  dark: { bg: '#2a2d48', bgNight: '#15172a', hemi: 0.95, hemiColor: '#c9ccff', ground: '#4a4466', sun: 1.1, sunColor: '#e6e0ff', fill: 0.25 },
+} as const
+/** 고양이 쓰다듬을 때 */
+const CAT_LINES = ['냐옹이 귀여워~', '쓰담쓰담', '골골송 들린다', '츄르 가져올걸…', '이 동네 고양이 너무 순해']
 const anyOf = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]
 
 /** 돌릴 수 있는 범위: 2D 때와 같이 기본 각도에서 좌우 30° (넘기면 고무줄처럼 버티다 놓으면 돌아온다) */
@@ -465,8 +471,8 @@ function createWorld(
   let town: Town3D | null = buildTown3D(map, rooms)
   scene.add(town.group)
   let house: { roomId: string; h: House3D } | null = null
-  /** 편의점 안 (처음 들어갈 때 짓는다) */
-  let cvs: Cvs3D | null = null
+  /** 가게 안 (처음 들어갈 때 짓는다) */
+  const shops3d = new Map<ShopId, Shop3D>()
   const dropGroup = new THREE.Group()
   scene.add(dropGroup)
   const dropMeshes = new Map<string, THREE.Group>()
@@ -497,16 +503,18 @@ function createWorld(
 
   let night = isNightKst()
   const applySky = (area: AreaId, dim: boolean) => {
-    if (area === CVS) {
-      // 편의점은 밤낮없이 하얀 형광등
-      scene.background = new THREE.Color(night ? '#232a44' : '#cfe6ee')
+    const shop = shopOfArea(area)
+    if (shop) {
+      // 가게 안은 밤낮없이 가게 불빛: 편의점·빨래방은 하얀 형광등, 카페는 따뜻한 등, PC방·노래방·오락실은 어둑하고 화면·네온이 빛난다
+      const L = SHOP_LIGHT[shop.light]
+      scene.background = new THREE.Color(night ? L.bgNight : L.bg)
       scene.fog = null
-      hemi.intensity = 1.7
-      hemi.color.set('#ffffff')
-      hemi.groundColor.set('#d9dde2')
-      sun.intensity = 2.0
-      sun.color.set('#ffffff')
-      fill.intensity = 0.4
+      hemi.intensity = L.hemi
+      hemi.color.set(L.hemiColor)
+      hemi.groundColor.set(L.ground)
+      sun.intensity = L.sun
+      sun.color.set(L.sunColor)
+      fill.intensity = L.fill
       clouds.visible = false
       stars.visible = false
       town?.setNight(night)
@@ -580,12 +588,19 @@ function createWorld(
   me.yaw = spawn.area === TOWN ? 0 : Math.PI / 4
   actors.set('me', me)
 
-  // 편의점 알바생: 계산대 뒤에 서서 손님을 맞는다 (편의점 안에 있을 때만 보인다)
-  const clerk = newActor(CLERK_ID, { look: { ...CLERK_LOOK }, name: '알바생' }, CVS, { x: CLERK_SPOT.x, z: CLERK_SPOT.z })
-  clerk.yaw = CLERK_SPOT.yaw
-  actors.set(CLERK_ID, clerk)
+  // 가게 사람 (편의점 알바생 · PC방 알바생 · 노래방 사장님 · 바리스타): 정해진 자리에 서서 손님을 맞는다 (그 가게 안에 있을 때만 보인다)
+  for (const id of SHOP_IDS) {
+    const n = SHOPS[id].npc
+    const look = shopNpcLook(id)
+    if (!n || !look) continue
+    const a = newActor(n.id, { look: { ...look }, name: n.name }, id, { x: n.spot.x, z: n.spot.z })
+    a.yaw = n.spot.yaw
+    actors.set(n.id, a)
+  }
   const clerkTimer = window.setInterval(() => {
-    if (me.area === CVS && !clerk.say && Math.random() < 0.5) speak(clerk, anyOf(CLERK_IDLE))
+    const n = shopOfArea(me.area)?.npc
+    const a = n && actors.get(n.id)
+    if (n && a && !a.say && Math.random() < 0.5) speak(a, anyOf(n.idle))
   }, 16000)
 
   // ─── 카메라 ───
@@ -658,11 +673,13 @@ function createWorld(
   const showArea = (area: AreaId) => {
     const rid = roomOfArea(area)
     if (town) town.group.visible = area === TOWN
-    if (area === CVS && !cvs) {
-      cvs = buildCvs3D()
-      scene.add(cvs.group)
+    const shop = shopOfArea(area)
+    if (shop && !shops3d.has(shop.id)) {
+      const s3 = buildShop3D(shop.id)
+      shops3d.set(shop.id, s3)
+      scene.add(s3.group)
     }
-    if (cvs) cvs.group.visible = area === CVS
+    for (const [id, s3] of shops3d) s3.group.visible = area === id
     if (house && house.roomId !== rid) {
       scene.remove(house.h.group)
       disposeTree(house.h.group)
@@ -693,7 +710,7 @@ function createWorld(
     return seatCache.byKey.get(key) ?? null
   }
   /** 놀이기구를 누르면: 그 기구의 빈자리 중 손가락에서 (화면 위로) 가장 가까운 자리 (다 차 있으면 가장 가까운 자리) */
-  const SEAT_Y: Record<string, number> = { p_swing: 0.6, p_bench: 0.47, p_slide: 1, p_seesaw: 0.5, p_sand: 0.15, o_table: 0.5, o_pocha: 0.5, m_pavilion: 0.6, b_sunbed: 0.35, b_fish: 0.2 }
+  const SEAT_Y: Record<string, number> = { p_swing: 0.6, p_bench: 0.47, p_slide: 1, p_seesaw: 0.5, p_sand: 0.15, o_table: 0.5, o_pocha: 0.5, o_bus: 0.47, m_pavilion: 0.6, b_sunbed: 0.35, b_fish: 0.2 }
   const pickParkSeat = (base: string, cx: number, cy: number) => {
     if (parkSeatOf(base)) return base
     parkSeatOf('') // 캐시 채우기
@@ -719,7 +736,8 @@ function createWorld(
 
   const keyArea = (key: string): AreaId | null => {
     if (key.startsWith(PARK)) return TOWN
-    if (key.startsWith(CVS_PREFIX)) return CVS
+    const shop = shopOfKey(key)
+    if (shop) return shop.id
     if (key.includes(KEY_SEP)) return houseArea(key.split(KEY_SEP)[0])
     const d = props.current.drops.find((x) => x.id === key)
     if (!d) return null
@@ -751,9 +769,10 @@ function createWorld(
   const dropYawOf = (d: Drop) => spotFor(d.roomId, d.id)?.[2] ?? dropYaw(d.id)
 
   const targetOf = (key: string): Target | null => {
-    if (key.startsWith(CVS_PREFIX)) {
-      const s = cvsSpot(key)
-      return s ? { key, item: s.item, area: CVS, pos: { x: s.x, z: s.z }, yaw: s.yaw } : null
+    const shop = shopOfKey(key)
+    if (shop) {
+      const s = shopSpot(key)
+      return s ? { key, item: s.item, area: shop.id, pos: { x: s.x, z: s.z }, yaw: s.yaw } : null
     }
     if (key.startsWith(PARK)) {
       const s = parkSeatOf(key)
@@ -978,10 +997,18 @@ function createWorld(
     return pts
   }
 
-  const open = (area: AreaId, p: Vec2) =>
-    area === TOWN ? nearestOpen(map, p) : area === CVS ? nearestOpen(CVS_MAP, p) : nearestHouseOpen(p, blockerFor(area))
-  const pathIn = (area: AreaId, from: Vec2, to: Vec2) =>
-    area === TOWN ? findTownPath(map, from, to) : area === CVS ? findTownPath(CVS_MAP, from, to) : findHouseWorldPath(from, to, blockerFor(area))
+  const areaMap = (area: AreaId) => {
+    const shop = shopOfArea(area)
+    return area === TOWN ? map : shop ? shopMap(shop) : null
+  }
+  const open = (area: AreaId, p: Vec2) => {
+    const m = areaMap(area)
+    return m ? nearestOpen(m, p) : nearestHouseOpen(p, blockerFor(area))
+  }
+  const pathIn = (area: AreaId, from: Vec2, to: Vec2) => {
+    const m = areaMap(area)
+    return m ? findTownPath(m, from, to) : findHouseWorldPath(from, to, blockerFor(area))
+  }
   /** 골목 땅 높이 (뒷산 · 물가 · 방파제) */
   const zones = () => map.zones
   const floorY = (area: AreaId, x: number, z: number) => {
@@ -1050,13 +1077,14 @@ function createWorld(
     endAct(a)
     a.area = area
     a.pos = { ...at }
-    // 편의점에 손님이 들어오면 알바생이 인사한다 (내 화면에서 같이 있을 때만 보인다)
-    if (area === CVS && !a.id.startsWith('npc:')) {
-      const clerk = actors.get(CLERK_ID)
-      if (clerk) window.setTimeout(() => speak(clerk, anyOf(CLERK_HELLO)), 450)
+    // 가게에 손님이 들어오면 가게 사람이 인사한다 (내 화면에서 같이 있을 때만 보인다)
+    const n = shopOfArea(area)?.npc
+    if (n && !a.id.startsWith('npc:')) {
+      const clerk = actors.get(n.id)
+      if (clerk) window.setTimeout(() => speak(clerk, anyOf(n.hello)), 450)
     }
     if (a.id === 'me') {
-      a.yaw = area === TOWN ? 0 : area === CVS ? Math.PI : Math.PI / 4
+      a.yaw = area === TOWN ? 0 : shopOfArea(area) ? Math.PI : Math.PI / 4
       const f = fadeEl()
       if (f) {
         f.classList.remove('is-on')
@@ -1111,38 +1139,39 @@ function createWorld(
     } else go(a, exitIn, go_)
   }
 
-  /** 편의점: 문 앞까지 걸어가서 들어간다 */
-  const enterShop = (a: Actor) => {
-    const zn = zones()
-    if (a.area !== TOWN || !zn) return
+  /** 가게: 문 앞까지 걸어가서 들어간다 */
+  const enterShop = (a: Actor, id: ShopId) => {
+    if (a.area !== TOWN) return
     endAct(a)
-    const go_ = () => changeArea(a, CVS, CVS_ENTRANCE)
+    const step = shopDoor(id)
+    const go_ = () => changeArea(a, id, SHOPS[id].entrance)
     if (a.id === 'me') {
       const from = { ...a.pos }
-      const to = go(a, zn.storeStep, go_)
+      const to = go(a, step, go_)
       showMarker(to)
       cb.current.onMeMove?.(a.area, from, to)
-    } else go(a, zn.storeStep, go_)
+    } else go(a, step, go_)
   }
   const leaveShop = (a: Actor, then?: () => void) => {
-    const zn = zones()
-    if (a.area !== CVS || !zn) return
+    const shop: ShopDef | null = shopOfArea(a.area)
+    if (!shop) return
     endAct(a)
+    const step = shopDoor(shop.id)
     const go_ = () => {
-      changeArea(a, TOWN, { x: zn.storeStep.x, z: zn.storeStep.z + 0.3 })
+      changeArea(a, TOWN, { x: step.x, z: step.z + 0.3 })
       then?.()
     }
     if (a.id === 'me') {
       const from = { ...a.pos }
-      const to = go(a, CVS_EXIT, go_)
+      const to = go(a, shop.exit, go_)
       showMarker(to)
       cb.current.onMeMove?.(a.area, from, to)
-    } else go(a, CVS_EXIT, go_)
+    } else go(a, shop.exit, go_)
   }
   /** 지금 있는 곳에서 골목으로 나간다 (나가서 할 일이 있으면 then) */
   const goOutThen = (then: () => void) => {
     if (me.area === TOWN) return then()
-    if (me.area === CVS) return leaveShop(me, then)
+    if (shopOfArea(me.area)) return leaveShop(me, then)
     pendingOut = then
     leaveHouse(me)
   }
@@ -1180,17 +1209,19 @@ function createWorld(
       speak(a, `CH${ch + 1} ${TV_CHANNELS[ch]} · ${pickLine(inter)}`)
     } else if (t.item === 'o_pocha' && !night) speak(a, '포장마차는 저녁 7시에 열어요~ (자리만 맡아 둘게)')
     else speak(a, pickLine(inter))
-    // 계산대: 알바생이 대답한다
-    if (t.item === 'c_counter') {
-      const clerk = actors.get(CLERK_ID)
-      if (clerk && clerk.area === a.area) window.setTimeout(() => speak(clerk, anyOf(CLERK_PAY)), 1100)
+    // 계산대·주문대: 가게 사람이 대답한다
+    const npc = shopOfArea(a.area)?.npc
+    if (npc?.reply && t.item === npc.reply.item) {
+      const clerk = actors.get(npc.id)
+      const lines = npc.reply.lines
+      if (clerk && clerk.area === a.area) window.setTimeout(() => speak(clerk, anyOf(lines)), 1100)
     }
     // 망원경: 내 화면은 동네 전체가 보이게 멀리서 내려다본다
     if (t.item === 'm_scope' && a.id === 'me') {
       const zn = zones()
       if (zn) {
         follow = false
-        animateCam({ target: new THREE.Vector3((zn.hw + zn.he) / 2, 0.6, 2), yaw: YAW_CENTER.town, pitch: 0.78, dist: DIST_LIMIT.town[1] }, 1400)
+        animateCam({ target: new THREE.Vector3((zn.hw + zn.he) / 2, 0.6, -14), yaw: YAW_CENTER.town, pitch: 0.86, dist: DIST_LIMIT.town[1] }, 1400)
       }
     }
     if (inter.outfit) {
@@ -1289,8 +1320,10 @@ function createWorld(
     raycaster.setFromCamera(ndc, camera)
     const roots: THREE.Object3D[] = [dropGroup, actorGroup]
     if (me.area === TOWN && town) roots.push(town.group)
-    if (me.area === CVS && cvs) roots.push(cvs.group)
-    if (me.area !== TOWN && me.area !== CVS && house) roots.push(house.h.group)
+    const inShop = shopOfArea(me.area)
+    const s3 = inShop && shops3d.get(inShop.id)
+    if (s3) roots.push(s3.group)
+    if (me.area !== TOWN && !inShop && house) roots.push(house.h.group)
     const hits = raycaster.intersectObjects(roots, true)
     const gp = new THREE.Vector3()
     const g = raycaster.ray.intersectPlane(groundPlane, gp) ? { x: gp.x, z: gp.z } : null
@@ -1300,7 +1333,7 @@ function createWorld(
       if (d.actor && d.actor !== 'me') continue
       if (d.actor === 'me') continue
       if (d.ground) return { data: {}, point: h.point, ground: { x: h.point.x, z: h.point.z } }
-      if (d.drop || d.key || d.door || d.mail || d.exit || d.house || d.shop) return { data: d, point: h.point, ground: g }
+      if (d.drop || d.key || d.door || d.mail || d.exit || d.house || d.shop || d.cat !== undefined) return { data: d, point: h.point, ground: g }
       // 벽·바닥 등: 바닥 판 위의 점
       return { data: {}, point: h.point, ground: g }
     }
@@ -1351,16 +1384,37 @@ function createWorld(
           return
         }
       }
-      if (p.walkable && typeof d.key === 'string' && d.key.startsWith(CVS_PREFIX)) {
+      if (p.walkable && typeof d.key === 'string' && shopOfKey(d.key)) {
         p.onBackgroundTap?.()
-        const k = pickSpot(cvsGroup(d.key).map((x) => ({ key: x.key, x: x.x, z: x.z, y: 0.6 })), cx, cy)
+        const k = pickSpot(shopGroup(d.key).map((x) => ({ key: x.key, x: x.x, z: x.z, y: 0.6 })), cx, cy)
         const t = k && targetOf(k)
         if (t) meAct(t)
         return
       }
-      if (p.walkable && d.shop) {
+      // 동네 고양이: 옆으로 걸어가서 쓰다듬는다
+      if (p.walkable && typeof d.cat === 'number' && town && me.area === TOWN) {
         p.onBackgroundTap?.()
-        enterShop(me)
+        const i = d.cat
+        const at = town.catPos(i)
+        if (at) {
+          endAct(me)
+          const from = { ...me.pos }
+          const to = go(me, at, () => {
+            const now = town?.catPos(i)
+            if (now) {
+              me.yaw = Math.atan2(now.x - me.pos.x, now.z - me.pos.z)
+              fx.burst('hearts', new THREE.Vector3(now.x, 0.7, now.z), clock)
+            }
+            speak(me, anyOf(CAT_LINES))
+          })
+          showMarker(to)
+          cb.current.onMeMove?.(me.area, from, to)
+        }
+        return
+      }
+      if (p.walkable && typeof d.shop === 'string' && shopOfArea(d.shop)) {
+        p.onBackgroundTap?.()
+        enterShop(me, d.shop as ShopId)
         return
       }
       if (p.walkable && typeof d.key === 'string' && d.key.startsWith(PARK)) {
@@ -1378,7 +1432,7 @@ function createWorld(
       }
       if (p.walkable && d.exit) {
         p.onBackgroundTap?.()
-        if (me.area === CVS) leaveShop(me)
+        if (shopOfArea(me.area)) leaveShop(me)
         else leaveHouse(me)
         return
       }
@@ -1926,6 +1980,10 @@ function createWorld(
         }
       }
     if (town && me.area === TOWN) town.tick(clock, night)
+    {
+      const sh = shopOfArea(me.area)
+      if (sh) shops3d.get(sh.id)?.tick?.(clock)
+    }
     // 정자 지붕·파라솔: 누가 그 아래 앉거나 누우면 살짝 비쳐서 미니미가 보이게
     if (town && me.area === TOWN)
       for (const [b, roof] of town.fades) {
@@ -2195,7 +2253,7 @@ function createWorld(
         rebuildAvatar(a)
       } else {
         const ar = area ?? TOWN
-        const p = at ?? (ar === TOWN ? guestSpot(id) : ar === CVS ? CVS_ENTRANCE : uvToHouse(HOUSE_ENTRANCE))
+        const p = at ?? (ar === TOWN ? guestSpot(id) : shopOfArea(ar)?.entrance ?? uvToHouse(HOUSE_ENTRANCE))
         actors.set(id, newActor(id, info, ar, open(ar, p)))
       }
       rerender()
@@ -2296,7 +2354,7 @@ function createWorld(
       return true
     },
     goOut: () => {
-      if (me.area === CVS) leaveShop(me)
+      if (shopOfArea(me.area)) leaveShop(me)
       else if (me.area !== TOWN) leaveHouse(me)
     },
     goHouse: (rid) => {
@@ -2306,11 +2364,19 @@ function createWorld(
     goPlace: (place) => {
       const zn = zones()
       if (!zn) return
-      if (place === 'cvs') {
-        if (me.area !== CVS) goOutThen(() => enterShop(me))
+      const shop = shopOfArea(place)
+      if (shop) {
+        if (me.area !== shop.id) goOutThen(() => enterShop(me, shop.id))
         return
       }
-      const dest = place === 'hill' ? { x: zn.hill.x + 1.2, z: zn.hill.z + 1.6 } : place === 'pocha' ? { x: zn.pocha.x, z: zn.pocha.z - 2.4 } : { x: zn.he + 14.5, z: 4.2 }
+      const dest =
+        place === 'hill'
+          ? { x: zn.hill.x + 1.2, z: zn.hill.z + 1.6 }
+          : place === 'pocha'
+            ? { x: zn.pocha.x, z: zn.pocha.z - 2.4 }
+            : place === 'bus'
+              ? { x: BUS_STOP.x + 1.6, z: 4.4 }
+              : { x: zn.he + 14.5, z: 4.2 }
       goOutThen(() => meWalk(dest))
     },
     capture: () => {
@@ -2353,7 +2419,7 @@ function createWorld(
   }
 
   // 개발 중 확인용 (자동 스크린샷에서 상태를 본다)
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk, act: me.act ? me.act.key + ':' + me.act.phase : null }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), tapWalk: (x: number, z: number) => meWalk({ x, z }), tapWorld: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y) }, tapFixture: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) meAct(t); return !!t }, tapDrop: (id: string) => { const t = targetOf(id); if (t && t.area === me.area) meAct(t); return !!t }, lens: (o: { x?: number; z?: number; dist?: number; yaw?: number; pitch?: number; follow?: boolean; ms?: number }) => { follow = o.follow ?? false; animateCam({ ...cam, target: new THREE.Vector3(o.x ?? cam.target.x, cam.target.y, o.z ?? cam.target.z), dist: o.dist ?? cam.dist, yaw: o.yaw ?? cam.yaw, pitch: o.pitch ?? cam.pitch }, o.ms ?? 900) }, use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), bench: (n = 30) => { const gl = renderer.getContext(); renderer.render(scene, camera); gl.finish(); const t = performance.now(); for (let i = 0; i < n; i++) renderer.render(scene, camera); gl.finish(); return +((performance.now() - t) / n).toFixed(2) }, actorShadows: (on: boolean) => { for (const a of actors.values()) if (a.id !== "me") a.avatar.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = on }) }, screen: (x: number, z: number, y = 0) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, y, z)); return { x: r.left + s.x, y: r.top + s.y } }, zones: () => map.zones, tp: (x: number, z: number, area?: AreaId) => { if (area && area !== me.area) changeArea(me, area, { x, z }); else { endAct(me); me.walk = null; me.pos = { x, z } } follow = true }, night: (on: boolean) => { night = on }, meshes: () => { const out: Record<string, number> = {}; town?.group.traverse((n) => { if ((n as THREE.Mesh).isMesh && n.layers.test(camera.layers)) { let k = n.name || '(baked)'; for (let q = n.parent; q && q !== town!.group; q = q.parent) if (q.name) { k = q.name + '/' + k; break } out[k] = (out[k] ?? 0) + 1 } }); return out }, act: (key: string) => { const t = targetOf(key); if (t) meAct(t); return !!t }, tapAt: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y); return { x: r.left + q.x, y: r.top + q.y } } }
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk, act: me.act ? me.act.key + ':' + me.act.phase : null }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), tapWalk: (x: number, z: number) => meWalk({ x, z }), tapWorld: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y) }, tapFixture: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) meAct(t); return !!t }, tapDrop: (id: string) => { const t = targetOf(id); if (t && t.area === me.area) meAct(t); return !!t }, lens: (o: { x?: number; z?: number; dist?: number; yaw?: number; pitch?: number; follow?: boolean; ms?: number }) => { follow = o.follow ?? false; animateCam({ ...cam, target: new THREE.Vector3(o.x ?? cam.target.x, cam.target.y, o.z ?? cam.target.z), dist: o.dist ?? cam.dist, yaw: o.yaw ?? cam.yaw, pitch: o.pitch ?? cam.pitch }, o.ms ?? 900) }, use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), bench: (n = 30) => { const gl = renderer.getContext(); renderer.render(scene, camera); gl.finish(); const t = performance.now(); for (let i = 0; i < n; i++) renderer.render(scene, camera); gl.finish(); return +((performance.now() - t) / n).toFixed(2) }, actorShadows: (on: boolean) => { for (const a of actors.values()) if (a.id !== "me") a.avatar.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = on }) }, screen: (x: number, z: number, y = 0) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, y, z)); return { x: r.left + s.x, y: r.top + s.y } }, zones: () => map.zones, cats: () => [0, 1].map((i) => town?.catPos(i)), tp: (x: number, z: number, area?: AreaId) => { if (area && area !== me.area) changeArea(me, area, { x, z }); else { endAct(me); me.walk = null; me.pos = { x, z } } follow = true }, night: (on: boolean) => { night = on }, meshes: () => { const out: Record<string, number> = {}; town?.group.traverse((n) => { if ((n as THREE.Mesh).isMesh && n.layers.test(camera.layers)) { let k = n.name || '(baked)'; for (let q = n.parent; q && q !== town!.group; q = q.parent) if (q.name) { k = q.name + '/' + k; break } out[k] = (out[k] ?? 0) + 1 } }); return out }, act: (key: string) => { const t = targetOf(key); if (t) meAct(t); return !!t }, tapAt: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y); return { x: r.left + q.x, y: r.top + q.y } } }
 
 
   return {
@@ -2397,7 +2463,7 @@ function createWorld(
         rising.add({ obj, start: t0 })
         const lot = map.lots.find((l) => l.roomId === rid)
         if (lot && me.area === TOWN) {
-          const at = new THREE.Vector3(lot.x, 4.2, (HOUSE_FRONT_Z + HOUSE_BACK_Z) / 2)
+          const at = new THREE.Vector3(lot.x, 4.2, (HOUSE_FRONT_Z + HOUSE_BACK_Z) / 2 + lot.zOff)
           window.setTimeout(() => {
             fx.burst('confetti', at, clock, 8)
             fx.burst('sparkle', at.clone().add(new THREE.Vector3(0, 1, 1)), clock, 6)
@@ -2440,11 +2506,11 @@ function createWorld(
         town.dispose()
         town = null
       }
-      if (cvs) {
-        disposeTree(cvs.group)
-        cvs.dispose()
-        cvs = null
+      for (const s3 of shops3d.values()) {
+        disposeTree(s3.group)
+        s3.dispose()
       }
+      shops3d.clear()
       for (const m of dropMeshes.values()) disposeTree(m)
       ring.geometry.dispose()
       ringMat.dispose()
