@@ -110,3 +110,66 @@ export function busOuch() {
   }
   navigator.vibrate?.([60, 40, 120])
 }
+
+/** 카페 커피 바 소리: 원두 갈기 · 추출 · 스팀 · 얼음 퐁당 · 붓기 · 완성 종 */
+export function barSound(kind: 'grind' | 'brew' | 'steam' | 'plop' | 'pour' | 'pump' | 'ding') {
+  const c = audio()
+  if (!c) return
+  const t = c.currentTime + 0.01
+  const noise = (dur: number, type: BiquadFilterType, hz: number, vol: number, wobble = 0) => {
+    const s = c.createBufferSource()
+    s.buffer = noiseBuf(c, dur)
+    const f = c.createBiquadFilter()
+    f.type = type
+    f.frequency.value = hz
+    f.Q.value = 1.2
+    if (wobble) {
+      const lfo = c.createOscillator()
+      const lg = c.createGain()
+      lfo.frequency.value = wobble
+      lg.gain.value = hz * 0.35
+      lfo.connect(lg).connect(f.frequency)
+      lfo.start(t)
+      lfo.stop(t + dur)
+    }
+    const g = c.createGain()
+    env(g, t, vol, 0.04, Math.max(0.01, dur - 0.2), 0.15)
+    s.connect(f).connect(g).connect(c.destination)
+    s.start(t)
+  }
+  const tone = (hz: number, to: number, dur: number, vol: number, wave: OscillatorType = 'sine', delay = 0) => {
+    const o = c.createOscillator()
+    const g = c.createGain()
+    o.type = wave
+    o.frequency.setValueAtTime(hz, t + delay)
+    o.frequency.exponentialRampToValueAtTime(to, t + delay + dur)
+    env(g, t + delay, vol, 0.005, 0.01, dur)
+    o.connect(g).connect(c.destination)
+    o.start(t + delay)
+    o.stop(t + delay + dur + 0.05)
+  }
+  switch (kind) {
+    case 'grind':
+      noise(1.5, 'bandpass', 1400, 0.22, 23)
+      break
+    case 'brew':
+      noise(2.2, 'lowpass', 500, 0.12, 3)
+      break
+    case 'steam':
+      noise(1.8, 'highpass', 3500, 0.12, 6)
+      break
+    case 'plop':
+      tone(900, 260, 0.12, 0.25)
+      break
+    case 'pour':
+      noise(1.0, 'lowpass', 800, 0.14, 5)
+      break
+    case 'pump':
+      tone(220, 120, 0.08, 0.2, 'triangle')
+      break
+    case 'ding':
+      tone(1568, 1560, 0.6, 0.18)
+      tone(2093, 2090, 0.8, 0.12, 'sine', 0.12)
+      break
+  }
+}

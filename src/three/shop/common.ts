@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three'
 import type { ShopDef } from '../../lib/shops'
+import type { CoffeeBar } from '../coffeeBar3d'
 import { STORE_D, STORE_DOOR_DX, STORE_FRONT, STORE_W } from '../../lib/town'
 import type { AvatarLook as Look } from '../../art/avatar'
 import { box, canvasTexture, mat, part, roundBox, fillFit } from '../kit'
@@ -20,6 +21,8 @@ export interface Shop3D {
   group: THREE.Group
   /** 화면·조명처럼 늘 움직이는 것 (t: 초) */
   tick?(t: number): void
+  /** 카페 커피 바 (바리스타가 음료를 만들 때 도구가 움직인다) */
+  bar?: CoffeeBar
   dispose(): void
 }
 

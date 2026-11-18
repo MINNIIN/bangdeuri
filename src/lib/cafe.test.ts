@@ -45,4 +45,15 @@ describe('카페 음료 만들기 순서', () => {
     expect(brewSteps(drinkOf('latte')!).some((s) => s.cup.ice)).toBe(false)
     expect(brewSteps(drinkOf('latte')!).some((s) => s.cup.top === 'art')).toBe(true)
   })
+
+  it('컵은 줄기가 흐르는 동안에만 차오른다 (채우는 단계마다 차오르는 구간이 있다)', () => {
+    for (const d of DRINKS)
+      for (const st of brewSteps(d))
+        if (st.cup.fill !== undefined) {
+          expect(st.win).toBeDefined()
+          expect(st.win![0]).toBeGreaterThanOrEqual(0)
+          expect(st.win![1]).toBeLessThanOrEqual(1)
+          expect(st.win![0]).toBeLessThan(st.win![1])
+        }
+  })
 })

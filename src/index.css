@@ -3707,3 +3707,106 @@ button {
   background: #5aa9e6;
   color: #fff;
 }
+
+/* ─── 카페 바리스타 시점 연출 ─── */
+.pov-cam {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  animation: pov-in 0.5s ease-out;
+}
+@keyframes pov-in {
+  from {
+    opacity: 0;
+  }
+}
+.pov-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 9%;
+  background: #120d0a;
+}
+.pov-bar.is-top {
+  top: 0;
+}
+.pov-bar.is-bottom {
+  bottom: 0;
+}
+.pov-head {
+  position: absolute;
+  top: calc(9% + 8px);
+  left: 140px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.pov-badge {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(43, 26, 18, 0.82);
+  color: #ffe9c9;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.pov-skip {
+  pointer-events: auto;
+  padding: 7px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pov-steps {
+  position: absolute;
+  top: calc(9% + 48px);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 12px;
+  list-style: none;
+}
+.pov-steps li {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  color: #6b5a4c;
+  font-size: 11px;
+}
+.pov-steps li.is-done {
+  background: rgba(201, 143, 90, 0.85);
+  color: #fff;
+}
+.pov-steps li.is-now {
+  background: #ff8a3d;
+  color: #fff;
+  transform: scale(1.08);
+}
+.pov-caption {
+  position: absolute;
+  left: 50%;
+  bottom: calc(9% + 14px);
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(20, 13, 10, 0.78);
+  color: #fff;
+  font-size: 14px;
+  text-align: center;
+  word-break: keep-all;
+}

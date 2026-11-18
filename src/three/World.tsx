@@ -64,9 +64,10 @@ import { disposeTree, mat, part, torus } from './kit'
 import { buildTown3D, HIT_LAYER, SEESAW_REST, type Town3D } from './town3d'
 import { buildShop3D, type Shop3D, shopNpcLook } from './shops3d'
 import { BUS_STOP, type BusNow, busHits } from '../lib/townLife'
-import { busOuch } from '../lib/sfx'
-import { brewSteps, type BrewStep, type CupState, type Drink, drinkOf, SIPS, type Station } from '../lib/cafe'
-import { buildCup, type Cup3D, type CupLook } from './cup3d'
+import { barSound, busOuch } from '../lib/sfx'
+import { brewSteps, type BrewStep, type Drink, drinkOf, SIPS, type Station } from '../lib/cafe'
+import { buildCup, CUP_H, type Cup3D, type CupLook } from './cup3d'
+import { BAR_SPOT, CUP_START, pumpOf } from './coffeeBar3d'
 
 const TAP_SLOP = 7
 const WALK_TOWN = 2.6
@@ -234,14 +235,14 @@ interface HeldCup {
   next: number
 }
 
-/** 카페 바리스타가 서는 곳 (카페 안 좌표) · 그때 컵 자리 */
-const CAFE_STATION: Record<Station, { x: number; z: number; yaw: number; cup?: [number, number, number] }> = {
-  grinder: { x: 4.5, z: -2.55, yaw: Math.PI },
-  machine: { x: 3.85, z: -2.55, yaw: Math.PI, cup: [3.8, 1.025, -3.08] },
-  steam: { x: 3.5, z: -2.55, yaw: Math.PI },
-  syrup: { x: 1.7, z: -2.55, yaw: Math.PI, cup: [1.7, 0.995, -3.0] },
-  ice: { x: 1.2, z: -2.55, yaw: Math.PI, cup: [1.3, 0.995, -3.0] },
-  pickup: { x: 2.3, z: -2.45, yaw: 0, cup: [2.3, 1.06, -1.72] },
+/** 카페 바리스타가 서는 곳 (카페 안 좌표, 뒷선반 앞) */
+const CAFE_STATION: Record<Station, { x: number; z: number; yaw: number }> = {
+  grinder: { x: 4.45, z: -2.55, yaw: Math.PI },
+  machine: { x: 3.88, z: -2.55, yaw: Math.PI },
+  steam: { x: 3.22, z: -2.55, yaw: Math.PI },
+  syrup: { x: 1.75, z: -2.55, yaw: Math.PI },
+  ice: { x: 1.12, z: -2.55, yaw: Math.PI },
+  pickup: { x: 2.3, z: -2.45, yaw: 0 },
 }
 /** 바리스타 걷는 빠르기 (m/s) */
 const BARISTA_SPEED = 1.5
@@ -393,6 +394,7 @@ export function World({
 
 
   const actors = w.current?.overlayList() ?? []
+  const pov = w.current?.povInfo() ?? null
 
   return (
     <div ref={hostEl} className="world-stage" onContextMenu={(e) => e.preventDefault()}>
@@ -414,6 +416,28 @@ export function World({
       {bubble && (
         <div ref={bubbleEl} className="bubble" style={{ display: 'none' } as CSSProperties} onPointerDown={(e) => e.stopPropagation()}>
           {bubble}
+        </div>
+      )}
+      {pov && (
+        <div className="pov-cam" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="pov-bar is-top" />
+          <div className="pov-bar is-bottom" />
+          <div className="pov-head">
+            <span className="pov-badge">☕ 바리스타 시점{pov.drink && ` · ${pov.drink}`}</span>
+            <button className="pov-skip" onClick={() => w.current?.skipPov()}>
+              건너뛰기 ▶▶
+            </button>
+          </div>
+          {pov.steps.length > 0 && (
+            <ol className="pov-steps">
+              {pov.steps.map((label, i) => (
+                <li key={i} className={i < pov.i ? 'is-done' : i === pov.i ? 'is-now' : ''}>
+                  {label}
+                </li>
+              ))}
+            </ol>
+          )}
+          {pov.caption && <div className="pov-caption">{pov.caption}</div>}
         </div>
       )}
       <div className="world-fade" />
@@ -1012,15 +1036,10 @@ function createWorld(
     }, FLY_SEC * 1000 + 350)
   }
 
-  // ─── 카페: 주문하면 바리스타가 진짜로 만들어 건네준다 ───
+  // ─── 카페: 주문하면 바리스타가 진짜로 만들어 건네준다 (내가 시킨 건 바리스타 눈으로 본다) ───
   const cafeProps = new THREE.Group()
   cafeProps.visible = false
   scene.add(cafeProps)
-  /** 에스프레소 · 물 줄기 (추출구 → 컵) */
-  const streamMat = new THREE.MeshStandardMaterial({ color: '#3a1f12', roughness: 0.3, transparent: true, opacity: 0.9 })
-  const stream = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1, 6), streamMat)
-  stream.visible = false
-  cafeProps.add(stream)
   interface BrewJob {
     who: string
     drink: Drink
@@ -1031,6 +1050,12 @@ function createWorld(
     cup: Cup3D
     look: CupLook
     from: CupLook
+    /** 걷는 동안 컵이 바 위를 미끄러져 다음 자리로 (출발 자리 · 도착 자리 · 걸을 거리) */
+    cupFrom: THREE.Vector3
+    cupTo: THREE.Vector3
+    walkLen: number
+    /** 이번 단계에서 이미 낸 소리 */
+    sounds: Set<string>
   }
   const brewQueue: { who: string; drink: Drink }[] = []
   let brew: BrewJob | null = null
@@ -1047,21 +1072,89 @@ function createWorld(
     const b = barista()
     if (b && brew) speak(b, `${drink.name} 주문 받았어요~ 잠시만요!`)
   }
-  const cupAt = (place: CupState['place'], at: Station) => {
-    const b = barista()
-    if (!brew || !b) return
-    const g = brew.cup.group
-    if (place === 'hand') {
-      if (g.parent !== b.avatar.hand) b.avatar.hand.add(g)
-      return
-    }
-    const st = CAFE_STATION[place === 'counter' ? 'pickup' : at].cup ?? CAFE_STATION.machine.cup!
-    if (g.parent !== cafeProps) cafeProps.add(g)
-    g.position.set(...st)
-    g.quaternion.identity()
+  /** 그 단계에서 컵이 놓이는 자리 (원두 갈 때는 컵 더미 옆에서 기다린다) */
+  const cupSpot = (st: BrewStep): [number, number, number] =>
+    st.at === 'grinder' ? CUP_START : st.cup.place === 'spout' ? BAR_SPOT.machine.cup : st.at === 'syrup' ? [BAR_SPOT.syrup.cup[0] + (pumpOf(brew?.drink ?? null) - 1) * 0.2, BAR_SPOT.syrup.cup[1], BAR_SPOT.syrup.cup[2]] : BAR_SPOT[st.at].cup
+  const span = (k: number, a: number, b: number) => {
+    const x = Math.max(0, Math.min(1, (k - a) / (b - a)))
+    return x * x * (3 - 2 * x)
   }
   const mixColor = new THREE.Color()
   const toColor = new THREE.Color()
+  const cupWorld = new THREE.Vector3()
+  /** 단계 안에서 한 번만 소리 (내가 카페 안에 있을 때만) */
+  const sound = (job: BrewJob, key: string, kind: Parameters<typeof barSound>[0]) => {
+    if (job.sounds.has(key)) return
+    job.sounds.add(key)
+    if (me.area === 'cafe') barSound(kind)
+  }
+
+  // 바리스타 시점 (내 화면만): 카메라가 바리스타 눈에서 작업대를 내려다본다
+  let pov: { eye: THREE.Vector3; look: THREE.Vector3; until: number | null } | null = null
+  const startPov = () => {
+    const b = barista()
+    if (!b || me.area !== 'cafe') return
+    pov = { eye: new THREE.Vector3(b.pos.x, 1.6, b.pos.z + 0.1), look: new THREE.Vector3(...BAR_SPOT.grinder.look), until: null }
+    me.walk = null
+    const f = fadeEl()
+    if (f) {
+      f.classList.remove('is-on')
+      void f.offsetWidth
+      f.classList.add('is-on')
+    }
+    rerender()
+  }
+  const endPov = () => {
+    if (!pov) return
+    pov = null
+    camera.fov = width / height < 0.8 ? 40 : 32
+    camera.near = 0.5
+    camera.updateProjectionMatrix()
+    const f = fadeEl()
+    if (f) {
+      f.classList.remove('is-on')
+      void f.offsetWidth
+      f.classList.add('is-on')
+    }
+    rerender()
+  }
+  const STEP_LABEL: Record<Station, string> = { grinder: '원두', machine: '추출', steam: '스팀', syrup: '시럽', ice: '얼음', pickup: '완성' }
+  const povInfo = () => {
+    if (!pov || !brew) return pov ? { drink: '', steps: [] as string[], i: 0, caption: barista()?.say?.text ?? '' } : null
+    return {
+      drink: brew.drink.name,
+      steps: brew.steps.map((s, n) =>
+        s.at === 'machine' && brew!.steps.slice(0, n).some((x) => x.at === 'machine') ? '온수' : s.at === 'syrup' && s.cup.syrup === undefined ? '마무리' : STEP_LABEL[s.at],
+      ),
+      i: brew.i,
+      caption: barista()?.say?.text ?? '',
+    }
+  }
+  const placePov = (dt: number) => {
+    const b = barista()
+    if (!pov || !b) return
+    if (me.area !== 'cafe') return endPov()
+    if (pov.until !== null && clock > pov.until) return endPov()
+    const step = brew?.steps[brew.i]
+    const at = step?.at ?? 'pickup'
+    const facingCounter = at === 'pickup' && brew?.phase === 'work'
+    // 눈: 바리스타 머리 높이, 작업대 쪽으로 살짝 숙여서 · 픽업 때는 손님 쪽을 본다
+    const eye = new THREE.Vector3(b.pos.x, 1.62, b.pos.z + (facingCounter ? -0.1 : 0.12))
+    const look = new THREE.Vector3(...(facingCounter || !step ? BAR_SPOT.pickup.look : BAR_SPOT[at].look))
+    if (brew?.phase === 'walk' && step && step.at !== 'pickup') look.x = b.pos.x + (look.x - b.pos.x) * 0.6
+    const s = 1 - Math.exp(-dt * 5)
+    pov.eye.lerp(eye, s)
+    pov.look.lerp(look, 1 - Math.exp(-dt * 4))
+    camera.position.copy(pov.eye)
+    camera.lookAt(pov.look)
+    const fov = width / height < 0.8 ? 62 : 48
+    if (camera.fov !== fov || camera.near !== 0.03) {
+      camera.fov = fov
+      camera.near = 0.03
+      camera.updateProjectionMatrix()
+    }
+  }
+
   const tickBrew = (dt: number) => {
     const b = barista()
     if (!b) return
@@ -1072,18 +1165,21 @@ function createWorld(
         leftCups[i].cup.dispose()
         leftCups.splice(i, 1)
       }
+    const bar = shops3d.get('cafe')?.bar
     if (!brew) {
       const next = brewQueue.shift()
       if (next) {
         const cup = buildCup(next.drink.iced)
         const look: CupLook = { fill: 0, color: next.drink.color, syrup: 0, syrupColor: next.drink.syrup ?? next.drink.color, ice: false }
-        brew = { ...next, steps: brewSteps(next.drink), i: 0, phase: 'walk', t0: clock, cup, look, from: { ...look } }
-        // 빈 컵은 머신 아래에 미리 놓는다
         cafeProps.add(cup.group)
-        cup.group.position.set(...CAFE_STATION.machine.cup!)
+        cup.group.position.set(...CUP_START)
         cup.set(look)
+        brew = { ...next, steps: brewSteps(next.drink), i: 0, phase: 'walk', t0: clock, cup, look, from: { ...look }, cupFrom: cup.group.position.clone(), cupTo: cup.group.position.clone(), walkLen: 0, sounds: new Set() }
+        startWalk(brew, b)
         speak(b, `${next.drink.name} 하나요~ 바로 만들어 드릴게요!`)
+        if (next.who === 'me') startPov()
       } else {
+        bar?.pose({ at: null, k: 0, walking: false, done: [], drink: null, cupTop: 0, again: false }, clock)
         // 할 일이 없으면 제자리로
         const home = SHOPS.cafe.npc!.spot
         const d = Math.hypot(home.x - b.pos.x, home.z - b.pos.z)
@@ -1102,59 +1198,96 @@ function createWorld(
     const job = brew!
     const step = job.steps[job.i]
     const st = CAFE_STATION[step.at]
+    let k = 0
     if (job.phase === 'walk') {
       const d = Math.hypot(st.x - b.pos.x, st.z - b.pos.z)
-      // 걷는 동안 컵은 손에 (처음 그라인더로 갈 때는 머신 아래 그대로)
-      if (job.i > 0) cupAt('hand', step.at)
+      // 컵은 바 위를 미끄러져 다음 자리로 (살짝 들어 옮긴다)
+      const q = job.walkLen > 0.01 ? 1 - Math.min(1, d / job.walkLen) : 1
+      job.cup.group.position.lerpVectors(job.cupFrom, job.cupTo, q)
+      job.cup.group.position.y += Math.sin(q * Math.PI) * 0.08
       if (d > 0.03) {
         const v = Math.min(d, dt * BARISTA_SPEED)
         b.yaw = Math.atan2(st.x - b.pos.x, st.z - b.pos.z)
         b.pos = { x: b.pos.x + ((st.x - b.pos.x) / d) * v, z: b.pos.z + ((st.z - b.pos.z) / d) * v }
         b.stroll = true
-        return
+      } else {
+        b.stroll = false
+        b.yaw = st.yaw
+        job.phase = 'work'
+        job.t0 = clock
+        job.from = { ...job.look }
+        job.cupFrom = job.cup.group.position.clone()
+        job.sounds.clear()
+        speak(b, step.line, step.ms + 900)
       }
-      b.stroll = false
-      b.yaw = st.yaw
-      job.phase = 'work'
-      job.t0 = clock
-      job.from = { ...job.look }
-      speak(b, step.line, step.ms + 600)
-      if (!(step.at === 'grinder' && job.i === 0)) cupAt(step.cup.place, step.at)
+    } else {
+      k = Math.min(1, ((clock - job.t0) * 1000) / step.ms)
+      const c = step.cup
+      const kk = step.win ? span(k, step.win[0], step.win[1]) : span(k, 0, 1)
+      const L = job.look
+      if (c.fill !== undefined) L.fill = job.from.fill + (c.fill - job.from.fill) * kk
+      if (c.color) L.color = '#' + mixColor.set(job.from.color).lerp(toColor.set(c.color), kk).getHexString()
+      if (c.syrup !== undefined) L.syrup = job.from.syrup + (c.syrup - job.from.syrup) * kk
+      if (c.ice && k > 0.3) L.ice = true
+      if (c.top && (step.win ? k > step.win[1] - 0.04 : k > 0.75)) L.top = c.top
+      job.cup.set(L)
+      // 픽업: 컵을 들어 손님 앞 계산대에 내려놓는다
+      if (step.at === 'pickup') {
+        const q = span(k, 0, 0.6)
+        job.cup.group.position.lerpVectors(job.cupFrom, new THREE.Vector3(...BAR_SPOT.pickup.cup), q)
+        job.cup.group.position.y += Math.sin(q * Math.PI) * 0.18
+      }
+      // 소리
+      if (step.at === 'grinder' && k > 0.15) sound(job, 'grind', 'grind')
+      if (step.at === 'grinder' && k > 0.74) sound(job, 'tamp', 'pump')
+      if (step.at === 'machine' && k > 0.25) sound(job, 'brew', 'brew')
+      if (step.at === 'steam' && k > 0.12) sound(job, 'steam', 'steam')
+      if (step.at === 'steam' && k > 0.74) sound(job, 'pour', 'pour')
+      if (step.at === 'ice') for (let n = 0; n < 5; n++) if (k > 0.15 + n * 0.07) sound(job, `plop${n}`, 'plop')
+      if (step.at === 'ice' && k > 0.58) sound(job, 'pour', 'pour')
+      const pumping = step.at === 'syrup' && step.cup.syrup !== undefined
+      if (pumping && k > 0.2) sound(job, 'pump1', 'pump')
+      if (pumping && k > 0.5) sound(job, 'pump2', 'pump')
+      if (step.at === 'pickup' && k > 0.6) sound(job, 'ding', 'ding')
     }
-    const k = Math.min(1, ((clock - job.t0) * 1000) / step.ms)
-    const c = step.cup
-    const ease = k * k * (3 - 2 * k)
-    const L = job.look
-    if (c.fill !== undefined) L.fill = job.from.fill + (c.fill - job.from.fill) * ease
-    if (c.color) L.color = '#' + mixColor.set(job.from.color).lerp(toColor.set(c.color), ease).getHexString()
-    if (c.syrup !== undefined) L.syrup = job.from.syrup + (c.syrup - job.from.syrup) * ease
-    if (c.ice && k > 0.25) L.ice = true
-    if (c.top && k > 0.75) L.top = c.top
-    job.cup.set(L)
-    // 커피 머신: 추출구에서 컵으로 줄기가 떨어진다
-    const pouring = step.at === 'machine' && k > 0.08 && k < 0.92
-    stream.visible = pouring
-    if (pouring) {
-      const [x, y, z] = CAFE_STATION.machine.cup!
-      const top = 1.17
-      const bottom = y + 0.01 + L.fill * 0.16
-      stream.position.set(x, (top + bottom) / 2, z)
-      stream.scale.y = Math.max(0.01, top - bottom)
-      streamMat.color.set(job.from.fill > 0.2 ? '#c9a27e' : '#3a1f12')
+    // 커피 바 도구들
+    if (bar) {
+      job.cup.group.getWorldPosition(cupWorld)
+      bar.pose(
+        {
+          at: step.at,
+          k,
+          walking: job.phase === 'walk',
+          done: job.steps.slice(0, job.i).map((s) => s.at),
+          drink: job.drink,
+          cupTop: cupWorld.y + 0.01 + job.look.fill * CUP_H,
+          again: step.at === 'machine' && job.steps.slice(0, job.i).some((s) => s.at === 'machine'),
+          finish: step.at === 'syrup' && step.cup.syrup === undefined,
+        },
+        clock,
+      )
     }
-    if (k < 1) return
+    if (job.phase === 'walk' || k < 1) return
     job.i++
     if (job.i < job.steps.length) {
       job.phase = 'walk'
+      startWalk(job, b)
       return
     }
     // 다 됐다: 시킨 사람이 카페 안에 있으면 손에 쥐여 준다
-    stream.visible = false
     brew = null
+    if (pov) pov.until = clock + 1.4
     const who = actors.get(job.who)
-    if (who && who.area === 'cafe' && !who.cup) {
-      window.setTimeout(() => giveCup(who, job.cup, job.look), 500)
-    } else leftCups.push({ cup: job.cup, until: clock + 25 })
+    if (who && who.area === 'cafe' && !who.cup) window.setTimeout(() => giveCup(who, job.cup, job.look), 900)
+    else leftCups.push({ cup: job.cup, until: clock + 25 })
+  }
+  /** 다음 단계 자리로 걷기 시작 (컵도 그 단계 자리로 옮겨 간다) */
+  const startWalk = (job: BrewJob, b: Actor) => {
+    const step = job.steps[job.i]
+    const st = CAFE_STATION[step.at]
+    job.walkLen = Math.hypot(st.x - b.pos.x, st.z - b.pos.z)
+    job.cupFrom = job.cup.group.position.clone()
+    job.cupTo = step.at === 'pickup' ? job.cupFrom.clone() : new THREE.Vector3(...cupSpot(step))
   }
   const giveCup = (a: Actor, cup: Cup3D, look: CupLook) => {
     if (!actors.has(a.id)) {
@@ -1179,7 +1312,7 @@ function createWorld(
   /** 컵 든 팔 높이 (null = 컵 없음) · 가끔 홀짝 */
   const holdOf = (a: Actor): number | null => {
     const h = a.cup
-    if (!h) return brew && brew.cup.group.parent === a.avatar.hand ? 0 : null
+    if (!h) return null
     // 컵이 새 몸으로 바뀌었으면(옷 갈아입기) 다시 쥔다
     if (h.cup.group.parent !== a.avatar.hand) a.avatar.hand.add(h.cup.group)
     if (h.sipAt >= 0) {
@@ -1633,6 +1766,8 @@ function createWorld(
 
   const tap = (cx: number, cy: number, right = false) => {
     const p = props.current
+    // 바리스타 시점 연출 중에는 화면을 눌러도 걷지 않는다 (건너뛰기 버튼으로 나온다)
+    if (pov) return
     // 배치 바꾸는 중: 빈 곳을 누르면 고른 걸 놓아 준다 (걷지 않는다)
     if (draftRoom) {
       if (!right) setSel(null)
@@ -2133,7 +2268,7 @@ function createWorld(
       const doing = a.act?.phase === 'doing' ? a.act : null
       if (doing) doingOn.set(doing.key, [...(doingOn.get(doing.key) ?? []), a])
       const root = a.avatar.root
-      root.visible = a.area === me.area
+      root.visible = a.area === me.area && !(pov && a.id === SHOPS.cafe.npc?.id)
       const pose = doing?.inter.pose ?? null
       let y = 0
       let px = a.pos.x
@@ -2240,8 +2375,7 @@ function createWorld(
       const climbing = doing?.item === 'p_slide' && animPose === null && y > 0.01
       a.avatar.animate({ walking: !!a.walk || climbing || !!a.stroll, pose: a.walk ? null : animPose, t: clock + a.id.length, knee, hold: holdOf(a) })
       {
-        const held = a.cup?.cup.group ?? (brew && brew.cup.group.parent === a.avatar.hand ? brew.cup.group : null)
-        if (held) uprightCup(a, held)
+        if (a.cup) uprightCup(a, a.cup.cup.group)
       }
       // 효과
       if (doing && a.area === me.area && clock >= doing.fxAt) {
@@ -2456,6 +2590,8 @@ function createWorld(
       if (k >= 1) rising.delete(r)
     }
     fx.update(clock, dt)
+    // 바리스타 시점이면 카메라를 바리스타 눈으로
+    if (pov) placePov(dt)
     renderer.render(scene, camera)
 
     // 이름표 · 말풍선 · 아이템 말풍선 (화면 좌표로)
@@ -2464,7 +2600,7 @@ function createWorld(
       for (const a of actors.values()) {
         const tag = ov.querySelector<HTMLDivElement>(`[data-tag="${a.id}"]`)
         const say = ov.querySelector<HTMLDivElement>(`[data-say="${a.id}"]`)
-        const show = a.area === me.area && (actors.size > 1 || a.id !== 'me')
+        const show = a.area === me.area && (actors.size > 1 || a.id !== 'me') && !(pov && a.id === SHOPS.cafe.npc?.id)
         const head = headPos(a)
         const s = project(head.add(new THREE.Vector3(0, 0.12, 0)))
         if (tag) {
@@ -2473,7 +2609,8 @@ function createWorld(
           tag.style.top = `${s.y}px`
         }
         if (say) {
-          say.style.display = a.area === me.area && !s.behind ? '' : 'none'
+          // 바리스타 시점일 때 바리스타 말은 아래 자막으로
+          say.style.display = a.area === me.area && !s.behind && !(pov && a.id === SHOPS.cafe.npc?.id) ? '' : 'none'
           // 긴 말도 화면 밖으로 잘리지 않게 (말풍선 반 폭만큼 안쪽으로)
           const half = Math.min(width / 2 - 6, Math.max(60, say.offsetWidth / 2 + 6))
           say.style.left = `${Math.min(width - half, Math.max(half, s.x))}px`
@@ -2802,6 +2939,8 @@ function createWorld(
       rebuildAvatar(me)
       rerender()
     },
+    povInfo,
+    skipPov: () => endPov(),
     overlayList: () =>
       [...actors.values()].map((a) => ({ id: a.id, name: a.info.name, badge: a.info.badge, say: a.say })),
     destroy() {
@@ -2834,8 +2973,6 @@ function createWorld(
       shops3d.clear()
       brew?.cup.dispose()
       for (const c of leftCups) c.cup.dispose()
-      stream.geometry.dispose()
-      streamMat.dispose()
       for (const m of dropMeshes.values()) disposeTree(m)
       ring.geometry.dispose()
       ringMat.dispose()

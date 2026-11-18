@@ -5,6 +5,7 @@
 import * as THREE from 'three'
 import { CAFE_BAR_X, CAFE_BAR_Z, CAFE_CHAIR_DZ, CAFE_COUNTER, CAFE_SHOP, CAFE_TABLES } from '../../lib/shop/cafe'
 import { bakeStatic, box, canvasTexture, cone, cyl, mat, part, roundBox, sphere, torus } from '../kit'
+import { buildCoffeeBar } from '../coffeeBar3d'
 import { FONT, type FrontStyle, type ShopArt, shopFront, shopKit, shopRoom } from './common'
 
 const DEF = CAFE_SHOP
@@ -200,36 +201,15 @@ function interior() {
     hit('cafe/dessert', cx, cz, x1 - x0, 1.4, 1.0)
   }
 
-  // ─── 뒷선반 (북쪽 벽): 커피 머신 · 그라인더 · 컵 선반 ───
+  // ─── 뒷선반 (북쪽 벽): 커피 바(머신 · 그라인더 · 피처 · 얼음통 · 시럽) · 컵 선반 ───
   {
     const zc = -D + 0.3
     g.add(part(roundBox(4.1, 0.95, 0.55, 0.03), mat(WOOD_DARK, { rough: 0.6 }), [2.65, 0.475, zc]))
     g.add(part(roundBox(4.15, 0.05, 0.6, 0.02), mat(WOOD_LIGHT), [2.65, 0.97, zc]))
-    // 커피 머신 (은색 몸통 · 추출구 둘 · 빨간 불)
-    const mx = 4.0
-    const steel = mat('#cfd3d8', { metal: 0.6, rough: 0.3 })
-    // 몸통을 다리 위로 올려 추출구 아래에 컵이 들어갈 자리를 둔다 (바리스타가 진짜로 커피를 내린다)
-    g.add(part(roundBox(0.8, 0.46, 0.45, 0.05), steel, [mx, 1.5, zc]))
-    g.add(part(box(0.82, 0.06, 0.47), mat('#7a4a2e'), [mx, 1.76, zc]))
-    for (const dx of [-0.36, 0.36]) g.add(small(box(0.06, 0.28, 0.4), steel, [mx + dx, 1.13, zc]))
-    // 물받이 판
-    g.add(part(box(0.66, 0.03, 0.36), mat('#3b3646', { metal: 0.5, rough: 0.4 }), [mx, 1.01, zc + 0.04]))
-    for (const dx of [-0.2, 0.2]) {
-      g.add(small(cyl(0.05, 0.04, 0.08, 10), mat('#3b3646', { metal: 0.4 }), [mx + dx, 1.24, zc + 0.12]))
-      g.add(small(cyl(0.035, 0.03, 0.04, 10), mat('#ffffff'), [mx + dx, 1.19, zc + 0.12]))
-    }
-    g.add(small(sphere(0.025, 8, 6), glow('#ff3b30', 1.2), [mx + 0.3, 1.62, zc + 0.23]))
-    g.add(small(cyl(0.012, 0.012, 0.3, 6), steel, [mx - 0.38, 1.32, zc + 0.22], { rot: [0.3, 0, 0] }))
-    // 그라인더
-    g.add(part(roundBox(0.22, 0.32, 0.22, 0.03), mat('#3b3646'), [4.6, 1.16, zc]))
-    g.add(small(cone(0.1, 0.22, 10), mat('#cfeef8', { opacity: 0.6 }), [4.6, 1.42, zc], { rot: [Math.PI, 0, 0] }))
-    g.add(small(sphere(0.06, 8, 6), mat('#5a3420'), [4.6, 1.38, zc], { scale: [1, 0.6, 1] }))
-    // 우유 통 · 시럽 병
-    g.add(small(cyl(0.07, 0.07, 0.24, 10), mat('#ffffff'), [1.2, 1.12, zc]))
-    for (let i = 0; i < 3; i++) g.add(small(cyl(0.04, 0.04, 0.22, 8), mat(['#c4572a', '#ffd94a', '#ff8fb8'][i], { opacity: 0.85 }), [1.55 + i * 0.12, 1.1, zc - 0.05]))
     // 컵 선반 (벽에)
-    g.add(part(box(2.2, 0.04, 0.26), mat(WOOD), [2.65, 1.62, -D + 0.14], { shadow: false }))
-    for (let i = 0; i < 6; i++) mug(g, 1.75 + i * 0.36, 1.64, -D + 0.16, ['#ffffff', '#ffd9a0', '#c98f5a'][i % 3])
+    // 커피 머신과 겹치지 않게 서쪽 절반에만
+    g.add(part(box(2.0, 0.04, 0.26), mat(WOOD), [1.6, 1.72, -D + 0.14], { shadow: false }))
+    for (let i = 0; i < 6; i++) mug(g, 0.8 + i * 0.32, 1.74, -D + 0.16, ['#ffffff', '#ffd9a0', '#c98f5a'][i % 3])
   }
 
   // ─── 테이블 넷 · 의자 여덟 (마주 보고 앉는다) ───
@@ -281,6 +261,10 @@ function interior() {
   g.add(part(sphere(0.38, 12, 10), mat('#4fae5e', { rough: 0.9 }), [4.4, 0.8, 2.9], { scale: [1, 1.2, 1] }))
   g.add(part(sphere(0.25, 10, 8), mat('#59c26b', { rough: 0.9 }), [4.3, 1.2, 2.85]))
 
+  // 커피 바: 바리스타가 음료를 만들 때 도구가 움직인다 (움직이는 건 이름이 있어 합치기에서 빠진다)
+  const bar = buildCoffeeBar(owned)
+  g.add(bar.group)
+
   bakeStatic(g)
 
   // ─── 펜던트 등 (테이블마다, 살랑 흔들린다) ───
@@ -309,28 +293,11 @@ function interior() {
     pendants.push(p)
   }
 
-  // ─── 커피 머신 김 (모락모락) ───
-  const puffs: { m: THREE.Mesh; mat: THREE.MeshStandardMaterial }[] = []
-  for (let i = 0; i < 3; i++) {
-    const pm = new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: 0.5, roughness: 1, depthWrite: false })
-    owned.push(pm)
-    const m = small(sphere(0.07, 10, 8), pm, [0, 0, 0])
-    m.name = 'steam'
-    g.add(m)
-    puffs.push({ m, mat: pm })
-  }
-  const steamAt = { x: 4.0 - 0.38, y: 1.5, z: -D + 0.52 }
-
   return {
     group: g,
+    bar,
     tick(t: number) {
       pendants.forEach((p, i) => (p.rotation.z = Math.sin(t * 0.9 + i * 1.3) * 0.025))
-      puffs.forEach(({ m, mat: pm }, i) => {
-        const k = (t * 0.45 + i / puffs.length) % 1
-        m.position.set(steamAt.x + Math.sin(t * 2 + i * 2) * 0.04, steamAt.y + k * 0.6, steamAt.z)
-        m.scale.setScalar(0.6 + k * 1.2)
-        pm.opacity = 0.55 * (1 - k)
-      })
     },
     dispose: () => owned.forEach((o) => o.dispose()),
   }
