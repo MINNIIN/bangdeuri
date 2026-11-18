@@ -56,4 +56,32 @@ describe('카페 음료 만들기 순서', () => {
           expect(st.win![0]).toBeLessThan(st.win![1])
         }
   })
+
+  it('아이스 커피는 샷잔에 뽑아 얼음 컵에 붓는다 (컵은 추출구 아래로 안 간다)', () => {
+    for (const id of ['ice_americano', 'ice_latte']) {
+      const steps = brewSteps(drinkOf(id)!)
+      const at = steps.map((s) => s.at)
+      expect(at.indexOf('pour')).toBeGreaterThan(at.indexOf('ice'))
+      expect(at.indexOf('ice')).toBeGreaterThan(at.indexOf('machine'))
+      expect(steps.every((s) => s.cup.place !== 'spout')).toBe(true)
+    }
+    // 따뜻한 커피는 컵에 바로 내린다
+    expect(brewSteps(drinkOf('latte')!).some((s) => s.cup.place === 'spout')).toBe(true)
+    expect(brewSteps(drinkOf('latte')!).some((s) => s.at === 'pour')).toBe(false)
+  })
+
+  it('아이스는 다 채운 뒤에야 뚜껑을 닫고, 따뜻한 음료(머그)는 뚜껑이 없다', () => {
+    for (const d of DRINKS) {
+      const steps = brewSteps(d)
+      const lidAt = steps.findIndex((s) => s.cup.lid)
+      if (!d.iced) {
+        expect(lidAt).toBe(-1)
+        continue
+      }
+      expect(lidAt).toBeGreaterThan(0)
+      // 뚜껑 뒤로는 더 채우지 않는다 (픽업만 남는다)
+      expect(steps.slice(lidAt + 1).every((s) => s.cup.fill === undefined)).toBe(true)
+      expect(steps.slice(lidAt + 1).map((s) => s.at)).toEqual(['pickup'])
+    }
+  })
 })

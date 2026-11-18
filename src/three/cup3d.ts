@@ -14,6 +14,8 @@ export interface CupLook {
   syrupColor: string
   ice: boolean
   top?: 'art' | 'cream' | 'foam'
+  /** 아이스 컵 뚜껑 · 빨대 (다 만든 뒤에만) */
+  lid?: boolean
 }
 
 export interface Cup3D {
@@ -104,28 +106,43 @@ export function buildCup(iced: boolean): Cup3D {
   }
   g.add(ice)
 
+  // 뚜껑 · 빨대: 다 채우고 마지막에 닫는다
+  const lid = new THREE.Group()
+  lid.visible = false
+  g.add(lid)
   if (iced) {
-    // 투명 플라스틱 컵 · 뚜껑 · 빨대
+    // 투명 플라스틱 컵 (안쪽 벽도 보이게) · 테두리 · 뚜껑 · 빨대
     const cupMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.05, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
     owned.push(cupMat)
-    const shell = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, H, 24, 1, true), cupMat)
+    const shell = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, H, 32, 1, true), cupMat)
     owned.push(shell.geometry)
     shell.position.y = H / 2
     shell.renderOrder = 2
     g.add(shell)
-    g.add(part(cyl(rBot, rBot, 0.006, 20), cupMat, [0, 0.003, 0], { shadow: false }))
-    g.add(part(cyl(rTop + 0.006, rTop + 0.006, 0.012, 24), mat('#ffffff', { opacity: 0.55 }), [0, H + 0.004, 0], { shadow: false }))
-    g.add(part(cyl(0.008, 0.008, 0.2, 8), mat('#ff5fa2'), [0.018, H + 0.02, 0], { rot: [0, 0, -0.18] }))
+    g.add(part(cyl(rBot, rBot, 0.006, 24), cupMat, [0, 0.003, 0], { shadow: false }))
+    g.add(part(torus(rTop, 0.0025), mat('#ffffff', { opacity: 0.6, rough: 0.1 }), [0, H, 0], { rot: [Math.PI / 2, 0, 0], shadow: false }))
+    // 뚜껑: 납작한 돔 + 테
+    const lidMat = mat('#ffffff', { opacity: 0.55, rough: 0.15 })
+    lid.add(part(cyl(rTop + 0.005, rTop + 0.005, 0.01, 32), lidMat, [0, H + 0.003, 0], { shadow: false }))
+    lid.add(part(sphere(rTop * 0.92, 24, 8), lidMat, [0, H + 0.008, 0], { scale: [1, 0.22, 1], shadow: false }))
+    lid.add(part(cyl(0.008, 0.008, 0.2, 12), mat('#ff5fa2', { rough: 0.4 }), [0.018, H + 0.035, 0], { rot: [0, 0, -0.18], shadow: false }))
   } else {
-    // 하얀 머그 + 손잡이 + 받침 줄
+    // 하얀 머그 (안쪽 벽 · 두께 있는 입술) + 손잡이 + 받침 줄
     const mug = mat('#fffaf2', { rough: 0.35 })
-    const shell = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, H, 24, 1, true), mug)
+    const inner = new THREE.MeshStandardMaterial({ color: '#f4ede2', roughness: 0.4, side: THREE.BackSide })
+    owned.push(inner)
+    const shell = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, H, 32, 1, true), mug)
     owned.push(shell.geometry)
     shell.position.y = H / 2
     g.add(shell)
-    g.add(part(cyl(rBot, rBot, 0.01, 20), mug, [0, 0.005, 0]))
+    const innerWall = new THREE.Mesh(new THREE.CylinderGeometry(rTop - 0.004, rBot - 0.004, H - 0.006, 32, 1, true), inner)
+    owned.push(innerWall.geometry)
+    innerWall.position.y = H / 2 + 0.003
+    g.add(innerWall)
+    g.add(part(torus(rTop - 0.002, 0.0035), mug, [0, H, 0], { rot: [Math.PI / 2, 0, 0], shadow: false }))
+    g.add(part(cyl(rBot, rBot, 0.01, 24), mug, [0, 0.005, 0]))
     g.add(part(torus(0.04, 0.011), mug, [rTop + 0.02, H * 0.55, 0], { rot: [0, 0, Math.PI / 2], scale: [1, 1.15, 1] }))
-    g.add(part(cyl(rTop * 1.004, rTop * 1.004, 0.02, 24), mat('#c98f5a', { rough: 0.5 }), [0, H * 0.78, 0], { shadow: false }))
+    g.add(part(cyl(rTop * 1.004, rTop * 1.004, 0.02, 32), mat('#c98f5a', { rough: 0.5 }), [0, H * 0.78, 0], { shadow: false }))
   }
 
   const set = (l: CupLook) => {
@@ -147,10 +164,15 @@ export function buildCup(iced: boolean): Cup3D {
     cream.visible = l.top === 'cream' && f > 0.5
     ice.visible = l.ice
     ice.position.y = Math.max(0.03, y - 0.02)
+    lid.visible = !!l.lid
   }
   set({ fill: 0, color: '#5a3320', syrup: 0, syrupColor: '#ff4f6d', ice: false })
   g.traverse((n) => {
-    if ((n as THREE.Mesh).isMesh) n.castShadow = false
+    // 그림자는 주지도 받지도 않는다 (작은 컵에 그림자 계단 무늬가 생긴다)
+    if ((n as THREE.Mesh).isMesh) {
+      n.castShadow = false
+      n.receiveShadow = false
+    }
   })
   return {
     group: g,

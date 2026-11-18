@@ -242,6 +242,8 @@ const CAFE_STATION: Record<Station, { x: number; z: number; yaw: number }> = {
   steam: { x: 3.22, z: -2.55, yaw: Math.PI },
   syrup: { x: 1.75, z: -2.55, yaw: Math.PI },
   ice: { x: 1.12, z: -2.55, yaw: Math.PI },
+  // 샷 붓기: 얼음 컵 앞에 서서 (샷잔이 머신에서 날아온다)
+  pour: { x: 1.3, z: -2.55, yaw: Math.PI },
   pickup: { x: 2.3, z: -2.45, yaw: 0 },
 }
 /** 바리스타 걷는 빠르기 (m/s) */
@@ -1072,9 +1074,9 @@ function createWorld(
     const b = barista()
     if (b && brew) speak(b, `${drink.name} 주문 받았어요~ 잠시만요!`)
   }
-  /** 그 단계에서 컵이 놓이는 자리 (원두 갈 때는 컵 더미 옆에서 기다린다) */
+  /** 그 단계에서 컵이 놓이는 자리 (원두 갈 때 · 샷잔에 추출할 때는 컵 더미 옆에서 기다린다) */
   const cupSpot = (st: BrewStep): [number, number, number] =>
-    st.at === 'grinder' ? CUP_START : st.cup.place === 'spout' ? BAR_SPOT.machine.cup : st.at === 'syrup' ? [BAR_SPOT.syrup.cup[0] + (pumpOf(brew?.drink ?? null) - 1) * 0.2, BAR_SPOT.syrup.cup[1], BAR_SPOT.syrup.cup[2]] : BAR_SPOT[st.at].cup
+    st.at === 'grinder' || (st.at === 'machine' && st.cup.place === 'shelf') ? CUP_START : st.cup.place === 'spout' ? BAR_SPOT.machine.cup : st.at === 'syrup' ? [BAR_SPOT.syrup.cup[0] + (pumpOf(brew?.drink ?? null) - 1) * 0.2, BAR_SPOT.syrup.cup[1], BAR_SPOT.syrup.cup[2]] : BAR_SPOT[st.at].cup
   const span = (k: number, a: number, b: number) => {
     const x = Math.max(0, Math.min(1, (k - a) / (b - a)))
     return x * x * (3 - 2 * x)
@@ -1118,7 +1120,7 @@ function createWorld(
     }
     rerender()
   }
-  const STEP_LABEL: Record<Station, string> = { grinder: '원두', machine: '추출', steam: '스팀', syrup: '시럽', ice: '얼음', pickup: '완성' }
+  const STEP_LABEL: Record<Station, string> = { grinder: '원두', machine: '추출', steam: '스팀', syrup: '시럽', ice: '얼음', pour: '샷', pickup: '완성' }
   const povInfo = () => {
     if (!pov || !brew) return pov ? { drink: '', steps: [] as string[], i: 0, caption: barista()?.say?.text ?? '' } : null
     return {
@@ -1230,6 +1232,7 @@ function createWorld(
       if (c.syrup !== undefined) L.syrup = job.from.syrup + (c.syrup - job.from.syrup) * kk
       if (c.ice && k > 0.3) L.ice = true
       if (c.top && (step.win ? k > step.win[1] - 0.04 : k > 0.75)) L.top = c.top
+      if (c.lid && k > 0.35) L.lid = true
       job.cup.set(L)
       // 픽업: 컵을 들어 손님 앞 계산대에 내려놓는다
       if (step.at === 'pickup') {
@@ -1245,6 +1248,8 @@ function createWorld(
       if (step.at === 'steam' && k > 0.74) sound(job, 'pour', 'pour')
       if (step.at === 'ice') for (let n = 0; n < 5; n++) if (k > 0.15 + n * 0.07) sound(job, `plop${n}`, 'plop')
       if (step.at === 'ice' && k > 0.58) sound(job, 'pour', 'pour')
+      if (step.at === 'pour' && k > 0.35) sound(job, 'pour', 'pour')
+      if (step.cup.lid && k > 0.35) sound(job, 'lid', 'pump')
       const pumping = step.at === 'syrup' && step.cup.syrup !== undefined
       if (pumping && k > 0.2) sound(job, 'pump1', 'pump')
       if (pumping && k > 0.5) sound(job, 'pump2', 'pump')
