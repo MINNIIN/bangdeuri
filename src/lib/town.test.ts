@@ -86,6 +86,26 @@ describe('동네 배치', () => {
     expect(map.blocked({ x: 0, z: -50 })).toBe(true)
   })
 
+  it('이웃집 사이 샛길: 앞 인도에서 집 옆을 지나 뒷골목까지 곧장 간다 (큰 샛길로 돌지 않는다)', () => {
+    const map = buildTown(Array.from({ length: 17 }, (_, i) => `r${i}`))
+    // 줄0 가운데 집(칸0)과 동쪽 옆집(칸1) 사이
+    const gap = colX(0) + 6.5
+    for (const z of [-6, -10, -13, -16.5]) expect(map.blocked({ x: gap, z })).toBe(false)
+    const from = { x: gap, z: -4.3 }
+    const to = { x: gap, z: -19 }
+    const path = findTownPath(map, from, to)
+    let len = 0
+    let cur = from
+    for (const p of path) {
+      len += Math.hypot(p.x - cur.x, p.z - cur.z)
+      cur = p
+    }
+    expect(path.length).toBeGreaterThan(0)
+    expect(len).toBeLessThan(17)
+    // 집 건물 · 울타리 안 마당은 여전히 막혀 있다 (마당은 대문으로)
+    expect(map.blocked({ x: colX(0), z: -13 })).toBe(true)
+  })
+
   it('가게 건물은 문으로만 들어간다', () => {
     const map = buildTown(['host'])
     for (const id of SHOP_IDS) {

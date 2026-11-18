@@ -46,6 +46,8 @@ export const MAX_HOUSES = 17
 export const LOT_W = 13
 export const HOUSE_W = 7.2
 export const HOUSE_D = 6
+/** 마당 옆 울타리: 칸 가운데에서 이만큼 (칸 끝 사이 2.6m는 이웃집 사이 샛길) */
+export const YARD_SIDE = 5.2
 /** 집 앞면(문 있는 쪽) z */
 export const HOUSE_FRONT_Z = -10
 export const HOUSE_BACK_Z = HOUSE_FRONT_Z - HOUSE_D
@@ -253,7 +255,7 @@ export const mailboxSpot = (lot: Slot): Vec2 => ({ x: lot.x + GATE_HALF + 0.9, z
 
 /** 마당 사각형 (울타리 안쪽) */
 export function yardRect(lot: Slot) {
-  return { x0: lot.x - LOT_W / 2 + 0.7, x1: lot.x + LOT_W / 2 - 0.7, z0: HOUSE_FRONT_Z + lot.zOff + 0.5, z1: FENCE_Z + lot.zOff - 0.4 }
+  return { x0: lot.x - YARD_SIDE + 0.4, x1: lot.x + YARD_SIDE - 0.4, z0: HOUSE_FRONT_Z + lot.zOff + 0.5, z1: FENCE_Z + lot.zOff - 0.4 }
 }
 
 /** 마당 좌표(0~1) ↔ 골목 좌표. u: 서→동, v: 집→울타리 */
@@ -319,7 +321,8 @@ export function townProps(lots: Lot[]): Prop[] {
   out.push({ kind: 'signal', x: -CROSSWALK_HALF - 0.35, z: ROAD_S + 0.35, r: 0.2, rot: Math.PI })
   // 집 사이 나무, 마당 꽃
   for (const lot of lots) {
-    out.push({ kind: 'tree', x: lot.x + LOT_W / 2, z: HOUSE_BACK_Z + lot.zOff + 1.5, r: 0.7 })
+    // 집 옆 뒤쪽 (이웃집 사이 샛길은 비워 둔다)
+    out.push({ kind: 'tree', x: lot.x + HOUSE_W / 2 + 0.85, z: HOUSE_BACK_Z + lot.zOff + 1.2, r: 0.55 })
     const r = yardRect(lot)
     out.push({ kind: 'bush', x: r.x0 + 0.6, z: r.z1 - 0.5, r: 0.5 })
     out.push({ kind: 'flower', x: r.x1 - 1.2, z: r.z0 + 0.8, r: 0 })
@@ -367,7 +370,8 @@ export function townProps(lots: Lot[]): Prop[] {
   }
   // 뒷골목 가로등: 골목 북쪽 가장자리 (칸 사이 경계)
   for (let r = 1; r < ROWS; r++)
-    for (let c = -4; c <= 3; c += 2) out.push({ kind: 'lamp', x: colX(c) + LOT_W / 2, z: FENCE_Z + rowOff(r) - 0.3, r: 0.25 })
+    // 샛길 어귀를 막지 않게 칸 끝에서 조금 비켜, 골목 북쪽 가장자리에
+    for (let c = -4; c <= 3; c += 2) out.push({ kind: 'lamp', x: colX(c) + LOT_W / 2 - 2.2, z: FENCE_Z + rowOff(r) - 0.3, r: 0.25 })
   out.push(...placeProps(zn))
   return out
 }
@@ -511,8 +515,8 @@ type Seg = { a: Vec2; b: Vec2 }
 
 /** 울타리 선분들 (대문 자리는 비운다) */
 export function fenceSegments(lot: Slot): Seg[] {
-  const l = lot.x - LOT_W / 2 + 0.3
-  const r = lot.x + LOT_W / 2 - 0.3
+  const l = lot.x - YARD_SIDE
+  const r = lot.x + YARD_SIDE
   const f = FENCE_Z + lot.zOff
   const h = HOUSE_FRONT_Z + lot.zOff
   return [
@@ -520,6 +524,9 @@ export function fenceSegments(lot: Slot): Seg[] {
     { a: { x: lot.x + GATE_HALF, z: f }, b: { x: r, z: f } },
     { a: { x: l, z: f }, b: { x: l, z: h } },
     { a: { x: r, z: f }, b: { x: r, z: h } },
+    // 집 앞 모서리까지 닫는다 (마당은 대문으로만)
+    { a: { x: l, z: h }, b: { x: lot.x - HOUSE_W / 2, z: h } },
+    { a: { x: r, z: h }, b: { x: lot.x + HOUSE_W / 2, z: h } },
   ]
 }
 
@@ -560,12 +567,8 @@ export function buildTown(roomIds: string[]): TownMap {
   const boxes = props.filter((p) => p.box)
   const zones = townZones(lots)
   const shops = SHOP_IDS.map(shopRect)
-  /** 칸마다 막힌 띠 (집 · 가게 건물 · 빈 집터 뒤쪽): 띠 앞 z부터 칸 뒤 끝까지 막힌다 */
-  const houseAt = new Set(lots.map((l) => `${l.row}:${l.col}`))
-  const bands = ALL_SLOTS.map((s) => {
-    const shop = shopAtSlot(s)
-    return { x: s.x, back: HOUSE_BACK_Z + s.zOff - 1, front: shop ? shopRect(shop).z1 : HOUSE_FRONT_Z + s.zOff, house: houseAt.has(`${s.row}:${s.col}`) }
-  })
+  /** 집 건물 자리 (집 옆 · 뒤 · 이웃집 사이 샛길은 걸어 다닌다) */
+  const houses = lots.map((l) => ({ x: l.x, z0: HOUSE_BACK_Z + l.zOff - PAD, z1: HOUSE_FRONT_Z + l.zOff + PAD }))
   const gridBack = rowOff(ROWS - 1) + HOUSE_BACK_Z - 1
   const blocked = (p: Vec2) => {
     if (p.x < bounds.minX + 0.5 || p.x > bounds.maxX - 0.5 || p.z < bounds.minZ + 0.5 || p.z > bounds.maxZ - 0.5) return true
@@ -577,12 +580,8 @@ export function buildTown(roomIds: string[]): TownMap {
     // 바다: 물가 얕은 데까지만 (방파제 위는 끝까지)
     if (p.x > zones.wet && !onPier(zones, p)) return true
     if (boxes.some((b) => inBox(p, b.x, b.z, b.box![0], b.box![1], b.rot ?? 0, PAD))) return true
-    // 칸: 집은 앞에 조금 더 넉넉히, 집·가게 사이 뒷마당과 집 뒤는 다음 골목까지 막는다
-    for (const b of bands) {
-      if (p.z < b.back || Math.abs(p.x - b.x) >= LOT_W / 2) continue
-      if (p.z < b.front) return true
-      if (b.house && Math.abs(p.x - b.x) < HOUSE_W / 2 + PAD && p.z < b.front + PAD) return true
-    }
+    // 집 건물
+    for (const h of houses) if (Math.abs(p.x - h.x) < HOUSE_W / 2 + PAD && p.z > h.z0 && p.z < h.z1) return true
     if (fences.some((s) => segDist(p, s) < PAD)) return true
     for (const lot of lots) {
       const m = mailboxSpot(lot)

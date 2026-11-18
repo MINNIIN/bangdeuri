@@ -15,6 +15,8 @@ import {
   HOUSE_D,
   HOUSE_FRONT_Z,
   HOUSE_W,
+  YARD_SIDE,
+  colX,
   LOT_W,
   mailboxSpot,
   PARK_S,
@@ -630,6 +632,14 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     const z0 = FENCE_Z + rowOff(r)
     paths.push([zones.hw, z0, zones.he, z0 + ALLEY_W])
   }
+  // 이웃집 사이 샛길: 앞 인도(또는 골목)에서 집 옆을 지나 뒷골목까지 (맨 뒷줄은 뒤가 숲이라 없다)
+  for (let r = 0; r < ROWS - 1; r++)
+    for (let c = -4; c <= 3; c++) {
+      // 칸 -2|-1 · 1|2 사이는 큰 샛길이 이미 있다
+      if (c === -2 || c === 1) continue
+      const x = colX(c) + LOT_W / 2
+      paths.push([x - 0.9, FENCE_Z + rowOff(r + 1) + ALLEY_W, x + 0.9, FENCE_Z + rowOff(r)])
+    }
   const streetZ0 = FENCE_Z + rowOff(ROWS - 1)
   for (const x of [zones.hw + STREET_W / 2, ...STREET_X, zones.he - STREET_W / 2]) paths.push([x - STREET_W / 2, streetZ0, x + STREET_W / 2, SIDEWALK_N])
   for (const [x0, z0, x1, z1] of paths) {
@@ -735,7 +745,7 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     }
 
     // 마당: 잔디 조금 밝게 + 디딤돌 길
-    const yard = new THREE.Mesh(new THREE.PlaneGeometry(LOT_W - 1, FENCE - FRONT), mat('#b3e39c', { rough: 1 }))
+    const yard = new THREE.Mesh(new THREE.PlaneGeometry(YARD_SIDE * 2, FENCE - FRONT), mat('#b3e39c', { rough: 1 }))
     yard.rotation.x = -Math.PI / 2
     yard.position.set(hx, 0.003, (FRONT + FENCE) / 2)
     yard.receiveShadow = true
@@ -750,8 +760,8 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     // 울타리 (대문 자리는 비운다)
     const pickets = mat('#ffffff', { rough: 0.7 })
     const rails = mat('#f1ece4', { rough: 0.7 })
-    const l = hx - LOT_W / 2 + 0.3
-    const r = hx + LOT_W / 2 - 0.3
+    const l = hx - YARD_SIDE
+    const r = hx + YARD_SIDE
     const fenceRun = (x0: number, z0: number, x1: number, z1: number) => {
       const len = Math.hypot(x1 - x0, z1 - z0)
       const n = Math.max(2, Math.round(len / 0.32))
@@ -771,6 +781,8 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     fenceRun(hx + GATE_HALF, FENCE, r, FENCE)
     fenceRun(l, FENCE, l, FRONT)
     fenceRun(r, FENCE, r, FRONT)
+    fenceRun(l, FRONT, hx - HOUSE_W / 2 - 0.05, FRONT)
+    fenceRun(hx + HOUSE_W / 2 + 0.05, FRONT, r, FRONT)
     // 대문 기둥
     for (const x of [hx - GATE_HALF, hx + GATE_HALF]) {
       g.add(part(roundBox(0.24, 1.0, 0.24, 0.05), mat(style.wall), [x, 0.5, FENCE]))
@@ -797,13 +809,13 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   for (const s of emptySlots(map.lots)) {
     const f = FENCE_Z + s.zOff
     const front = HOUSE_FRONT_Z + s.zOff
-    const lawn = new THREE.Mesh(new THREE.PlaneGeometry(LOT_W - 1.4, f - front + HOUSE_D - 0.6), mat('#c4eaa8', { rough: 1 }))
+    const lawn = new THREE.Mesh(new THREE.PlaneGeometry(YARD_SIDE * 2 - 0.4, f - front + HOUSE_D - 0.6), mat('#c4eaa8', { rough: 1 }))
     lawn.rotation.x = -Math.PI / 2
     lawn.position.set(s.x, 0.003, (f + front - HOUSE_D + 0.6) / 2)
     lawn.receiveShadow = true
     lawn.userData.ground = true
     g.add(lawn)
-    for (const sx of [-1, 1]) g.add(part(box(0.18, 0.16, f - front + HOUSE_D - 0.6), mat('#d8d2c4'), [s.x + sx * (LOT_W / 2 - 0.7), 0.08, (f + front - HOUSE_D + 0.6) / 2]))
+    for (const sx of [-1, 1]) g.add(part(box(0.18, 0.16, f - front + HOUSE_D - 0.6), mat('#d8d2c4'), [s.x + sx * (YARD_SIDE - 0.2), 0.08, (f + front - HOUSE_D + 0.6) / 2]))
   }
 
   // ─── 가게 건물 (문을 누르면 들어간다) ───
