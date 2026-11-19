@@ -30,6 +30,7 @@ import {
   obstacleBlocker,
   parkSeats,
   roomOfArea,
+  townVendors,
   safeVec,
   uvToHouse,
   yardToTown,
@@ -371,5 +372,28 @@ describe('가게 안 (가게 목록 전체)', () => {
     expect(isArea('pcbang')).toBe(false)
     expect(shopOfArea('town')).toBeNull()
     expect(shopOfKey('park/swing0:1')).toBeNull()
+  })
+})
+
+describe('노점 사장님', () => {
+  const props = buildTown([]).props
+  const vendors = townVendors(props)
+  it('붕어빵 사장님은 천막에 가리지 않게 수레 옆에 서서 손님 자리(북)를 본다', () => {
+    const v = vendors.find((x) => x.kind === 'bungeo')!
+    const cart = props.find((p) => p.kind === 'bungeo')!
+    const guest = parkSeats(props).find((s) => s.item === 'o_bungeo')!
+    expect(Math.abs(v.x - cart.x)).toBeGreaterThan(0.9)
+    expect(guest.z).toBeLessThanOrEqual(cart.z)
+    const toGuest = Math.atan2(guest.x - v.x, guest.z - 0.9 - v.z)
+    expect(Math.cos(v.yaw - toGuest)).toBeGreaterThan(0.9)
+  })
+  it('포차 이모는 의자 반대편 조리대 안쪽(천막 안)에 서서 의자 쪽을 본다', () => {
+    const v = vendors.find((x) => x.kind === 'pocha')!
+    const tent = props.find((p) => p.kind === 'pocha')!
+    const seats = parkSeats(props).filter((s) => s.item === 'o_pocha')
+    expect(Math.hypot(v.x - tent.x, v.z - tent.z)).toBeLessThan(1.2)
+    for (const s of seats) expect(Math.sign(s.z - tent.z)).toBe(-Math.sign(v.z - tent.z))
+    const toSeat = Math.atan2(seats[1].x - v.x, seats[1].z - v.z)
+    expect(Math.cos(v.yaw - toSeat)).toBeGreaterThan(0.9)
   })
 })

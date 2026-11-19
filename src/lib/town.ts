@@ -492,6 +492,49 @@ const SEATS: Partial<Record<Prop['kind'], { item: string; at: [number, number, n
   fishing: { item: 'b_fish', at: [[0, 0, 0]] },
 }
 
+// ─── 노점 사장님: 붕어빵 수레 뒤 · 포장마차 조리대 안쪽에 서서 손님 쪽을 본다 ───
+
+export type VendorKind = 'bungeo' | 'pocha'
+export interface Vendor {
+  id: string
+  kind: VendorKind
+  name: string
+  /** 손님이 이걸 쓰면 사장님이 대답한다 */
+  item: string
+  reply: string[]
+  x: number
+  z: number
+  yaw: number
+}
+/** [기구 기준 x, z, 보는 쪽] · 붕어빵은 천막에 가리지 않게 수레 옆에 서서 북쪽 손님을 비스듬히 보고, 포장마차는 조리대 안쪽에서 의자(-z) 쪽을 본다 */
+const VENDOR_DEFS: Record<VendorKind, { name: string; item: string; reply: string[]; at: [number, number, number] }> = {
+  bungeo: {
+    name: '붕어빵 사장님',
+    item: 'o_bungeo',
+    reply: ['어서 와요~ 팥붕 슈붕 다 있어요!', '세 마리 천 원! 따끈할 때 먹어요', '하나 더 넣어 줄게~'],
+    at: [1.1, 0.3, Math.atan2(-1.1, -1.3)],
+  },
+  pocha: {
+    name: '포차 이모',
+    item: 'o_pocha',
+    reply: ['떡볶이 1인분 나왔어요~', '어묵 국물 더 줄까?', '오늘도 고생 많았어요'],
+    at: [-0.3, 0.92, Math.PI],
+  },
+}
+
+export function townVendors(props: Prop[]): Vendor[] {
+  const out: Vendor[] = []
+  for (const kind of Object.keys(VENDOR_DEFS) as VendorKind[]) {
+    const p = props.find((q) => q.kind === kind)
+    if (!p) continue
+    const d = VENDOR_DEFS[kind]
+    const rot = p.rot ?? 0
+    const at = parkLocal({ ox: p.x, oz: p.z, rot }, d.at[0], d.at[1])
+    out.push({ id: `npc:${kind}`, kind, name: d.name, item: d.item, reply: d.reply, x: at.x, z: at.z, yaw: rot + d.at[2] })
+  }
+  return out
+}
+
 export function parkSeats(props: Prop[]): ParkSeat[] {
   const seen = new Map<string, number>()
   const out: ParkSeat[] = []

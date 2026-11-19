@@ -51,6 +51,7 @@ import {
   roomOfArea,
   TOWN,
   type TownMap,
+  townVendors,
   uvToHouse,
   type Vec2,
   yardToTown,
@@ -63,6 +64,7 @@ import { buildHouse3D, fixtureFacing, fixtureWorld, type House3D } from './house
 import { disposeTree, mat, part, torus } from './kit'
 import { buildTown3D, HIT_LAYER, SEESAW_REST, type Town3D } from './town3d'
 import { buildShop3D, type Shop3D, shopNpcLook } from './shops3d'
+import { VENDOR_LOOKS } from './places3d'
 import { BUS_STOP, type BusNow, busHits } from '../lib/townLife'
 import { barSound, busOuch } from '../lib/sfx'
 import { brewSteps, type BrewStep, type Drink, drinkOf, SIPS, type Station } from '../lib/cafe'
@@ -668,6 +670,13 @@ function createWorld(
     const a = newActor(n.id, { look: { ...look }, name: n.name }, id, { x: n.spot.x, z: n.spot.z })
     a.yaw = n.spot.yaw
     actors.set(n.id, a)
+  }
+  // 동네 노점 사장님 (붕어빵 수레 · 포장마차): 수레 뒤에 서서 손님을 맞는다
+  const vendors = townVendors(map.props)
+  for (const v of vendors) {
+    const a = newActor(v.id, { look: { ...VENDOR_LOOKS[v.kind] }, name: v.name }, TOWN, { x: v.x, z: v.z })
+    a.yaw = v.yaw
+    actors.set(v.id, a)
   }
   const clerkTimer = window.setInterval(() => {
     const n = shopOfArea(me.area)?.npc
@@ -1644,6 +1653,12 @@ function createWorld(
       const clerk = actors.get(npc.id)
       const lines = npc.reply.lines
       if (clerk && clerk.area === a.area) window.setTimeout(() => speak(clerk, anyOf(lines)), 1100)
+    }
+    // 노점: 사장님이 대답한다 (포장마차는 문 연 밤에만)
+    const vendor = a.area === TOWN && !a.id.startsWith('npc:') ? vendors.find((v) => v.item === t.item) : undefined
+    if (vendor && !(t.item === 'o_pocha' && !night)) {
+      const boss = actors.get(vendor.id)
+      if (boss) window.setTimeout(() => speak(boss, anyOf(vendor.reply)), 1100)
     }
     // 망원경: 내 화면은 동네 전체가 보이게 멀리서 내려다본다
     if (t.item === 'm_scope' && a.id === 'me') {

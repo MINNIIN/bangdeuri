@@ -4,9 +4,10 @@
  * 원점은 바닥 가운데, 앞면은 +z (lib/town.ts 자리 정의와 같은 기준).
  */
 import * as THREE from 'three'
+import type { AvatarLook } from '../art/avatar'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { CVS_DOOR_X } from '../lib/cvs'
-import { groundY, HILL_H, PIER_Y, type Prop, SEA_Y, SIDEWALK_N, STORE_D, STORE_FRONT, STORE_W, type Zones } from '../lib/town'
+import { groundY, HILL_H, PIER_Y, type Prop, type VendorKind, SEA_Y, SIDEWALK_N, STORE_D, STORE_FRONT, STORE_W, type Zones } from '../lib/town'
 import { box, canvasTexture, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint, torus, fillFit } from './kit'
 
 /** 밤에만 빛나는 재질 (낮 세기 → 밤 세기) */
@@ -1300,3 +1301,9 @@ export function gulls(z: Zones, a: PlaceAnims) {
 
 /** 놓인 높이: 장소 소품은 그 자리 땅 높이에 선다 */
 export const propY = (z: Zones, p: Prop) => (p.kind === 'buoy' || p.kind === 'boat' ? 0 : groundY(z, p.x, p.z))
+
+/** 노점 사장님 미니미: 붕어빵 사장님(빨간 비니·앞치마 색) · 포차 이모(뽀글머리·주황 조끼) */
+export const VENDOR_LOOKS: Record<VendorKind, AvatarLook> = {
+  bungeo: { hair: 'short', hairColor: '#3a2a20', skin: '#ffd9c0', eyes: 'smile', top: 'hoodie', topColor: '#e8463c', bottom: 'pants', bottomColor: '#3b3646', hat: 'beanie', hatColor: '#c0392b' },
+  pocha: { hair: 'curly', hairColor: '#4a3328', skin: '#ffe0cc', eyes: 'smile', top: 'tee', topColor: '#ff8a3d', bottom: 'pants', bottomColor: '#2b2233', hat: 'none', hatColor: '#ff5fa2' },
+}
