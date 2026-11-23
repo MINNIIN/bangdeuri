@@ -26,23 +26,29 @@ const LEGS: Bone[] = ['leg-left', 'leg-right']
 
 /** 캐릭터별 팔레트 칸 → 부위 (Blender로 앞뒤를 찍어 보고 정했다) */
 const RULES: Record<HairId, Rule[]> = {
+  // 흰 재킷 · 보라 속티 · 주황 허리띠 · 어두운 바지 · 파란 장갑(→ 손)
   bob: [
     ['head', 2, 5, 'skin'],
     ['head', 3, 7, 'hair'],
-    ['body', 2, 1, 'skinShade'],
+    ['body', 2, 1, 'bottom'],
     ['body', 1, 1, 'skin'],
     ['body', 3, 15, 'top', ARMS],
+    ['body', 3, 5, 'topLight', ['torso']],
     ['body', 3, 7, 'bottom', LEGS],
   ],
+  // (원본) 초록 티 · 검은 조끼 · 살구색 반바지와 손목 밴드 · 허리띠
   short: [
     ['head', 2, 1, 'skin'],
     ['head', 3, 7, 'hair'],
+    // 몸통의 피부색 칸은 멜빵끈 → 반바지 색으로 (피부색이면 살색 멜빵처럼 보인다)
+    ['body', 2, 1, 'bottom', ['torso']],
     ['body', 2, 1, 'skin'],
-    ['body', 2, 5, 'skinLight'],
+    // 반바지와 손목 밴드는 원본에서도 같은 색
+    ['body', 2, 5, 'bottom'],
     ['body', 2, 9, 'top'],
     ['body', 3, 3, 'bottom', ['torso']],
-    // 허리띠 자리 (원본 검정 → 옆에서 보면 옆구리에 검은 덩어리)
-    ['body', 3, 7, 'bottom', ['torso']],
+    // 조끼는 윗옷과 같은 색 (진하게 칠하면 허리 뒤에 따로 붙은 덩어리처럼 보인다)
+    ['body', 3, 7, 'top', ['torso']],
   ],
   long: [
     ['head', 2, 3, 'hair'],
@@ -67,7 +73,8 @@ const RULES: Record<HairId, Rule[]> = {
     ['head', 3, 7, 'hair'],
     ['head', 2, 3, 'skin'],
     ['body', 2, 3, 'skin'],
-    ['body', 2, 1, 'skinShade'],
+    // 주황 허리 밴드
+    ['body', 2, 1, 'bottom'],
     ['body', 2, 2, 'skinShade'],
     ['body', 2, 9, 'top'],
     ['body', 1, 1, 'bottom'],
@@ -95,6 +102,8 @@ interface Template {
   hairTop: number
   /** 오른팔 뼈 기준 손 위치 (모델 단위) */
   hand: THREE.Vector3
+  /** 얼굴 판 (모델 단위 x·y 범위) · 피부 칸 안에서 판 위·아래 끝의 명암 위치 (0 위 ~ 1 아래) */
+  face: { x0: number; x1: number; y0: number; y1: number; top: number; bottom: number }
 }
 
 const templates = new Map<HairId, Template>()
@@ -118,7 +127,7 @@ const boneOf = (geo: THREE.BufferGeometry, skel: THREE.Skeleton, i: number) => {
 }
 
 /**
- * 원본 얼굴(눈·입·안경·눈화장)을 지운다 → 미니미 눈 설정대로 kenneyFace가 새로 그린다.
+ * 원본 얼굴(눈·입·안경·눈화장)을 지운다 → 미니미 눈 설정대로 faceMaterial이 얼굴 판에 새로 그린다.
  * 얼굴 조각 = 얼굴 앞면에 붙은 작은 덩어리 (같은 자리·같은 칸 꼭짓점끼리 이어 덩어리를 나눈다).
  * 머리카락·피부·귀는 꼭짓점이 40개 넘게 많아서 안 걸린다.
  */
@@ -165,6 +174,57 @@ function dropFace(geo: THREE.BufferGeometry, sw: number[], skull: THREE.Box3) {
   geo.setIndex(keep)
 }
 
+/**
+ * 얼굴 앞면 판(앞을 보는 피부 면, 꼭짓점 8개)을 두 번째 재질 묶음으로 떼고 UV를 판 전체 그림(faceMaterial)에 맞춘다.
+ * 눈·입이 얼굴 면 자체에 그려지니 따로 뜨지 않는다.
+ */
+function splitFace(geo: THREE.BufferGeometry, uv: THREE.BufferAttribute, skull: THREE.Box3, origV: number[]): Template['face'] | undefined {
+  const index = geo.index
+  if (!index) return undefined
+  const pos = geo.attributes.position
+  const nor = geo.attributes.normal
+  // 피부 꼭짓점 중 앞을 보는 가장 앞쪽 면
+  const isFront = (i: number) => nor.getZ(i) > 0.99 && Math.abs(pos.getZ(i) - skull.max.z) < 0.004
+  const verts = new Set<number>()
+  for (let i = 0; i < pos.count; i++) {
+    const inSkull = pos.getX(i) >= skull.min.x && pos.getX(i) <= skull.max.x && pos.getY(i) >= skull.min.y && pos.getY(i) <= skull.max.y
+    if (inSkull && isFront(i) && uv.getX(i) * TEX < ROLES.indexOf('skin') * CW + CW && uv.getX(i) * TEX >= ROLES.indexOf('skin') * CW && uv.getY(i) * TEX < CH) verts.add(i)
+  }
+  const rest: number[] = []
+  const front: number[] = []
+  for (let t = 0; t < index.count; t += 3) {
+    const tri = [index.getX(t), index.getX(t + 1), index.getX(t + 2)]
+    ;(tri.every((i) => verts.has(i)) ? front : rest).push(...tri)
+  }
+  if (!front.length) return undefined
+  let x0 = Infinity
+  let x1 = -Infinity
+  let y0 = Infinity
+  let y1 = -Infinity
+  let top = 0
+  let bottom = 1
+  for (const i of front) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    x0 = Math.min(x0, x)
+    x1 = Math.max(x1, x)
+    if (y < y0) {
+      y0 = y
+      bottom = origV[i]
+    }
+    if (y > y1) {
+      y1 = y
+      top = origV[i]
+    }
+  }
+  for (const i of verts) uv.setXY(i, (pos.getX(i) - x0) / (x1 - x0), (y1 - pos.getY(i)) / (y1 - y0))
+  geo.setIndex([...rest, ...front])
+  geo.clearGroups()
+  geo.addGroup(0, rest.length, 0)
+  geo.addGroup(rest.length, front.length, 1)
+  return { x0, x1, y0, y1, top, bottom }
+}
+
 function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
   const scene = gltf.scene
   scene.updateMatrixWorld(true)
@@ -174,6 +234,7 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
   const head = new THREE.Box3()
   const skull = new THREE.Box3()
   const handX: number[] = []
+  let face: Template['face'] = { x0: -0.12, x1: 0.12, y0: 0.34, y1: 0.62, top: 0, bottom: 1 }
   const bones: Partial<Record<Bone, THREE.Bone>> = {}
   scene.traverse((n) => {
     if ((n as THREE.Bone).isBone) bones[n.name as Bone] = n as THREE.Bone
@@ -190,12 +251,15 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
     const pos = geo.attributes.position
     /** 꼭짓점마다 원래 팔레트 칸 (얼굴 조각 찾기용) */
     const sw: number[] = []
+    /** 꼭짓점마다 원래 칸 안 세로 위치 (0 위 ~ 1 아래) */
+    const origV: number[] = []
     for (let i = 0; i < uv.count; i++) {
       const u = uv.getX(i) * TEX
       const v = uv.getY(i) * TEX
       const col = Math.min(15, Math.floor(u / CW))
       const row = Math.min(3, Math.floor(v / CH))
       sw.push(row * 16 + col)
+      origV.push((v - row * CH) / CH)
       const bone = boneOf(geo, m.skeleton, i)
       const rule = RULES[hair].find(([p, r, c, , only]) => p === part && r === row && c === col && (!only || only.includes(bone)))
       if (rule) {
@@ -211,7 +275,10 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
       if (part === 'head' && rule?.[3] === 'skin') skull.expandByPoint(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
     }
     uv.needsUpdate = true
-    if (part === 'head') dropFace(geo, sw, skull)
+    if (part === 'head') {
+      dropFace(geo, sw, skull)
+      face = splitFace(geo, uv, skull, origV) ?? face
+    }
     m.geometry = geo
     m.castShadow = true
     m.receiveShadow = false
@@ -231,6 +298,7 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
     skull: skull.clone().translate(headBone.clone().negate()),
     hairTop: head.max.y - headBone.y,
     hand: new THREE.Vector3((Math.min(...handX) - armBone.x) * 0.82, 0, 0),
+    face,
   }
 }
 
@@ -329,98 +397,100 @@ function kenneyHat(look: AvatarLook, t: Template) {
   return g
 }
 
-// ─── 얼굴 (미니미 눈 설정대로 얼굴 앞면에 붙이는 납작한 조각) ───
+// ─── 얼굴 (얼굴 앞면 판에 미니미 눈 설정대로 그린 그림) ───
 
-const flat = new Map<string, THREE.ShapeGeometry>()
-/** 모서리 둥근 네모 (가운데 기준) */
-function pill(w: number, h: number, r = Math.min(w, h) / 2) {
-  const k = `p${w.toFixed(4)},${h.toFixed(4)},${r.toFixed(4)}`
-  let g = flat.get(k)
-  if (!g) {
-    const s = new THREE.Shape()
-    const x = -w / 2
-    const y = -h / 2
-    s.moveTo(x + r, y)
-    s.lineTo(x + w - r, y)
-    s.absarc(x + w - r, y + r, r, -Math.PI / 2, 0, false)
-    s.lineTo(x + w, y + h - r)
-    s.absarc(x + w - r, y + h - r, r, 0, Math.PI / 2, false)
-    s.lineTo(x + r, y + h)
-    s.absarc(x + r, y + h - r, r, Math.PI / 2, Math.PI, false)
-    s.lineTo(x, y + r)
-    s.absarc(x + r, y + r, r, Math.PI, Math.PI * 1.5, false)
-    g = new THREE.ShapeGeometry(s, 6)
-    flat.set(k, g)
-  }
-  return g
-}
-/** 굵기 있는 호 (웃는 입·웃는 눈). a0→a1 라디안, 끝은 둥글게 */
-function arc(r: number, w: number, a0: number, a1: number) {
-  const k = `a${r.toFixed(4)},${w.toFixed(4)},${a0.toFixed(3)},${a1.toFixed(3)}`
-  let g = flat.get(k)
-  if (!g) {
-    const s = new THREE.Shape()
-    s.absarc(0, 0, r + w / 2, a0, a1, false)
-    s.absarc(r * Math.cos(a1), r * Math.sin(a1), w / 2, a1, a1 + Math.PI, false)
-    s.absarc(0, 0, r - w / 2, a1, a0, true)
-    s.absarc(r * Math.cos(a0), r * Math.sin(a0), w / 2, a0 + Math.PI, a0 + Math.PI * 2, false)
-    g = new THREE.ShapeGeometry(s, 10)
-    flat.set(k, g)
-  }
-  return g
-}
-
+const faces = new Map<string, THREE.MeshStandardMaterial>()
 /**
- * 머리 뼈 기준 좌표의 얼굴. 위치는 원본 Kenney 눈·입 자리 (머리통 상자 비율)에 맞췄다.
- * 눈은 세로로 긴 둥근 눈 + 하이라이트, 볼터치, 작게 웃는 입 → 순하고 귀여운 인상.
+ * 얼굴 판 재질. 캔버스 좌표를 모델 단위(위가 +y)로 맞춰 두고, 원본 Kenney 눈·입 자리에 그린다.
+ * 바탕은 피부 칸과 같은 위아래 명암 → 얼굴 둘레 피부와 이어진다.
  */
-function kenneyFace(look: AvatarLook, t: Template) {
-  const b = t.skull
-  const S = (b.max.x - b.min.x) * 0.7 // 귀를 뺀 얼굴 너비
-  const H = b.max.y - b.min.y
-  const cx = (b.min.x + b.max.x) / 2
-  const z = b.max.z + S * 0.006
-  const eyeY = b.min.y + H * 0.45
-  const ex = S * 0.24
-  const ink = mat('#2a2130', { rough: 0.5 })
-  const white = mat('#ffffff', { rough: 0.4 })
-  const blush = mat('#ff9fae', { rough: 0.9 })
-  const g = new THREE.Group()
-  const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, dz = 0) => g.add(part(geo, m, [cx + x, y, z + dz], { shadow: false }))
-  const roundEye = (x: number) => {
-    add(pill(S * 0.13, S * 0.19), ink, x, eyeY)
-    add(pill(S * 0.05, S * 0.05), white, x + S * 0.025, eyeY + S * 0.045, S * 0.004)
+function faceMaterial(look: AvatarLook, t: Template, skin: string) {
+  const key = `${look.eyes}|${skin}|${t.face.x0.toFixed(3)}`
+  let m = faces.get(key)
+  if (m) return m
+  const f = t.face
+  const fw = f.x1 - f.x0
+  const fh = f.y1 - f.y0
+  const k = 256 / fw
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = Math.round(fh * k)
+  const ctx = canvas.getContext('2d')!
+  // 피부 칸 명암 (칸 위 tint +0.05 → 아래 -0.1)을 얼굴 판이 걸친 만큼만
+  const a = new THREE.Color(tint(skin, 0.05))
+  const b = new THREE.Color(tint(skin, -0.1))
+  const at = (q: number) => `#${a.clone().lerp(b, q).getHexString()}`
+  const g = ctx.createLinearGradient(0, 0, 0, canvas.height)
+  g.addColorStop(0, at(f.top))
+  g.addColorStop(1, at(f.bottom))
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  // 여기부터 모델 단위, 얼굴 가운데 x=0, 위가 +y
+  const cx = (f.x0 + f.x1) / 2
+  ctx.setTransform(k, 0, 0, -k, (cx - f.x0) * k, f.y1 * k)
+  const ink = '#2a2130'
+  const eyeY = 0.48
+  const ex = 0.072
+  const rr = (x: number, y: number, w: number, h: number, r: number, color: string) => {
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.roundRect(x - w / 2, y - h / 2, w, h, r)
+    ctx.fill()
   }
-  const happyEye = (x: number) => add(arc(S * 0.065, S * 0.035, Math.PI * 0.15, Math.PI * 0.85), ink, x, eyeY - S * 0.03)
+  const stroke = (x: number, y: number, r: number, a0: number, a1: number, w: number) => {
+    ctx.strokeStyle = ink
+    ctx.lineWidth = w
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.arc(x, y, r, a0, a1)
+    ctx.stroke()
+  }
+  const roundEye = (x: number) => {
+    rr(x, eyeY, 0.04, 0.058, 0.02, ink)
+    rr(x + 0.008, eyeY + 0.014, 0.016, 0.016, 0.008, '#ffffff')
+  }
+  const happyEye = (x: number) => stroke(x, eyeY - 0.012, 0.02, Math.PI * 0.15, Math.PI * 0.85, 0.011)
+  // 볼터치
+  ctx.fillStyle = 'rgba(255, 120, 140, 0.45)'
+  for (const s of [-1, 1]) {
+    ctx.beginPath()
+    ctx.ellipse(s * 0.088, 0.432, 0.022, 0.012, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
   switch (look.eyes) {
     case 'smile':
       happyEye(-ex)
       happyEye(ex)
       break
     case 'dot':
-      for (const s of [-1, 1]) add(pill(S * 0.085, S * 0.1), ink, s * ex, eyeY)
+      for (const s of [-1, 1]) rr(s * ex, eyeY, 0.026, 0.03, 0.013, ink)
       break
     case 'wink':
       roundEye(-ex)
       happyEye(ex)
       break
-    case 'shades': {
-      // 선글라스: 렌즈 두 개 + 가운데 다리 (살짝 두께 있게 띄운다)
-      const lens = mat('#1d1b26', { rough: 0.25 })
-      for (const s of [-1, 1]) add(pill(S * 0.3, S * 0.2, S * 0.07), lens, s * ex, eyeY, S * 0.01)
-      add(pill(S * 0.2, S * 0.04), lens, 0, eyeY + S * 0.04, S * 0.01)
-      for (const s of [-1, 1]) add(pill(S * 0.06, S * 0.04), white, s * ex - S * 0.07, eyeY + S * 0.04, S * 0.014)
+    case 'shades':
+      for (const s of [-1, 1]) {
+        rr(s * ex, eyeY, 0.09, 0.056, 0.02, '#1d1b26')
+        rr(s * ex - 0.022, eyeY + 0.013, 0.02, 0.012, 0.006, 'rgba(255,255,255,0.7)')
+      }
+      rr(0, eyeY + 0.012, 0.06, 0.012, 0.006, '#1d1b26')
       break
-    }
     default:
       roundEye(-ex)
       roundEye(ex)
   }
-  for (const s of [-1, 1]) add(pill(S * 0.15, S * 0.075), blush, s * S * 0.36, eyeY - H * 0.15)
   // 작게 웃는 입
-  add(arc(S * 0.07, S * 0.032, Math.PI * 1.2, Math.PI * 1.8), ink, 0, b.min.y + H * 0.29)
-  return g
+  stroke(0, 0.43, 0.022, Math.PI * 1.2, Math.PI * 1.8, 0.009)
+  const map = new THREE.CanvasTexture(canvas)
+  map.flipY = false
+  map.colorSpace = THREE.SRGBColorSpace
+  map.anisotropy = 4
+  m = new THREE.MeshStandardMaterial({ map, roughness: 0.8 })
+  faces.set(key, m)
+  return m
 }
+
 
 // ─── 미니미마다 칠한 텍스처 (같은 색 조합은 같이 쓴다) ───
 const skins = new Map<string, THREE.MeshStandardMaterial>()
@@ -473,6 +543,7 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
     bottom,
   }
   const material = paintedMaterial(hair, t, colors)
+  const face = faceMaterial(look, t, colors.skin)
 
   const root = new THREE.Group()
   const model = SkeletonUtils.clone(t.scene)
@@ -483,7 +554,8 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
     if ((n as THREE.Bone).isBone) bones[n.name as Bone] = n as THREE.Bone
     const m = n as THREE.SkinnedMesh
     if (m.isSkinnedMesh) {
-      m.material = material
+      // 머리는 [팔레트, 얼굴 판 그림] 두 재질 (prepare에서 얼굴 판 삼각형만 두 번째 묶음으로)
+      m.material = m.geometry.groups.length ? [material, face] : material
       m.castShadow = true
       m.receiveShadow = false
       // 뼈를 움직여 몸이 처음 자리에서 벗어나도 잘리지 않게
@@ -499,9 +571,6 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
   /** 팔을 T자세에서 아래로 (오른팔은 -x로 뻗어 있다) */
   const ARM_DOWN = [Math.PI / 2, -Math.PI / 2]
   const inv = 1 / t.scale
-
-  // 얼굴: 원본 눈·입은 지웠으니 미니미 눈 설정대로 붙인다
-  headBone.add(kenneyFace(look, t))
 
   // 모자: Kenney 머리통에 맞춰 각지게 만든 모자 (머리 뼈에 붙어 같이 움직인다)
   let hatH = 0
