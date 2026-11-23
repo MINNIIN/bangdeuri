@@ -64,6 +64,8 @@ import { buildHouse3D, fixtureFacing, fixtureWorld, type House3D } from './house
 import { disposeTree, mat, part, torus } from './kit'
 import { buildTown3D, HIT_LAYER, SEESAW_REST, type Town3D } from './town3d'
 import { buildShop3D, type Shop3D, shopNpcLook } from './shops3d'
+import { preloadModels } from './models'
+import { onAvatarModels, preloadAvatars } from './kenneyAvatar'
 import { VENDOR_LOOKS } from './places3d'
 import { BUS_STOP, type BusNow, busHits } from '../lib/townLife'
 import { barSound, busOuch } from '../lib/sfx'
@@ -536,6 +538,34 @@ function createWorld(
   const fx = new FxLayer()
   scene.add(fx.group)
 
+  // 게임 에셋 모델(가구·가게 소품·캐릭터)은 미리 불러 둔다.
+  // 그 전에 지은 집·가게·아이템은 예전 도형이므로, 모델이 도착하면 새 모델로 다시 짓는다
+  let disposed = false
+  void preloadModels().then(() => {
+    if (disposed) return
+    // 모델을 쓰는 가게는 PC방뿐 (카페는 만들던 음료 상태가 있어 다시 짓지 않는다)
+    const pc = shops3d.get('pc')
+    if (pc) {
+      scene.remove(pc.group)
+      disposeTree(pc.group)
+      pc.dispose()
+      shops3d.delete('pc')
+    }
+    if (house) {
+      scene.remove(house.h.group)
+      disposeTree(house.h.group)
+      house.h.dispose()
+      house = null
+    }
+    for (const m of dropMeshes.values()) {
+      dropGroup.remove(m)
+      disposeTree(m)
+    }
+    dropMeshes.clear()
+    showArea(me.area)
+  })
+  void preloadAvatars()
+
   // ─── 골목 / 집 안 ───
   let town: Town3D | null = buildTown3D(map, rooms)
   scene.add(town.group)
@@ -645,6 +675,15 @@ function createWorld(
     actorGroup.add(a.avatar.root)
     a.builtFor = k
   }
+  // 게임 캐릭터 모델이 늦게 도착하면, 그 전에 지은 미니미를 새 모델로 다시 짓는다 (든 컵은 새 손으로 옮긴다)
+  const offAvatars = onAvatarModels(() => {
+    for (const a of actors.values()) {
+      const held = a.avatar.hand.children.slice()
+      a.builtFor = ''
+      rebuildAvatar(a)
+      for (const c of held) a.avatar.hand.add(c)
+    }
+  })
   const removeActorObj = (a: Actor) => {
     window.clearTimeout(a.actTimer)
     window.clearTimeout(a.idleTimer)
@@ -2997,6 +3036,8 @@ function createWorld(
       ring.geometry.dispose()
       ringMat.dispose()
       starGeo.dispose()
+      offAvatars()
+      disposed = true
       renderer.dispose()
       el.remove()
     },

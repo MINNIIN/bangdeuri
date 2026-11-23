@@ -5,11 +5,14 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import type { AvatarLook } from '../art/avatar'
 import { type Avatar3D, buildAvatar3D } from './avatar3d'
+import { onAvatarModels, preloadAvatars } from './kenneyAvatar'
 import { cyl, mat, part } from './kit'
 
 export default function AvatarPreview({ look, size = 170 }: { look: AvatarLook; size?: number }) {
   const host = useRef<HTMLDivElement>(null)
   const api = useRef<{ setLook: (l: AvatarLook) => void } | null>(null)
+  const lookRef = useRef(look)
+  lookRef.current = look
 
   useEffect(() => {
     const el = host.current!
@@ -47,6 +50,9 @@ export default function AvatarPreview({ look, size = 170 }: { look: AvatarLook; 
     }
     api.current = { setLook }
     setLook(look)
+    // 게임 캐릭터 모델이 도착하면 지금 모습으로 다시 짓는다
+    void preloadAvatars()
+    const offAvatars = onAvatarModels(() => setLook(lookRef.current))
 
     const down = (e: PointerEvent) => {
       drag = { x: e.clientX, spin }
@@ -79,6 +85,7 @@ export default function AvatarPreview({ look, size = 170 }: { look: AvatarLook; 
     raf = requestAnimationFrame(frame)
     return () => {
       cancelAnimationFrame(raf)
+      offAvatars()
       el.removeEventListener('pointerdown', down)
       el.removeEventListener('pointermove', move)
       el.removeEventListener('pointerup', up)

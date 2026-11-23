@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { artById } from '../art/fixtures'
 import { BASE_PALETTE, type Sprite } from '../art/sprite'
 import { box, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint, torus } from './kit'
+import { FURNITURE_MODELS, model, type ModelName } from './models'
 
 const WOOD = '#c98f5a'
 const WOOD_D = '#a8703f'
@@ -523,11 +524,46 @@ const VOXEL_H: Record<string, number> = {
   socks: 0.3,
 }
 
+/** 앱이 이름으로 찾아 움직이는 부분 (모델로 바꿔도 남긴다): 이불 · 화면 · 전구 · 도는 것 */
+const KEEP_PARTS = new Set<string>([COVER, SCREEN, BULB, 'blanket', 'spin'])
+/** 모델에 이미 있어서 예전 것을 빼는 부분 (KayKit 침대엔 이불이 있다) */
+const DROP_PARTS: Record<string, string[]> = { bed: ['blanket'] }
+const WITH_MODEL = new Set<string>(FURNITURE_MODELS)
+
+/**
+ * 몸체만 게임 에셋 모델로 바꾼다. 모델은 예전 도형 크기(가로·높이·깊이)에 꼭 맞게 늘려서
+ * 앉는 높이·설 자리·누름 상자는 그대로 둔다. 이름 붙은 부분(KEEP_PARTS)은 예전 것을 남긴다.
+ */
+function swapBody(g: THREE.Group, item: string) {
+  if (!WITH_MODEL.has(item)) return
+  const m = model(`furniture/${item}` as ModelName)
+  if (!m) return
+  g.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(g)
+  const kept = (n: THREE.Object3D) => {
+    for (let p: THREE.Object3D | null = n; p && p !== g; p = p.parent) if (KEEP_PARTS.has(p.name)) return true
+    return false
+  }
+  const drop: THREE.Object3D[] = []
+  g.traverse((n) => {
+    if (!(n as THREE.Mesh).isMesh) return
+    if (!kept(n) || DROP_PARTS[item]?.includes(n.name)) drop.push(n)
+  })
+  for (const n of drop) n.parent?.remove(n)
+  const mb = new THREE.Box3().setFromObject(m)
+  const size = box.getSize(new THREE.Vector3())
+  const ms = mb.getSize(new THREE.Vector3())
+  m.scale.set(size.x / ms.x, size.y / ms.y, size.z / ms.z)
+  m.position.set(box.min.x - mb.min.x * m.scale.x, box.min.y - mb.min.y * m.scale.y, box.min.z - mb.min.z * m.scale.z)
+  g.add(m)
+}
+
 /** 가구·아이템 하나를 만든다 (없는 아이템이면 null) */
 export function buildItem3D(item: string): THREE.Group | null {
   const make = BUILDERS[item]
   if (make) {
     const g = make()
+    swapBody(g, item)
     g.userData.item = item
     return g
   }

@@ -2,6 +2,10 @@
 import * as THREE from 'three'
 import { type AvatarLook, PRESET_LOOKS } from '../src/art/avatar'
 import { buildAvatar3D } from '../src/three/avatar3d'
+import { preloadAvatars } from '../src/three/kenneyAvatar'
+
+// 게임 캐릭터 모델을 먼저 불러와서 앱과 같은 미니미로 그린다 (?old 면 예전 코드 미니미)
+if (!new URLSearchParams(location.search).has('old')) await preloadAvatars()
 
 const base = PRESET_LOOKS[0].look
 const L = (o: Partial<AvatarLook>): AvatarLook => ({ ...base, ...o })
@@ -19,7 +23,7 @@ const ALL: AvatarLook[] = [
 ]
 // ?grid=hats : 머리 5종 × 모자(cap·beanie·bear) 전부
 const HAIRS: AvatarLook['hair'][] = ['bob', 'short', 'long', 'bun', 'curly']
-const HATS: AvatarLook['hat'][] = ['cap', 'beanie', 'bear']
+const HATS: AvatarLook['hat'][] = ['cap', 'beanie', 'bear', 'pin', 'ribbon']
 const GRID = HATS.flatMap((hat) => HAIRS.map((hair) => L({ hair, hat, hatColor: '#f2d16b', bottom: 'pants' })))
 const LOOKS = q.get('grid') === 'hats' ? GRID.filter((_, i) => !q.has('hat') || HATS[Math.floor(i / 5)] === q.get('hat')) : q.has('rows') ? q.get('rows')!.split(',').map((i) => ALL[Number(i)]) : ALL
 // 각도: [이름, 방위각, 높이]
