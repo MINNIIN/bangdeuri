@@ -25,7 +25,10 @@ const ALL: AvatarLook[] = [
 const HAIRS: AvatarLook['hair'][] = ['bob', 'short', 'long', 'bun', 'curly']
 const HATS: AvatarLook['hat'][] = ['cap', 'beanie', 'bear', 'pin', 'ribbon']
 const GRID = HATS.flatMap((hat) => HAIRS.map((hair) => L({ hair, hat, hatColor: '#f2d16b', bottom: 'pants' })))
-const LOOKS = q.get('grid') === 'hats' ? GRID.filter((_, i) => !q.has('hat') || HATS[Math.floor(i / 5)] === q.get('hat')) : q.has('rows') ? q.get('rows')!.split(',').map((i) => ALL[Number(i)]) : ALL
+// ?grid=eyes : 머리 5종 × 눈 5종 (모자 없이)
+const EYES: AvatarLook['eyes'][] = ['round', 'smile', 'dot', 'wink', 'shades']
+const EYE_GRID = EYES.flatMap((eyes) => HAIRS.map((hair) => L({ hair, eyes, hat: 'none', bottom: 'pants' })))
+const LOOKS = q.get('grid') === 'eyes' ? EYE_GRID.filter((_, i) => !q.has('eyes') || EYES[Math.floor(i / 5)] === q.get('eyes')) : q.get('grid') === 'hats' ? GRID.filter((_, i) => !q.has('hat') || HATS[Math.floor(i / 5)] === q.get('hat')) : q.has('rows') ? q.get('rows')!.split(',').map((i) => ALL[Number(i)]) : ALL
 // 각도: [이름, 방위각, 높이]
 const ALLV: [string, number, number][] = [
   ['앞', 0, 0.75],
@@ -58,7 +61,7 @@ const walk = q.has('walk')
 
 LOOKS.forEach((look, r) => {
   const a = buildAvatar3D(look)
-  a.animate({ walking: walk, pose: null, t: Number(q.get("t") ?? 1.7) })
+  a.animate({ walking: walk, pose: (q.get("pose") as never) ?? null, t: Number(q.get("t") ?? 1.7) })
   scene.add(a.root)
   // ?nohat : 모자만 숨겨서 그 아래 머리카락이 어떻게 눌려 있는지 본다
   if (q.has('nohat'))
