@@ -14,13 +14,17 @@ const WOOD_D = '#a8703f'
 const GREY = '#c9cbd6'
 const DARK = '#3b3646'
 
-/** 앉기·눕기·목욕할 때 엉덩이(누우면 등)가 닿는 면의 높이 (m). 빈백은 푹 꺼지게 낮춘다 */
+/**
+ * 앉기·눕기·목욕할 때 엉덩이(누우면 등)가 닿는 면의 높이 (m). 빈백은 푹 꺼지게 낮춘다.
+ * 게임 에셋 모델로 바꾼 가구는 모델의 앉는 면을 재서 맞췄다 (소파 0.42 · 의자 0.40 · 침대 매트리스 0.50)
+ */
 export const SEAT: Record<string, number> = {
-  sofa: 0.49,
-  chair: 0.5,
+  sofa: 0.43,
+  chair: 0.41,
   beanbag: 0.4,
   toilet: 0.45,
-  bed: 0.5,
+  // 매트리스(0.50)에 폭 파묻혀야 발끝·가슴이 이불 위로 비죽 나오지 않는다
+  bed: 0.42,
   bathtub: 0.08,
   p_bench: 0.47,
   // 동네 장소 (뒷산·방파제는 그 자리 땅 높이 위로)
@@ -39,6 +43,13 @@ export const SEAT_FORWARD: Record<string, number> = { sofa: -0.02, chair: 0.03, 
 export const SEAT_KNEE: Record<string, number> = { sofa: 0.25, beanbag: 0.45, chair: 1.25, toilet: 1.3, p_bench: 1.25, o_table: 1.25, o_pocha: 1.25, m_pavilion: 1.3, b_tower: 1.2, b_fish: 1.45, c_stool: 1.0 }
 /** 누울 때 발밑이 침대 가운데에서 얼마나 떨어지나 (머리가 베개에 오게) */
 export const LIE_FORWARD = 0.2
+/** 침대 베개 자리 (침대 가운데 기준 z) */
+const PILLOW_Z = -0.75
+/**
+ * 침대를 k배로 크게 그렸을 때(마당에 둔 침대) 발밑 자리. 미니미는 그대로라 침대 가운데에 누우면
+ * 머리가 이불 속에 파묻힌다 → 머리가 커진 베개 자리에 오게 발밑을 옮긴다
+ */
+export const lieForward = (k: number) => LIE_FORWARD + PILLOW_Z * (k - 1)
 
 /** 미니미가 눕거나 들어갈 때 덮는 부분 (이불·욕조 물) — 이 이름의 메시는 사람이 있으면 보인다 */
 export const COVER = 'cover'

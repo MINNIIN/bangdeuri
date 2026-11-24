@@ -532,7 +532,8 @@ function kenneyOutfit(look: AvatarLook, t: Template, top: string, bottom: string
   if (look.top === 'hoodie') {
     // 등 뒤로 넘긴 모자 + 배 주머니 + 끈 두 가닥
     const shade = mat(tint(top, -0.08), { rough: 0.85 })
-    g.add(part(roundBox(W * 0.78, H * 0.3, D * 0.42, H * 0.1), mat(top, { rough: 0.85 }), [cx, b.max.y - H * 0.12, b.min.z - D * 0.08]))
+    // 모자는 등에 납작하게 붙인다 (뒤로 길게 빼면 어깨 뒤에 판자가 달린 것처럼 보이고, 앉으면 의자 등받이를 뚫는다)
+    g.add(part(roundBox(W * 0.66, H * 0.36, D * 0.24, D * 0.1), mat(top, { rough: 0.85 }), [cx, b.max.y - H * 0.2, b.min.z + D * 0.02]))
     g.add(part(roundBox(W * 0.6, H * 0.22, D * 0.06, H * 0.05), shade, [cx, b.min.y + H * 0.36, b.max.z + D * 0.01], { shadow: false }))
     for (const s of [-1, 1]) g.add(part(roundBox(W * 0.05, H * 0.2, D * 0.05, W * 0.02), mat('#fbf7ef'), [cx + s * W * 0.14, b.max.y - H * 0.25, b.max.z + D * 0.02], { shadow: false }))
   }
@@ -796,8 +797,9 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
       by = Math.abs(Math.sin(w)) * 0.08
       rootBone.rotation.set(0, Math.sin(w * 0.5) * 0.5, Math.sin(w) * 0.1)
       legs[0].rotation.x = legs[1].rotation.x = -Math.abs(Math.sin(w)) * 0.2
-      armRot[0].set(-2.5 + Math.sin(w) * 0.4, 0, -0.35)
-      armRot[1].set(-2.5 - Math.sin(w) * 0.4, 0, 0.35)
+      // 만세: 팔을 머리 위 바깥으로 (앞으로만 들면 커다란 손이 얼굴을 가린다)
+      armRot[0].set(-2.75 + Math.sin(w) * 0.25, 0, -0.75)
+      armRot[1].set(-2.75 - Math.sin(w) * 0.25, 0, 0.75)
       headBone.rotation.z = Math.sin(w) * 0.12
     } else if (pose === 'lie') {
       // 반듯이 누워 이불 속으로: 등이 바닥에 닿고 머리는 베개만큼 들린다
@@ -836,7 +838,8 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
     if (pose === 'stand') armRot[0].x = armRot[1].x = -0.35
     // 앉으면 치마는 엉덩이 둘레에 짧게 퍼진다 (통째로 앞으로 접으면 다리 위에 상자가 얹힌 것처럼 보인다)
     // 걸을 땐 그대로 두고 다리가 치마 안에서 움직인다
-    if (skirt) skirt.scale.y = seated ? 0.3 : 1
+    // 누우면 치마가 이불 위로 비죽 나오지 않게 납작하게
+    if (skirt) skirt.scale.y = seated || pose === 'lie' ? 0.3 : 1
 
     // 컵을 들고 있으면 오른팔을 앞으로 (hold 0 = 가슴 앞, 1 = 입가로)
     if (hold !== undefined && hold !== null) {
