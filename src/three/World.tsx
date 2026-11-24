@@ -61,7 +61,7 @@ import { type Avatar3D, buildAvatar3D } from './avatar3d'
 import { buildItem3D, BULB, COVER, itemDepth, LIE_FORWARD, SCREEN, SEAT, SEAT_FORWARD, SEAT_KNEE } from './furniture3d'
 import { FxLayer, glowTexture, ON_HEAD } from './fx3d'
 import { buildHouse3D, fixtureFacing, fixtureWorld, type House3D } from './house3d'
-import { disposeTree, mat, part, torus } from './kit'
+import { disposeTree, mat, part, texturesPending, torus } from './kit'
 import { buildTown3D, HIT_LAYER, SEESAW_REST, type Town3D } from './town3d'
 import { buildShop3D, type Shop3D, shopNpcLook } from './shops3d'
 import { preloadModels } from './models'
@@ -510,6 +510,15 @@ function createWorld(
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
   renderer.domElement.className = 'world-canvas'
   host.prepend(renderer.domElement)
+  // 첫 화면은 게임 모델·캐릭터·벽지 그림이 다 준비된 뒤에 한 번에 보여 준다
+  // (예전 도형 → 새 모델로 바뀌거나 바닥이 잠깐 까맣게 보이는 깜빡임을 없앤다. 늦어지면 6초 뒤엔 그냥 보여 준다)
+  const hideUntilReady: HTMLElement[] = [renderer.domElement]
+  if (overlayEl.current) hideUntilReady.push(overlayEl.current)
+  for (const e of hideUntilReady) e.style.opacity = '0'
+  const startedAt = performance.now()
+  let shown = false
+  let modelsDone = false
+  let avatarsDone = false
 
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(32, 1, 0.5, 400)
@@ -542,6 +551,7 @@ function createWorld(
   // 그 전에 지은 집·가게·아이템은 예전 도형이므로, 모델이 도착하면 새 모델로 다시 짓는다
   let disposed = false
   void preloadModels().then(() => {
+    modelsDone = true
     if (disposed) return
     // 모델을 쓰는 가게는 PC방뿐 (카페는 만들던 음료 상태가 있어 다시 짓지 않는다)
     const pc = shops3d.get('pc')
@@ -677,6 +687,7 @@ function createWorld(
   }
   // 게임 캐릭터 모델이 늦게 도착하면, 그 전에 지은 미니미를 새 모델로 다시 짓는다 (든 컵은 새 손으로 옮긴다)
   const offAvatars = onAvatarModels(() => {
+    avatarsDone = true
     for (const a of actors.values()) {
       const held = a.avatar.hand.children.slice()
       a.builtFor = ''
@@ -2652,6 +2663,13 @@ function createWorld(
     // 바리스타 시점이면 카메라를 바리스타 눈으로
     if (pov) placePov(dt)
     renderer.render(scene, camera)
+    if (!shown && ((modelsDone && avatarsDone && texturesPending() === 0) || now - startedAt > 6000)) {
+      shown = true
+      for (const e of hideUntilReady) {
+        e.style.transition = 'opacity 0.25s ease-out'
+        e.style.opacity = '1'
+      }
+    }
 
     // 이름표 · 말풍선 · 아이템 말풍선 (화면 좌표로)
     const ov = overlayEl.current

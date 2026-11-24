@@ -142,6 +142,10 @@ export function disposeTree(o: THREE.Object3D) {
   })
 }
 
+let pendingTextures = 0
+/** 아직 그림이 안 그려진 SVG 텍스처 수 (첫 화면을 그 뒤에 보여 주려고) */
+export const texturesPending = () => pendingTextures
+
 /** SVG 문자열 → 텍스처 (방 주인이 꾸민 벽·바닥을 그대로 입힌다) */
 export function svgTexture(svg: string, w: number, h: number, onReady?: () => void) {
   const c = document.createElement('canvas')
@@ -151,7 +155,12 @@ export function svgTexture(svg: string, w: number, h: number, onReady?: () => vo
   t.colorSpace = THREE.SRGBColorSpace
   t.anisotropy = 4
   const img = new Image()
+  pendingTextures++
+  img.onerror = () => {
+    pendingTextures--
+  }
   img.onload = () => {
+    pendingTextures--
     const ctx = c.getContext('2d')!
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(img, 0, 0, w, h)
