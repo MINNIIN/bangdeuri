@@ -712,7 +712,8 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
     skinShade: tint(look.skin, -0.06),
     skinLight: tint(look.skin, 0.03),
     hair: look.hairColor,
-    hairLight: tint(look.hairColor, 0.1),
+    // 앞머리·옆 가닥도 같은 색 (조금만 밝혀도 어두운 머리에선 앞머리만 보라색처럼 따로 놀았다)
+    hairLight: look.hairColor,
     top,
     topShade: tint(top, -0.15),
     topLight: tint(top, 0.25),
