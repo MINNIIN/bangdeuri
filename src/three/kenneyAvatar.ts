@@ -88,6 +88,14 @@ const TARGET_H = 1.2
 const TEX = 512
 const CW = 32
 const CH = 128
+/**
+ * 다리 칸: 부위 칸 다음 빈칸. 다리(신발 빼고)의 UV를 이 칸 하나에 높이대로 펼쳐 둔다 (칸 위 = 엉덩이, 아래 = 발목).
+ * 바지면 칸 전체를 바지 색, 반바지·치마면 위쪽만 바지 색이고 아래는 피부색으로 칠한다.
+ * (팔레트 칸을 꼭짓점마다 바꾸면 삼각형 안에서 다른 칸들이 무지개처럼 번지는데, 한 칸 안의 위아래라 경계가 깔끔하다)
+ */
+const LEG_COL = ROLES.length
+/** 반바지 끝 높이 (모델 단위, 발바닥 0 ~ 엉덩이 약 0.18) */
+const SHORTS_Y = 0.105
 
 interface Template {
   scene: THREE.Object3D
@@ -104,6 +112,21 @@ interface Template {
   hand: THREE.Vector3
   /** 얼굴 판 (모델 단위 x·y 범위) · 피부 칸 안에서 판 위·아래 끝의 명암 위치 (0 위 ~ 1 아래) */
   face: { x0: number; x1: number; y0: number; y1: number; top: number; bottom: number }
+  /** 다리 칸 맨 위 높이 · 엉덩이(다리 뼈) 높이 (모델 단위) */
+  legTop: number
+  hipY: number
+  /** 몸통 뼈 기준 몸통 상자 (모델 단위, 옷 장식 크기) */
+  torso: THREE.Box3
+  /** 몸통·다리 꼭짓점 (뿌리 뼈 기준 = 모델 좌표) · 몸통 뼈 위치 — 높이별 단면 크기를 잰다 */
+  bodyPts: THREE.Vector3[]
+  torsoAt: THREE.Vector3
+}
+
+/** 높이 y 근처(±tol) 꼭짓점들의 단면 상자 (모델 좌표). 옷을 몸에 딱 맞게 두르려고 */
+function section(t: Template, y: number, tol = 0.012) {
+  const b = new THREE.Box3()
+  for (const p of t.bodyPts) if (Math.abs(p.y - y) <= tol) b.expandByPoint(p)
+  return b
 }
 
 const templates = new Map<HairId, Template>()
@@ -178,6 +201,58 @@ function dropFace(geo: THREE.BufferGeometry, sw: number[], skull: THREE.Box3) {
  * 얼굴 앞면 판(앞을 보는 피부 면, 꼭짓점 8개)을 두 번째 재질 묶음으로 떼고 UV를 판 전체 그림(faceMaterial)에 맞춘다.
  * 눈·입이 얼굴 면 자체에 그려지니 따로 뜨지 않는다.
  */
+/**
+ * 머리통 피부를 부드럽게 비춘다. 원본은 면마다 법선이 따로라(각진 음영) 얼굴 앞판과 깎인 모서리 경계가 또렷해서
+ * 얼굴판이 머리에 따로 얹힌 것처럼 보인다. 같은 자리 꼭짓점이 같은 법선(둥근 상자 모양)을 갖게 해 음영을 잇는다.
+ * 귀는 따로 떨어진 덩어리라 그대로 둔다 (가장 큰 피부 덩어리 = 머리통만).
+ */
+function softenSkin(geo: THREE.BufferGeometry, skinVerts: number[]) {
+  const pos = geo.attributes.position
+  const nor = geo.attributes.normal as THREE.BufferAttribute
+  const index = geo.index
+  if (!index || !skinVerts.length) return
+  const skin = new Set(skinVerts)
+  const key = (i: number) => `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`
+  const parent = new Map<string, string>()
+  const find = (k: string): string => {
+    let r = k
+    while (parent.get(r) !== r) r = parent.get(r)!
+    parent.set(k, r)
+    return r
+  }
+  for (const i of skin) if (!parent.has(key(i))) parent.set(key(i), key(i))
+  for (let t = 0; t < index.count; t += 3) {
+    const tri = [index.getX(t), index.getX(t + 1), index.getX(t + 2)]
+    if (!tri.every((i) => skin.has(i))) continue
+    const a = find(key(tri[0]))
+    for (const q of [1, 2]) {
+      const b = find(key(tri[q]))
+      if (a !== b) parent.set(b, a)
+    }
+  }
+  const groups = new Map<string, number[]>()
+  for (const i of skin) {
+    const r = find(key(i))
+    if (!groups.has(r)) groups.set(r, [])
+    groups.get(r)!.push(i)
+  }
+  const head = [...groups.values()].sort((a, b) => b.length - a.length)[0]
+  const box = new THREE.Box3()
+  for (const i of head) box.expandByPoint(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
+  const c = box.getCenter(new THREE.Vector3())
+  const h = box.getSize(new THREE.Vector3()).multiplyScalar(0.5)
+  // 둥근 상자 법선: 각 축 (거리/반폭)^3 → 면 가운데는 거의 정면, 모서리로 갈수록 부드럽게 꺾인다
+  const n = new THREE.Vector3()
+  const f = (d: number, half: number) => Math.sign(d) * Math.abs(d / half) ** 3 / half
+  for (const i of head) {
+    n.set(f(pos.getX(i) - c.x, h.x), f(pos.getY(i) - c.y, h.y), f(pos.getZ(i) - c.z, h.z))
+    if (n.lengthSq() < 1e-12) continue
+    n.normalize()
+    nor.setXYZ(i, n.x, n.y, n.z)
+  }
+  nor.needsUpdate = true
+}
+
 function splitFace(geo: THREE.BufferGeometry, uv: THREE.BufferAttribute, skull: THREE.Box3, origV: number[]): Template['face'] | undefined {
   const index = geo.index
   if (!index) return undefined
@@ -239,6 +314,12 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
   scene.traverse((n) => {
     if ((n as THREE.Bone).isBone) bones[n.name as Bone] = n as THREE.Bone
   })
+  scene.updateMatrixWorld(true)
+  const hipY0 = bones['leg-left']!.getWorldPosition(new THREE.Vector3()).y
+  const legTop = hipY0 + 0.03
+  const torsoBox = new THREE.Box3()
+  const bodyPts: THREE.Vector3[] = []
+  const LEG_ROLES: (Role | undefined)[] = ['skin', 'skinShade', 'skinLight', 'bottom']
   scene.traverse((n) => {
     const m = n as THREE.SkinnedMesh
     if (!m.isSkinnedMesh) return
@@ -253,6 +334,8 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
     const sw: number[] = []
     /** 꼭짓점마다 원래 칸 안 세로 위치 (0 위 ~ 1 아래) */
     const origV: number[] = []
+    /** 머리의 피부 꼭짓점 */
+    const skinVerts: number[] = []
     for (let i = 0; i < uv.count; i++) {
       const u = uv.getX(i) * TEX
       const v = uv.getY(i) * TEX
@@ -266,18 +349,29 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
         const role = ROLES.indexOf(rule[3])
         uv.setXY(i, (role * CW + (u - col * CW)) / TEX, (v - row * CH) / TEX)
       }
+      // 다리(바지·맨다리 자리, 신발 빼고)는 다리 칸에 높이대로
+      if ((bone === 'leg-left' || bone === 'leg-right') && rule && LEG_ROLES.includes(rule[3])) {
+        const k = Math.min(1, Math.max(0, (legTop - pos.getY(i)) / legTop))
+        uv.setXY(i, (LEG_COL * CW + CW / 2) / TEX, (k * CH) / TEX)
+      }
+      if (bone === 'torso') torsoBox.expandByPoint(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
+      if (bone === 'torso' || bone === 'leg-left' || bone === 'leg-right') bodyPts.push(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
       // 크기 재기 (묶인 자세 = 모델 좌표)
       if (bone === 'leg-left' || bone === 'leg-right') legVerts.push(pos.getZ(i))
       if (bone === 'torso') torsoZ.push(pos.getZ(i))
       if (bone === 'arm-right') handX.push(pos.getX(i))
       if (part === 'head') head.expandByPoint(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
       // 모자 크기는 머리카락을 뺀 머리통(얼굴 피부)으로 잰다 (똥머리처럼 위로 솟은 머리에 모자가 뜨지 않게)
-      if (part === 'head' && rule?.[3] === 'skin') skull.expandByPoint(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
+      if (part === 'head' && rule?.[3] === 'skin') {
+        skull.expandByPoint(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
+        skinVerts.push(i)
+      }
     }
     uv.needsUpdate = true
     if (part === 'head') {
       dropFace(geo, sw, skull)
       face = splitFace(geo, uv, skull, origV) ?? face
+      softenSkin(geo, skinVerts)
     }
     m.geometry = geo
     m.castShadow = true
@@ -289,6 +383,8 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
   const hipY = bones['leg-left']!.getWorldPosition(new THREE.Vector3()).y
   const headBone = bones.head!.getWorldPosition(new THREE.Vector3())
   const armBone = bones['arm-right']!.getWorldPosition(new THREE.Vector3())
+  const torsoBone = bones.torso!.getWorldPosition(new THREE.Vector3())
+  const rootBone = bones.root!.getWorldPosition(new THREE.Vector3())
   return {
     scene,
     image: image!,
@@ -299,6 +395,11 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
     hairTop: head.max.y - headBone.y,
     hand: new THREE.Vector3((Math.min(...handX) - armBone.x) * 0.82, 0, 0),
     face,
+    legTop,
+    hipY: hipY0,
+    torso: torsoBox.clone().translate(torsoBone.clone().negate()),
+    bodyPts: bodyPts.map((p) => p.clone().sub(rootBone)),
+    torsoAt: torsoBone.clone().sub(rootBone),
   }
 }
 
@@ -395,6 +496,64 @@ function kenneyHat(look: AvatarLook, t: Template) {
     }
   }
   return g
+}
+
+// ─── 옷 모양 (상의 후드·줄무늬, 하의 치마·긴 치마) ───
+
+const frustums = new Map<string, THREE.BufferGeometry>()
+/** 위가 좁고 아래가 넓은 네모 치마 모양 (위 끝이 원점, 아래로 h) */
+function frustum(wTop: number, dTop: number, wBot: number, dBot: number, h: number) {
+  const k = [wTop, dTop, wBot, dBot, h].map((n) => n.toFixed(4)).join(',')
+  let g = frustums.get(k)
+  if (!g) {
+    g = new THREE.BoxGeometry(1, 1, 1)
+    const p = g.attributes.position
+    for (let i = 0; i < p.count; i++) {
+      const top = p.getY(i) > 0
+      p.setXYZ(i, p.getX(i) * (top ? wTop : wBot), top ? 0 : -h, p.getZ(i) * (top ? dTop : dBot))
+    }
+    g.computeVertexNormals()
+    frustums.set(k, g)
+  }
+  return g
+}
+
+/**
+ * 상의 장식은 몸통 뼈에, 치마는 뿌리 뼈(엉덩이 높이)에 붙인다. 크기는 모두 원본 몸통 상자에 맞춘다.
+ * 치마는 앉으면 짧게 줄이도록 돌려준다.
+ */
+function kenneyOutfit(look: AvatarLook, t: Template, top: string, bottom: string, torsoBone: THREE.Bone, rootBone: THREE.Bone) {
+  const b = t.torso
+  const W = b.max.x - b.min.x
+  const D = b.max.z - b.min.z
+  const H = b.max.y - b.min.y
+  const cx = (b.min.x + b.max.x) / 2
+  const g = new THREE.Group()
+  if (look.top === 'hoodie') {
+    // 등 뒤로 넘긴 모자 + 배 주머니 + 끈 두 가닥
+    const shade = mat(tint(top, -0.08), { rough: 0.85 })
+    g.add(part(roundBox(W * 0.78, H * 0.3, D * 0.42, H * 0.1), mat(top, { rough: 0.85 }), [cx, b.max.y - H * 0.12, b.min.z - D * 0.08]))
+    g.add(part(roundBox(W * 0.6, H * 0.22, D * 0.06, H * 0.05), shade, [cx, b.min.y + H * 0.36, b.max.z + D * 0.01], { shadow: false }))
+    for (const s of [-1, 1]) g.add(part(roundBox(W * 0.05, H * 0.2, D * 0.05, W * 0.02), mat('#fbf7ef'), [cx + s * W * 0.14, b.max.y - H * 0.25, b.max.z + D * 0.02], { shadow: false }))
+  }
+  torsoBone.add(g)
+
+  if (look.bottom !== 'skirt' && look.bottom !== 'dress') return null
+  // 치마: 엉덩이 조금 위에서 시작해 무릎(치마) · 발목 위(긴 치마)까지, 밑단은 조금 진하게
+  // 허리 단면(엉덩이 높이 몸통·다리)에 딱 맞춘다
+  const y0 = t.hipY + 0.012
+  const r = section(t, t.hipY, 0.02)
+  const w = r.max.x - r.min.x + 0.008
+  const d = r.max.z - r.min.z + 0.008
+  const len = look.bottom === 'dress' ? y0 - 0.045 : y0 - 0.095
+  const skirt = new THREE.Group()
+  skirt.position.set((r.min.x + r.max.x) / 2, y0, (r.min.z + r.max.z) / 2)
+  const flare = look.bottom === 'dress' ? 1.22 : 1.18
+  skirt.add(part(frustum(w, d, w * flare, d * flare, len), mat(bottom, { rough: 0.85 }), [0, 0, 0]))
+  const hem = len * 0.16
+  skirt.add(part(frustum(w * flare * 1.01, d * flare * 1.01, w * flare * 1.03, d * flare * 1.03, hem), mat(tint(bottom, -0.12), { rough: 0.85 }), [0, -len + hem * 0.95, 0]))
+  rootBone.add(skirt)
+  return skirt
 }
 
 // ─── 얼굴 (얼굴 앞면 판에 미니미 눈 설정대로 그린 그림) ───
@@ -494,8 +653,8 @@ function faceMaterial(look: AvatarLook, t: Template, skin: string) {
 
 // ─── 미니미마다 칠한 텍스처 (같은 색 조합은 같이 쓴다) ───
 const skins = new Map<string, THREE.MeshStandardMaterial>()
-function paintedMaterial(hair: HairId, t: Template, c: Record<Role, string>) {
-  const key = `${hair}|${ROLES.map((r) => c[r]).join(',')}`
+function paintedMaterial(hair: HairId, t: Template, c: Record<Role, string>, bareLegs: boolean, stripes: boolean) {
+  const key = `${hair}|${ROLES.map((r) => c[r]).join(',')}|${bareLegs}|${stripes}`
   let m = skins.get(key)
   if (m) return m
   const canvas = document.createElement('canvas')
@@ -510,6 +669,23 @@ function paintedMaterial(hair: HairId, t: Template, c: Record<Role, string>) {
     ctx.fillStyle = g
     ctx.fillRect(i * CW, 0, CW, CH)
   })
+  // 다리 칸: 바지는 끝까지, 맨다리면 반바지 끝(SHORTS_Y)부터 피부색
+  const split = bareLegs ? Math.round(((t.legTop - SHORTS_Y) / t.legTop) * CH) : CH
+  const band = (y0: number, y1: number, color: string) => {
+    if (y1 <= y0) return
+    const g = ctx.createLinearGradient(0, y0, 0, y1)
+    g.addColorStop(0, tint(color, 0.03))
+    g.addColorStop(1, tint(color, -0.08))
+    ctx.fillStyle = g
+    ctx.fillRect(LEG_COL * CW, y0, CW, y1 - y0)
+  }
+  band(0, split, c.bottom)
+  band(split, CH, c.skin)
+  // 줄무늬 윗옷: 윗옷 칸에 가로 흰 줄 (칸 안 위아래 = 옷의 위아래)
+  if (stripes) {
+    ctx.fillStyle = '#fbf7ef'
+    for (const f of [0.3, 0.55, 0.8]) ctx.fillRect(ROLES.indexOf('top') * CW, Math.round(f * CH), CW, Math.round(CH * 0.1))
+  }
   const map = new THREE.CanvasTexture(canvas)
   map.flipY = false
   map.colorSpace = THREE.SRGBColorSpace
@@ -542,7 +718,7 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
     topLight: tint(top, 0.25),
     bottom,
   }
-  const material = paintedMaterial(hair, t, colors)
+  const material = paintedMaterial(hair, t, colors, look.bottom !== 'pants', look.top === 'stripe')
   const face = faceMaterial(look, t, colors.skin)
 
   const root = new THREE.Group()
@@ -576,10 +752,15 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
   let hatH = 0
   if (look.hat !== 'none') {
     const h = kenneyHat(look, t)
-    headBone.add(h)
+    // 머리 뼈에 붙이기 전에 잰다 (모자 좌표 = 머리 뼈 기준 모델 단위). 붙인 뒤 재면 부모 변환이 덜 반영된 값이 나온다
+    h.updateMatrixWorld(true)
     const top = new THREE.Box3().setFromObject(h).max.y
+    headBone.add(h)
     hatH = Math.max(0, (top - t.hairTop) * t.scale)
   }
+
+  // 옷 모양 (후드·줄무늬·치마)
+  const skirt = kenneyOutfit(look, t, top, bottom, bones.torso!, rootBone)
 
   // 오른손: 컵을 쥐여 주는 자리 (팔을 내린 각도만큼 되돌려 컵이 똑바로 선다)
   const grip = new THREE.Group()
@@ -652,6 +833,9 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
       armRot[1].x = -1.1 - Math.sin(time * 6) * 0.15
     }
     if (pose === 'stand') armRot[0].x = armRot[1].x = -0.35
+    // 앉으면 치마는 엉덩이 둘레에 짧게 퍼진다 (통째로 앞으로 접으면 다리 위에 상자가 얹힌 것처럼 보인다)
+    // 걸을 땐 그대로 두고 다리가 치마 안에서 움직인다
+    if (skirt) skirt.scale.y = seated ? 0.3 : 1
 
     // 컵을 들고 있으면 오른팔을 앞으로 (hold 0 = 가슴 앞, 1 = 입가로)
     if (hold !== undefined && hold !== null) {

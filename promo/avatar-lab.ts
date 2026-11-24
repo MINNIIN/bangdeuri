@@ -28,7 +28,15 @@ const GRID = HATS.flatMap((hat) => HAIRS.map((hair) => L({ hair, hat, hatColor: 
 // ?grid=eyes : 머리 5종 × 눈 5종 (모자 없이)
 const EYES: AvatarLook['eyes'][] = ['round', 'smile', 'dot', 'wink', 'shades']
 const EYE_GRID = EYES.flatMap((eyes) => HAIRS.map((hair) => L({ hair, eyes, hat: 'none', bottom: 'pants' })))
-const LOOKS = q.get('grid') === 'eyes' ? EYE_GRID.filter((_, i) => !q.has('eyes') || EYES[Math.floor(i / 5)] === q.get('eyes')) : q.get('grid') === 'hats' ? GRID.filter((_, i) => !q.has('hat') || HATS[Math.floor(i / 5)] === q.get('hat')) : q.has('rows') ? q.get('rows')!.split(',').map((i) => ALL[Number(i)]) : ALL
+// ?grid=clothes : 머리 5종 × (상의 3종 + 하의 4종)
+const CLOTHES: Partial<AvatarLook>[] = [
+  { top: 'tee', bottom: 'pants' },
+  { top: 'hoodie', bottom: 'shorts' },
+  { top: 'stripe', bottom: 'skirt' },
+  { top: 'tee', bottom: 'dress' },
+]
+const CLOTH_GRID = CLOTHES.flatMap((c) => HAIRS.map((hair) => L({ hair, ...c, hat: 'none', topColor: '#6fd6b8', bottomColor: '#6a8cff' })))
+const LOOKS = q.get('grid') === 'clothes' ? CLOTH_GRID.filter((_, i) => !q.has('c') || Math.floor(i / 5) === Number(q.get('c'))) : q.get('grid') === 'eyes' ? EYE_GRID.filter((_, i) => !q.has('eyes') || EYES[Math.floor(i / 5)] === q.get('eyes')) : q.get('grid') === 'hats' ? GRID.filter((_, i) => !q.has('hat') || HATS[Math.floor(i / 5)] === q.get('hat')) : q.has('rows') ? q.get('rows')!.split(',').map((i) => ALL[Number(i)]) : ALL
 // 각도: [이름, 방위각, 높이]
 const ALLV: [string, number, number][] = [
   ['앞', 0, 0.75],
@@ -70,9 +78,9 @@ LOOKS.forEach((look, r) => {
       if (m?.color && '#' + m.color.getHexString() === new THREE.Color(look.hatColor).getHexString().replace(/^/, '#')) o.visible = false
     })
   VIEWS.forEach(([, az, h], c) => {
-    const d = 3.2
-    camera.position.set(Math.sin(az) * d, h + 0.6, Math.cos(az) * d)
-    camera.lookAt(0, 0.6, 0)
+    const d = Number(q.get('d') ?? 3.2)
+    camera.position.set(Math.sin(az) * d, h * d / 3.2 + Number(q.get('ly') ?? 0.6), Math.cos(az) * d)
+    camera.lookAt(0, Number(q.get('ly') ?? 0.6), 0)
     const x = c * CELL
     const y = H - (r + 1) * CELL
     renderer.setViewport(x, y, CELL, CELL)

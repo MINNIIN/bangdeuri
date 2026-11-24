@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { AvatarIcon } from './AvatarIcon'
 import type { AppContext } from '../App'
-import { buildAvatar, PRESET_LOOKS } from '../art/avatar'
+import { PRESET_LOOKS } from '../art/avatar'
 import { defaultDecor } from '../art/decor'
 import { ITEMS } from '../art/items'
 import { themeById } from '../art/themes'
@@ -10,7 +11,7 @@ import { charLength, clip, errorText, FEEDBACK_CONTACT_MAX, FEEDBACK_MAX } from 
 import { store, type VisitedRoom } from '../lib/storage'
 import type { Drop, PushPrefs, Room } from '../lib/types'
 import { InstallCard } from './InstallCard'
-import { Icon, SpriteIcon } from './PixelSprite'
+import { Icon } from './PixelSprite'
 import { RoomScene } from './RoomScene'
 import { Sheet } from './Sheet'
 
@@ -137,7 +138,7 @@ function Dashboard({ ctx }: { ctx: AppContext }) {
   return (
     <main className="screen home dashboard">
       <header className="me-card">
-        <SpriteIcon sprite={buildAvatar(profile.look)} size={84} className="me-avatar" />
+        <AvatarIcon look={profile.look} size={84} className="me-avatar" />
         <div className="me-body">
           <p className="eyebrow">반가워요</p>
           <h1 className="me-name">{profile.nickname}</h1>
@@ -162,7 +163,7 @@ function Dashboard({ ctx }: { ctx: AppContext }) {
             {rooms.map((r) => (
               <li key={r.id}>
                 <button className="my-room" onClick={() => ctx.go({ kind: 'room', slug: r.slug })}>
-                  <SpriteIcon sprite={buildAvatar(profile.look)} size={40} />
+                  <AvatarIcon look={profile.look} size={40} />
                   <span className="my-room-body">
                     <b>{r.name}의 미니룸</b>
                     <span className="muted">
@@ -283,7 +284,7 @@ function VisitedRooms({ ctx }: { ctx: AppContext }) {
         {shown.map((v) => (
           <li key={v.id} className="visited-room">
             <button className="my-room" onClick={() => ctx.go({ kind: 'room', slug: v.slug })}>
-              <SpriteIcon sprite={buildAvatar(v.owner.look)} size={40} />
+              <AvatarIcon look={v.owner.look} size={40} />
               <span className="my-room-body">
                 <b>{v.name}의 미니룸</b>
                 <span className="muted">

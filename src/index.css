@@ -3810,3 +3810,13 @@ button {
   text-align: center;
   word-break: keep-all;
 }
+
+/* 게임 캐릭터 미니미 그림 (AvatarIcon): 도트 미니미용 픽셀 확대를 쓰지 않는다 */
+img.avatar-icon {
+  display: inline-block;
+  object-fit: contain;
+  image-rendering: auto;
+}
+span.avatar-icon.is-loading {
+  display: inline-block;
+}
