@@ -1,4 +1,4 @@
-/** Rounded toy architecture shared by the live neighbourhood and model studio. */
+/** Rounded architecture for the live neighbourhood. */
 import * as THREE from 'three'
 import { HOUSE_D, HOUSE_W } from '../lib/town'
 import { cyl, group, mat, part, roundBox as roundedBox, sphere, tint } from './kit'
@@ -7,6 +7,8 @@ import { cyl, group, mat, part, roundBox as roundedBox, sphere, tint } from './k
 const roundBox = (w: number, h: number, d: number, radius = 0.06) => roundedBox(w, h, d, radius, 1)
 
 export interface ToyHouseStyle { wall: string; roof: string; trim: string; door: string }
+/** Mounted on the front gable, above the porch and outside the roof's front bevel. */
+export const TOY_HOUSE_NAMEPLATE = { width: 2.6, height: 0.65, y: 3.58, frontOffset: 0.47 }
 export const TOY_HOUSES: Record<string, ToyHouseStyle> = {
   pink: { wall: '#f6d9df', roof: '#e98f89', trim: '#fff6e9', door: '#b98461' },
   studio: { wall: '#f0e1cc', roof: '#bb8068', trim: '#fff6e9', door: '#986e53' },

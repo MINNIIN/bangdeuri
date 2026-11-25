@@ -1,9 +1,9 @@
 /**
  * 골목 3D: 잔디 · 큰길(차도·인도) · 뒷골목 · 샛길 · 친구들 집(마당·울타리·대문·우편함) · 가게 건물 · 빈 집터 · 공원.
- * 집 겉모습은 그 방 테마 색을 따르고, 대문 위에 "OO네" 문패가 붙는다.
+ * 집 겉모습은 그 방 테마 색을 따르고, 정면 박공벽에 "OO네 집" 문패가 붙는다.
  */
 import * as THREE from 'three'
-import { buildToyHouseExterior, TOY_HOUSES } from './toyHouse'
+import { buildToyHouseExterior, TOY_HOUSES, TOY_HOUSE_NAMEPLATE } from './toyHouse'
 import type { Room } from '../lib/types'
 import {
   ALLEY_W,
@@ -35,7 +35,7 @@ import {
   type TownMap,
   townZones,
 } from '../lib/town'
-import { bakeStatic, box, canvasTexture, capsule, cone, cyl, group, mat, part, roundBox, sphere, tint, torus } from './kit'
+import { bakeStatic, box, canvasTexture, capsule, cone, cyl, fillFit, group, mat, part, roundBox, sphere, tint, torus } from './kit'
 import * as P from './places3d'
 import { shopExterior } from './shops3d'
 import { type BusNow, busAt, busPhase, CAT_SEEDS, catAt, catRoute } from '../lib/townLife'
@@ -82,7 +82,7 @@ function textTexture(text: string, bg: string, fg: string) {
     ctx.font = '700 64px Galmuri11, system-ui, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(text, 256, 68, 470)
+    fillFit(ctx, text, 256, 68, 470)
   })
 }
 
@@ -665,14 +665,16 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     }
     g.add(house)
 
-    // 문패
+    // 박공벽 문패: 현관 지붕 위로 올리고, 박공의 앞면 밖으로 꺼내 가려지지 않게 한다.
     if (room) {
-      const label = textTexture(`${room.owner.nickname}네`, '#ffffff', '#2b2233')
+      const label = textTexture(`${room.owner.nickname}네 집`, style.trim, '#2b2233')
       owned.push(label)
-      const signMat = new THREE.MeshStandardMaterial({ map: label, roughness: 0.6 })
+      const signMat = new THREE.MeshBasicMaterial({ map: label, transparent: true })
       owned.push(signMat)
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), signMat)
-      sign.position.set(hx, 2.75, FRONT + 0.06)
+      const plate = TOY_HOUSE_NAMEPLATE
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(plate.width, plate.height), signMat)
+      sign.name = 'houseNameplate'
+      sign.position.set(hx, plate.y, FRONT + plate.frontOffset)
       sign.userData.door = lot.roomId
       g.add(sign)
     }

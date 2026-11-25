@@ -10,8 +10,9 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mat } from './kit'
 
-/** PC room equipment still uses GLB; home furniture now shares the rounded toy builders. */
-export const MODEL_NAMES = ['pc/chair', 'pc/monitor', 'pc/tower', 'pc/keyboard'] as const
+/** 방 가구 중 KayKit 모델로 바꾸는 것 (tools/assets/kaykit_furniture.py의 MAP 키) */
+export const FURNITURE_MODELS = ['sofa', 'lowtable', 'lamp', 'bed', 'wardrobe', 'chair', 'bookshelf', 'desk', 'cactus', 'fridge', 'counter'] as const
+export const MODEL_NAMES = ['pc/chair', 'pc/monitor', 'pc/tower', 'pc/keyboard', ...FURNITURE_MODELS.map((n) => `furniture/${n}` as const)] as const
 export type ModelName = (typeof MODEL_NAMES)[number]
 
 /** 앱에서 이름으로 찾아 재질을 바꾸는 메시 */
