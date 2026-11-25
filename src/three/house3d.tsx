@@ -113,6 +113,7 @@ function texturedWall(tex: THREE.Texture, len: number, color: string) {
 
 export function buildHouse3D(decor: Decor, onTexture?: () => void): House3D {
   const g = new THREE.Group()
+  g.userData.artStyle = 'rounded-toy-v1'
   const textures: THREE.Texture[] = []
   const owned: THREE.Material[] = []
   const tex = (svg: string, w: number, h: number) => {
@@ -125,7 +126,7 @@ export function buildHouse3D(decor: Decor, onTexture?: () => void): House3D {
   const living = tex(floorSvg(decor.floor, 'f3-living', FLOOR_SIDE * 2, FLOOR_SIDE * 2), 1024, 1024)
   const floorMat = new THREE.MeshStandardMaterial({ map: living, roughness: 0.85 })
   owned.push(floorMat)
-  const slab = new THREE.Mesh(box(S + THICK * 2, 0.3, S + THICK * 2), [
+  const slab = new THREE.Mesh(roundBox(S + THICK * 2, 0.3, S + THICK * 2, 0.075), [
     mat(tint(decor.floor.color, -0.3)),
     mat(tint(decor.floor.color, -0.3)),
     floorMat,
@@ -185,6 +186,13 @@ export function buildHouse3D(decor: Decor, onTexture?: () => void): House3D {
   }
   // 모서리 기둥
   g.add(part(box(THICK, WALL_HEIGHT, THICK), mat(tint(wallL.color, -0.15)), [-H - THICK / 2, WALL_HEIGHT / 2, -H - THICK / 2]))
+  // Dimensional mouldings frame the user's wallpaper without replacing its art.
+  const trim = mat('#fff5e5', { rough: 0.72 })
+  for (const y of [0.09, WALL_HEIGHT - 0.04]) {
+    const h = y < 1 ? 0.15 : 0.11
+    g.add(part(roundBox(0.09, h, S, 0.03), trim, [-H + 0.025, y, 0]))
+    g.add(part(roundBox(S, h, 0.09, 0.03), trim, [0, y, -H + 0.025]))
+  }
 
   // ─── 앞쪽 낮은 벽 (동·남) + 현관문 자리 ───
   const lowColor = tint(wallR.color, -0.05)
@@ -193,7 +201,7 @@ export function buildHouse3D(decor: Decor, onTexture?: () => void): House3D {
   const lowWall = (x0: number, z0: number, x1: number, z1: number) => {
     const len = Math.hypot(x1 - x0, z1 - z0)
     if (len < 0.05) return
-    const wgrp = group(part(box(len, LOW_WALL, THICK), lowMat, [0, LOW_WALL / 2, 0]), part(box(len + 0.02, 0.05, THICK + 0.04), capMat, [0, LOW_WALL + 0.025, 0]))
+    const wgrp = group(part(roundBox(len, LOW_WALL, THICK, 0.045), lowMat, [0, LOW_WALL / 2, 0]), part(roundBox(len + 0.02, 0.05, THICK + 0.04, 0.02), capMat, [0, LOW_WALL + 0.025, 0]))
     wgrp.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2)
     wgrp.rotation.y = -Math.atan2(z1 - z0, x1 - x0)
     g.add(wgrp)

@@ -3,6 +3,7 @@
  * 집 겉모습은 그 방 테마 색을 따르고, 대문 위에 "OO네" 문패가 붙는다.
  */
 import * as THREE from 'three'
+import { buildToyHouseExterior, TOY_HOUSES } from './toyHouse'
 import type { Room } from '../lib/types'
 import {
   ALLEY_W,
@@ -39,11 +40,7 @@ import * as P from './places3d'
 import { shopExterior } from './shops3d'
 import { type BusNow, busAt, busPhase, CAT_SEEDS, catAt, catRoute } from '../lib/townLife'
 
-const HOUSE_STYLE: Record<string, { wall: string; roof: string; trim: string; door: string }> = {
-  pink: { wall: '#ffe1ec', roof: '#ff7fa6', trim: '#ffffff', door: '#c9577d' },
-  studio: { wall: '#f6ead6', roof: '#c9784a', trim: '#ffffff', door: '#8a5a38' },
-  night: { wall: '#d6dcff', roof: '#5a5fb0', trim: '#f4f4ff', door: '#3a4178' },
-}
+const HOUSE_STYLE = TOY_HOUSES
 
 export interface Town3D {
   group: THREE.Group
@@ -87,21 +84,6 @@ function textTexture(text: string, bg: string, fg: string) {
     ctx.textBaseline = 'middle'
     ctx.fillText(text, 256, 68, 470)
   })
-}
-
-function gableRoof(w: number, d: number, h: number, color: string) {
-  const shape = new THREE.Shape()
-  shape.moveTo(-d / 2, 0)
-  shape.lineTo(d / 2, 0)
-  shape.lineTo(0, h)
-  shape.closePath()
-  const g = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.06, bevelSegments: 2 })
-  g.translate(0, 0, -w / 2)
-  g.rotateY(Math.PI / 2)
-  const m = new THREE.Mesh(g, mat(color, { rough: 0.7 }))
-  m.castShadow = true
-  m.receiveShadow = true
-  return m
 }
 
 function tree(scale = 1, hue = 0) {
@@ -658,7 +640,7 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
   }
 
   // ─── 집들 ───
-  const windowMat = new THREE.MeshStandardMaterial({ color: '#cfe9ff', roughness: 0.15, metalness: 0.1, emissive: '#ffcf7a', emissiveIntensity: 0 })
+  const windowMat = new THREE.MeshStandardMaterial({ color: '#f4dfb8', roughness: 0.35, metalness: 0, emissive: '#ffcf7a', emissiveIntensity: 0 })
   const lampMat = new THREE.MeshStandardMaterial({ color: '#fff3c4', roughness: 0.4, emissive: '#ffd27a', emissiveIntensity: 0.2 })
   owned.push(windowMat, lampMat)
   const flags = new Map<string, THREE.Object3D>()
@@ -672,56 +654,7 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
     const FRONT = HOUSE_FRONT_Z + lot.zOff
     const FENCE = FENCE_Z + lot.zOff
     const hz = (HOUSE_FRONT_Z + HOUSE_BACK_Z) / 2 + lot.zOff
-    const house = new THREE.Group()
-    house.userData.house = lot.roomId
-    const wallH = 2.9
-    house.add(part(roundBox(HOUSE_W, wallH, HOUSE_D, 0.08), mat(style.wall, { rough: 0.9 }), [0, wallH / 2, 0]))
-    house.add(part(box(HOUSE_W + 0.1, 0.3, HOUSE_D + 0.1), mat(tint(style.wall, -0.2)), [0, 0.15, 0]))
-    const roof = gableRoof(HOUSE_W + 0.7, HOUSE_D + 0.9, 2.1, style.roof)
-    roof.position.y = wallH
-    house.add(roof)
-    house.add(part(roundBox(0.6, 1.3, 0.6, 0.05), mat(tint(style.roof, -0.15)), [HOUSE_W / 2 - 1.3, wallH + 1.3, -0.8]))
-    // 문 (누르면 들어간다)
-    const front = HOUSE_D / 2
-    const door = group(
-      part(roundBox(1.3, 2.15, 0.14, 0.05), mat(style.trim), [0, 1.1, 0]),
-      part(roundBox(1.05, 1.95, 0.1, 0.06), mat(style.door, { rough: 0.6 }), [0, 1.03, 0.05]),
-      part(sphere(0.06, 10, 8), mat('#ffd94a', { metal: 0.6, rough: 0.3 }), [0.35, 1.0, 0.13]),
-      part(box(1.6, 0.12, 0.7), mat(tint(style.wall, -0.25)), [0, 0.06, 0.4]),
-      part(roundBox(1.8, 0.08, 0.9, 0.03), mat(style.roof), [0, 2.4, 0.35], { rot: [0.18, 0, 0] }),
-    )
-    door.position.set(0, 0, front)
-    door.traverse((n) => (n.userData.door = lot.roomId))
-    house.add(door)
-    // 창문
-    for (const x of [-2.3, 2.3]) {
-      house.add(part(roundBox(1.25, 1.05, 0.12, 0.04), mat(style.trim), [x, 1.6, front + 0.01]))
-      house.add(part(roundBox(1.05, 0.85, 0.12, 0.03), windowMat, [x, 1.6, front + 0.03]))
-      house.add(part(box(0.05, 0.85, 0.13), mat(style.trim), [x, 1.6, front + 0.04]))
-      house.add(part(roundBox(1.3, 0.12, 0.3, 0.03), mat(style.trim), [x, 1.05, front + 0.12]))
-      const box_ = flowers(Math.round(x * 3) + 7)
-      box_.scale.setScalar(0.6)
-      box_.position.set(x, 1.1, front + 0.15)
-      house.add(box_)
-    }
-    // 지붕: 용마루 + 기와 줄 (앞뒤 경사면에)
-    const roofW = HOUSE_W + 0.7
-    const roofD = HOUSE_D + 0.9
-    const slope = Math.atan2(2.1, roofD / 2)
-    const ridge = mat(tint(style.roof, -0.18), { rough: 0.6 })
-    house.add(part(cyl(0.12, 0.12, roofW + 0.15, 12), ridge, [0, wallH + 2.12, 0], { rot: [0, 0, Math.PI / 2] }))
-    for (const side of [1, -1])
-      for (let k = 1; k <= 4; k++) {
-        const t = k / 5
-        const z = side * (roofD / 2) * (1 - t)
-        const y = wallH + 2.1 * t + 0.05
-        house.add(part(box(roofW, 0.06, 0.1), ridge, [0, y, z], { rot: [side * slope, 0, 0] }))
-      }
-    // 박공 창 (옆면)
-    for (const sx of [-1, 1]) {
-      house.add(part(roundBox(0.12, 0.8, 0.8, 0.05), mat(style.trim), [sx * (HOUSE_W / 2 + 0.02), wallH + 0.7, 0]))
-      house.add(part(roundBox(0.12, 0.62, 0.62, 0.04), windowMat, [sx * (HOUSE_W / 2 + 0.05), wallH + 0.7, 0]))
-    }
+    const house = buildToyHouseExterior(style, windowMat, lot.roomId)
     house.position.set(hx, 0, hz)
     house.traverse((n) => {
       if (!n.userData.door) n.userData.house = lot.roomId
@@ -768,9 +701,9 @@ export function buildTown3D(map: TownMap, rooms: Map<string, Room>, rise: Readon
       const fg = new THREE.Group()
       for (let i = 0; i <= n; i++) {
         const t = i / n
-        fg.add(part(box(0.1, 0.75, 0.06), pickets, [x0 + (x1 - x0) * t, 0.375, z0 + (z1 - z0) * t]))
+        fg.add(part(roundBox(0.13, 0.78, 0.09, 0.043), pickets, [x0 + (x1 - x0) * t, 0.375, z0 + (z1 - z0) * t]))
       }
-      const rail = part(box(len, 0.06, 0.04), rails, [(x0 + x1) / 2, 0.5, (z0 + z1) / 2])
+      const rail = part(roundBox(len, 0.075, 0.065, 0.03), rails, [(x0 + x1) / 2, 0.5, (z0 + z1) / 2])
       rail.rotation.y = -Math.atan2(z1 - z0, x1 - x0)
       const rail2 = rail.clone()
       rail2.position.y = 0.25

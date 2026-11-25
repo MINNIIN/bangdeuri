@@ -36,8 +36,8 @@ function geo<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000
 
-export const roundBox = (w: number, h: number, d: number, r = 0.06) =>
-  geo(`rb${r3(w)}:${r3(h)}:${r3(d)}:${r3(r)}`, () => new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001)))
+export const roundBox = (w: number, h: number, d: number, r = 0.06, detail = 3) =>
+  geo(`rb${r3(w)}:${r3(h)}:${r3(d)}:${r3(r)}:${detail}`, () => new RoundedBoxGeometry(w, h, d, detail, Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001)))
 export const box = (w: number, h: number, d: number) => geo(`b${r3(w)}:${r3(h)}:${r3(d)}`, () => new THREE.BoxGeometry(w, h, d))
 export const sphere = (r: number, ws = 24, hs = 16) => geo(`s${r3(r)}:${ws}:${hs}`, () => new THREE.SphereGeometry(r, ws, hs))
 export const cyl = (rt: number, rb: number, h: number, seg = 24) =>
