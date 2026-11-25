@@ -58,12 +58,14 @@ import {
 } from '../lib/town'
 import type { Drop, Room } from '../lib/types'
 import { type Avatar3D, buildAvatar3D } from './avatar3d'
-import { buildItem3D, BULB, COVER, itemDepth, LIE_FORWARD, SCREEN, SEAT, SEAT_FORWARD, SEAT_KNEE } from './furniture3d'
+import { buildItem3D, BULB, COVER, itemDepth, lieForward, SCREEN, SEAT, SEAT_FORWARD, SEAT_KNEE } from './furniture3d'
 import { FxLayer, glowTexture, ON_HEAD } from './fx3d'
 import { buildHouse3D, fixtureFacing, fixtureWorld, type House3D } from './house3d'
-import { disposeTree, mat, part, torus } from './kit'
+import { disposeTree, mat, part, texturesPending, torus } from './kit'
 import { buildTown3D, HIT_LAYER, SEESAW_REST, type Town3D } from './town3d'
 import { buildShop3D, type Shop3D, shopNpcLook } from './shops3d'
+import { preloadModels } from './models'
+import { onAvatarModels, preloadAvatars } from './kenneyAvatar'
 import { VENDOR_LOOKS } from './places3d'
 import { BUS_STOP, type BusNow, busHits } from '../lib/townLife'
 import { barSound, busOuch } from '../lib/sfx'
@@ -508,6 +510,15 @@ function createWorld(
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
   renderer.domElement.className = 'world-canvas'
   host.prepend(renderer.domElement)
+  // 첫 화면은 게임 모델·캐릭터·벽지 그림이 다 준비된 뒤에 한 번에 보여 준다
+  // (예전 도형 → 새 모델로 바뀌거나 바닥이 잠깐 까맣게 보이는 깜빡임을 없앤다. 늦어지면 6초 뒤엔 그냥 보여 준다)
+  const hideUntilReady: HTMLElement[] = [renderer.domElement]
+  if (overlayEl.current) hideUntilReady.push(overlayEl.current)
+  for (const e of hideUntilReady) e.style.opacity = '0'
+  const startedAt = performance.now()
+  let shown = false
+  let modelsDone = false
+  let avatarsDone = false
 
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(32, 1, 0.5, 400)
@@ -535,6 +546,35 @@ function createWorld(
 
   const fx = new FxLayer()
   scene.add(fx.group)
+
+  // 게임 에셋 모델(가구·가게 소품·캐릭터)은 미리 불러 둔다.
+  // 그 전에 지은 집·가게·아이템은 예전 도형이므로, 모델이 도착하면 새 모델로 다시 짓는다
+  let disposed = false
+  void preloadModels().then(() => {
+    modelsDone = true
+    if (disposed) return
+    // 모델을 쓰는 가게는 PC방뿐 (카페는 만들던 음료 상태가 있어 다시 짓지 않는다)
+    const pc = shops3d.get('pc')
+    if (pc) {
+      scene.remove(pc.group)
+      disposeTree(pc.group)
+      pc.dispose()
+      shops3d.delete('pc')
+    }
+    if (house) {
+      scene.remove(house.h.group)
+      disposeTree(house.h.group)
+      house.h.dispose()
+      house = null
+    }
+    for (const m of dropMeshes.values()) {
+      dropGroup.remove(m)
+      disposeTree(m)
+    }
+    dropMeshes.clear()
+    showArea(me.area)
+  })
+  void preloadAvatars()
 
   // ─── 골목 / 집 안 ───
   let town: Town3D | null = buildTown3D(map, rooms)
@@ -645,6 +685,16 @@ function createWorld(
     actorGroup.add(a.avatar.root)
     a.builtFor = k
   }
+  // 게임 캐릭터 모델이 늦게 도착하면, 그 전에 지은 미니미를 새 모델로 다시 짓는다 (든 컵은 새 손으로 옮긴다)
+  const offAvatars = onAvatarModels(() => {
+    avatarsDone = true
+    for (const a of actors.values()) {
+      const held = a.avatar.hand.children.slice()
+      a.builtFor = ''
+      rebuildAvatar(a)
+      for (const c of held) a.avatar.hand.add(c)
+    }
+  })
   const removeActorObj = (a: Actor) => {
     window.clearTimeout(a.actTimer)
     window.clearTimeout(a.idleTimer)
@@ -996,6 +1046,8 @@ function createWorld(
     if (a.act?.phase === 'doing' && a.act.inter.pose === 'lie') v.set(0, 0.85, -0.95)
     return o.localToWorld(v)
   }
+  /** 아이템을 그린 배율 (골목 마당에 둔 아이템은 멀리서도 보이게 크게 그린다) → 앉는 높이·눕는 자리도 같이 키운다 */
+  const sizeOf = (key: string) => (dropMeshes.get(key)?.userData.size as number | undefined) ?? 1
   const itemTop = (t: Target) => {
     const m = t.key.includes(KEY_SEP) ? house?.h.fixtures.get(t.key.split(KEY_SEP)[1]) : dropMeshes.get(t.key)
     if (m) {
@@ -1625,7 +1677,8 @@ function createWorld(
     if (inter.exact) return t.pos
     const fwd = { x: Math.sin(t.yaw), z: Math.cos(t.yaw) }
     const seated = inter.pose === 'sit' || inter.pose === 'lie' || inter.pose === 'bath'
-    const d = seated ? itemDepth(t.item) * 0.7 + 0.35 : itemDepth(t.item) + (inter.pose === 'watch' ? 1.2 : 0.35)
+    const k = sizeOf(t.key)
+    const d = seated ? itemDepth(t.item) * k * 0.7 + 0.35 : itemDepth(t.item) * k + (inter.pose === 'watch' ? 1.2 : 0.35)
     return open(t.area, { x: t.pos.x + fwd.x * d, z: t.pos.z + fwd.z * d })
   }
 
@@ -2356,13 +2409,17 @@ function createWorld(
         a.yaw = seat.rot
       } else if (doing && (pose === 'sit' || pose === 'lie' || pose === 'bath')) {
         // 미니미는 앉으면 엉덩이, 누우면 등이 발밑 높이에 오게 자세를 잡는다 → 닿는 면 높이에 그대로 둔다
-        const seat = SEAT[doing.item] ?? 0.45
+        const k = sizeOf(doing.key)
+        const seat = (SEAT[doing.item] ?? 0.45) * k
         const fwd = { x: Math.sin(doing.yaw), z: Math.cos(doing.yaw) }
-        const off = pose === 'lie' ? LIE_FORWARD : (SEAT_FORWARD[doing.item] ?? 0)
+        const off = pose === 'lie' ? lieForward(k) : (SEAT_FORWARD[doing.item] ?? 0) * k
         px = doing.pos.x + fwd.x * off
         pz = doing.pos.z + fwd.z * off
-        y = seat
+        // 큰 침대는 베개도 두꺼워서, 그만큼 올려야 얼굴이 베개 사이에 파묻히지 않는다
+        y = seat + (pose === 'lie' ? (k - 1) * 0.12 : 0)
         knee = SEAT_KNEE[doing.item]
+        // 선베드는 머리 쪽 등받이가 들려 있다 → 발끝을 축으로 몸을 기대 눕힌다 (평평하게 누우면 머리가 등받이를 뚫는다)
+        if (pose === 'lie' && doing.item === 'b_sunbed') root.rotation.x = 0.3
       }
       if (doing?.inter.exact && !seat?.item.startsWith('p_')) {
         // 기구 위·물속: 정해진 자리 그 방향에 (망루·낚시는 위에서 앉는 높이를 이미 정했다)
@@ -2613,6 +2670,13 @@ function createWorld(
     // 바리스타 시점이면 카메라를 바리스타 눈으로
     if (pov) placePov(dt)
     renderer.render(scene, camera)
+    if (!shown && ((modelsDone && avatarsDone && texturesPending() === 0) || now - startedAt > 6000)) {
+      shown = true
+      for (const e of hideUntilReady) {
+        e.style.transition = 'opacity 0.25s ease-out'
+        e.style.opacity = '1'
+      }
+    }
 
     // 이름표 · 말풍선 · 아이템 말풍선 (화면 좌표로)
     const ov = overlayEl.current
@@ -2897,7 +2961,7 @@ function createWorld(
   }
 
   // 개발 중 확인용 (자동 스크린샷에서 상태를 본다)
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk, act: me.act ? me.act.key + ':' + me.act.phase : null }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), tapWalk: (x: number, z: number) => meWalk({ x, z }), tapWorld: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y) }, tapFixture: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) meAct(t); return !!t }, tapDrop: (id: string) => { const t = targetOf(id); if (t && t.area === me.area) meAct(t); return !!t }, lens: (o: { x?: number; z?: number; dist?: number; yaw?: number; pitch?: number; follow?: boolean; ms?: number }) => { follow = o.follow ?? false; animateCam({ ...cam, target: new THREE.Vector3(o.x ?? cam.target.x, cam.target.y, o.z ?? cam.target.z), dist: o.dist ?? cam.dist, yaw: o.yaw ?? cam.yaw, pitch: o.pitch ?? cam.pitch }, o.ms ?? 900) }, use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), bench: (n = 30) => { const gl = renderer.getContext(); renderer.render(scene, camera); gl.finish(); const t = performance.now(); for (let i = 0; i < n; i++) renderer.render(scene, camera); gl.finish(); return +((performance.now() - t) / n).toFixed(2) }, actorShadows: (on: boolean) => { for (const a of actors.values()) if (a.id !== "me") a.avatar.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = on }) }, screen: (x: number, z: number, y = 0) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, y, z)); return { x: r.left + s.x, y: r.top + s.y } }, zones: () => map.zones, cats: () => [0, 1].map((i) => town?.catPos(i)), bus: () => town?.bus() ?? null, cafe: () => ({ step: brew ? `${brew.i}:${brew.steps[brew.i]?.at}:${brew.phase}` : null, fill: brew?.look.fill ?? null, q: brewQueue.length, meCup: me.cup ? { sips: me.cup.sips, fill: me.cup.look.fill, at: me.cup.cup.group.getWorldPosition(new THREE.Vector3()).toArray().map((n) => +n.toFixed(2)), scale: me.cup.cup.group.getWorldScale(new THREE.Vector3()).x, head: headPos(me).toArray().map((n) => +n.toFixed(2)) } : null, clock }), tp: (x: number, z: number, area?: AreaId) => { if (area && area !== me.area) changeArea(me, area, { x, z }); else { endAct(me); me.walk = null; me.pos = { x, z } } follow = true }, night: (on: boolean) => { night = on }, meshes: () => { const out: Record<string, number> = {}; town?.group.traverse((n) => { if ((n as THREE.Mesh).isMesh && n.layers.test(camera.layers)) { let k = n.name || '(baked)'; for (let q = n.parent; q && q !== town!.group; q = q.parent) if (q.name) { k = q.name + '/' + k; break } out[k] = (out[k] ?? 0) + 1 } }); return out }, act: (key: string) => { const t = targetOf(key); if (t) meAct(t); return !!t }, tapAt: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y); return { x: r.left + q.x, y: r.top + q.y } } }
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bdWorld = { control, me: () => ({ area: me.area, pos: me.pos, walk: !!me.walk, act: me.act ? me.act.key + ':' + me.act.phase : null }), cam: () => cam, actors: () => [...actors.values()].map((a) => ({ id: a.id, area: a.area, pos: a.pos, name: a.info.name })), obstacles: () => collectObstacles(), walkTo: (x: number, z: number) => go(me, { x, z }), tapWalk: (x: number, z: number) => meWalk({ x, z }), tapWorld: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y) }, tapFixture: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) meAct(t); return !!t }, tapDrop: (id: string) => { const t = targetOf(id); if (t && t.area === me.area) meAct(t); return !!t }, lens: (o: { x?: number; z?: number; dist?: number; yaw?: number; pitch?: number; follow?: boolean; ms?: number }) => { follow = o.follow ?? false; animateCam({ ...cam, target: new THREE.Vector3(o.x ?? cam.target.x, cam.target.y, o.z ?? cam.target.z), dist: o.dist ?? cam.dist, yaw: o.yaw ?? cam.yaw, pitch: o.pitch ?? cam.pitch }, o.ms ?? 900) }, use: (fixtureId: string) => { const t = house && targetOf(fixtureKey(house.roomId, fixtureId)); if (t) { me.walk = null; me.pos = { ...t.pos }; startAct(me, t) } return !!t }, info: () => ({ ...renderer.info.render, geos: renderer.info.memory.geometries }), bench: (n = 30) => { const gl = renderer.getContext(); renderer.render(scene, camera); gl.finish(); const t = performance.now(); for (let i = 0; i < n; i++) renderer.render(scene, camera); gl.finish(); return +((performance.now() - t) / n).toFixed(2) }, actorShadows: (on: boolean) => { for (const a of actors.values()) if (a.id !== "me") a.avatar.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = on }) }, screen: (x: number, z: number, y = 0) => { const r = el.getBoundingClientRect(); const s = project(new THREE.Vector3(x, y, z)); return { x: r.left + s.x, y: r.top + s.y } }, zones: () => map.zones, seats: () => parkSeats(map.props).map((s) => ({ key: s.key, item: s.item, x: s.x, z: s.z })), cats: () => [0, 1].map((i) => town?.catPos(i)), bus: () => town?.bus() ?? null, cafe: () => ({ step: brew ? `${brew.i}:${brew.steps[brew.i]?.at}:${brew.phase}` : null, fill: brew?.look.fill ?? null, q: brewQueue.length, meCup: me.cup ? { sips: me.cup.sips, fill: me.cup.look.fill, at: me.cup.cup.group.getWorldPosition(new THREE.Vector3()).toArray().map((n) => +n.toFixed(2)), scale: me.cup.cup.group.getWorldScale(new THREE.Vector3()).x, head: headPos(me).toArray().map((n) => +n.toFixed(2)) } : null, clock }), tp: (x: number, z: number, area?: AreaId) => { if (area && area !== me.area) changeArea(me, area, { x, z }); else { endAct(me); me.walk = null; me.pos = { x, z } } follow = true }, night: (on: boolean) => { night = on }, meshes: () => { const out: Record<string, number> = {}; town?.group.traverse((n) => { if ((n as THREE.Mesh).isMesh && n.layers.test(camera.layers)) { let k = n.name || '(baked)'; for (let q = n.parent; q && q !== town!.group; q = q.parent) if (q.name) { k = q.name + '/' + k; break } out[k] = (out[k] ?? 0) + 1 } }); return out }, act: (key: string) => { const t = targetOf(key); if (t) meAct(t); return !!t }, tapAt: (x: number, z: number, y = 0) => { const r = renderer.domElement.getBoundingClientRect(); const q = project(new THREE.Vector3(x, y, z)); tap(r.left + q.x, r.top + q.y); return { x: r.left + q.x, y: r.top + q.y } } }
 
 
   return {
@@ -2997,6 +3061,8 @@ function createWorld(
       ring.geometry.dispose()
       ringMat.dispose()
       starGeo.dispose()
+      offAvatars()
+      disposed = true
       renderer.dispose()
       el.remove()
     },

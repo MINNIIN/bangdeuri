@@ -5,11 +5,14 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import type { AvatarLook } from '../art/avatar'
 import { type Avatar3D, buildAvatar3D } from './avatar3d'
+import { avatarModelsReady, onAvatarModels, preloadAvatars } from './kenneyAvatar'
 import { cyl, mat, part } from './kit'
 
 export default function AvatarPreview({ look, size = 170 }: { look: AvatarLook; size?: number }) {
   const host = useRef<HTMLDivElement>(null)
   const api = useRef<{ setLook: (l: AvatarLook) => void } | null>(null)
+  const lookRef = useRef(look)
+  lookRef.current = look
 
   useEffect(() => {
     const el = host.current!
@@ -37,7 +40,11 @@ export default function AvatarPreview({ look, size = 170 }: { look: AvatarLook; 
     let avatar: Avatar3D | null = null
     let spin = 0
     let drag: { x: number; spin: number } | null = null
+    // 게임 캐릭터 모델이 오기 전엔 아무것도 세우지 않는다 (예전 미니미가 보였다가 바뀌는 깜빡임 없이)
+    // 모델을 끝내 못 불러오면 그때 예전 미니미로
+    let fallback = false
     const setLook = (l: AvatarLook) => {
+      if (!avatarModelsReady() && !fallback) return
       if (avatar) {
         scene.remove(avatar.root)
         avatar.dispose()
@@ -47,6 +54,13 @@ export default function AvatarPreview({ look, size = 170 }: { look: AvatarLook; 
     }
     api.current = { setLook }
     setLook(look)
+    // 게임 캐릭터 모델이 도착하면 지금 모습으로 다시 짓는다
+    void preloadAvatars().then(() => {
+      if (avatarModelsReady() || !api.current) return
+      fallback = true
+      setLook(lookRef.current)
+    })
+    const offAvatars = onAvatarModels(() => setLook(lookRef.current))
 
     const down = (e: PointerEvent) => {
       drag = { x: e.clientX, spin }
@@ -79,6 +93,7 @@ export default function AvatarPreview({ look, size = 170 }: { look: AvatarLook; 
     raf = requestAnimationFrame(frame)
     return () => {
       cancelAnimationFrame(raf)
+      offAvatars()
       el.removeEventListener('pointerdown', down)
       el.removeEventListener('pointermove', move)
       el.removeEventListener('pointerup', up)

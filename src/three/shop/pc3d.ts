@@ -18,6 +18,7 @@ import {
 } from '../../lib/shop/pc'
 import { STORE_DOOR_DX, STORE_W } from '../../lib/town'
 import { bakeStatic, box, canvasTexture, cyl, mat, part, roundBox, sphere, fillFit } from '../kit'
+import { model } from '../models'
 import type { PlaceAnims } from '../places3d'
 import { FONT, type ShopArt, shopFront, shopKit, shopRoom } from './common'
 
@@ -149,23 +150,37 @@ function interior() {
   desk(PC_DESK_A_Z, true)
   desk(PC_DESK_B_Z, false)
 
+  /** 책상 윗면 높이 (모니터·키보드·본체 모델의 바닥) */
+  const DESK_TOP = 0.765
   const station = (x: number, zDesk: number, i: number) => {
     const zm = zDesk - 0.16
-    // 모니터 (받침 + 테두리 + 화면)
-    g.add(part(box(0.22, 0.02, 0.16), dark, [x, 0.775, zm], { shadow: false }))
-    g.add(part(box(0.05, 0.22, 0.04), dark, [x, 0.88, zm - 0.03], { shadow: false }))
-    g.add(part(roundBox(0.7, 0.44, 0.05, 0.02), dark, [x, 1.15, zm]))
-    g.add(part(new THREE.PlaneGeometry(0.64, 0.38), screens[i % 3], [x, 1.15, zm + 0.027], { shadow: false }))
+    // 모니터 (받침 + 테두리 + 화면). Blender 모델이 있으면 그걸, 없으면 도형으로
+    const mon = model('pc/monitor', { named: { screen: screens[i % 3] }, at: [x, DESK_TOP, zm] })
+    if (mon) g.add(mon)
+    else {
+      g.add(part(box(0.22, 0.02, 0.16), dark, [x, 0.775, zm], { shadow: false }))
+      g.add(part(box(0.05, 0.22, 0.04), dark, [x, 0.88, zm - 0.03], { shadow: false }))
+      g.add(part(roundBox(0.7, 0.44, 0.05, 0.02), dark, [x, 1.15, zm]))
+      g.add(part(new THREE.PlaneGeometry(0.64, 0.38), screens[i % 3], [x, 1.15, zm + 0.027], { shadow: false }))
+    }
     // 키보드 (RGB 자판) · 마우스 패드 · 마우스
-    g.add(part(box(0.44, 0.025, 0.14), dark, [x - 0.05, 0.775, zDesk + 0.14], { shadow: false }))
-    g.add(part(box(0.4, 0.008, 0.1), rgb, [x - 0.05, 0.79, zDesk + 0.14], { shadow: false }))
+    const kb = model('pc/keyboard', { named: { rgb }, at: [x - 0.05, DESK_TOP, zDesk + 0.14], shadow: false })
+    if (kb) g.add(kb)
+    else {
+      g.add(part(box(0.44, 0.025, 0.14), dark, [x - 0.05, 0.775, zDesk + 0.14], { shadow: false }))
+      g.add(part(box(0.4, 0.008, 0.1), rgb, [x - 0.05, 0.79, zDesk + 0.14], { shadow: false }))
+    }
     g.add(part(box(0.24, 0.006, 0.2), mat('#2a2d40'), [x + 0.3, 0.768, zDesk + 0.14], { shadow: false }))
     g.add(part(sphere(0.035, 10, 6), mat('#e8e8f0'), [x + 0.3, 0.78, zDesk + 0.14], { scale: [0.8, 0.5, 1.2], shadow: false }))
     // 본체 (책상 위 옆, 옆판이 빛난다)
     const tx = x + 0.44
     if (tx < PC_DESK_X1 - 0.1) {
-      g.add(part(box(0.18, 0.4, 0.4), dark, [tx, 0.97, zDesk - 0.08], { shadow: false }))
-      g.add(part(box(0.005, 0.32, 0.32), rgb, [tx - 0.093, 0.97, zDesk - 0.08], { shadow: false }))
+      const tower = model('pc/tower', { named: { rgb }, at: [tx, DESK_TOP, zDesk - 0.08], shadow: false })
+      if (tower) g.add(tower)
+      else {
+        g.add(part(box(0.18, 0.4, 0.4), dark, [tx, 0.97, zDesk - 0.08], { shadow: false }))
+        g.add(part(box(0.005, 0.32, 0.32), rgb, [tx - 0.093, 0.97, zDesk - 0.08], { shadow: false }))
+      }
     }
     // 헤드셋 (모니터에 걸쳐 있다)
     if (i % 2 === 0) g.add(part(new THREE.TorusGeometry(0.1, 0.018, 6, 14, Math.PI), mat(i % 4 ? '#3fb6ff' : '#ff4f7a'), [x + 0.3, 1.38, zm], { shadow: false }))
@@ -173,6 +188,11 @@ function interior() {
   const chair = (x: number, z: number, i: number) => {
     // 게이밍 의자: 다리 받침 · 기둥 · 방석(윗면 0.45) · 등받이(남쪽) · 팔걸이
     const accent = i % 2 ? chairBlue : chairRed
+    const m = model('pc/chair', { paint: { accent }, at: [x, 0, z] })
+    if (m) {
+      g.add(m)
+      return
+    }
     g.add(part(cyl(0.24, 0.24, 0.04, 5), dark, [x, 0.04, z], { shadow: false }))
     g.add(part(cyl(0.035, 0.035, 0.34, 8), metal, [x, 0.22, z], { shadow: false }))
     g.add(part(roundBox(0.48, 0.08, 0.46, 0.03), chairBody, [x, 0.41, z]))

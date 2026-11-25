@@ -1,7 +1,6 @@
 import { useState, lazy, Suspense } from 'react'
 import {
   type AvatarLook,
-  buildAvatar,
   CLOTH_COLORS,
   HAIR_COLORS,
   HAT_COLORS,
@@ -10,7 +9,7 @@ import {
   randomLook,
   SKIN_COLORS,
 } from '../art/avatar'
-import { SpriteIcon } from './PixelSprite'
+import { AvatarIcon } from './AvatarIcon'
 
 // 3D 미리보기는 three.js가 커서 필요할 때 불러온다
 const AvatarPreview = lazy(() => import('../three/AvatarPreview'))
@@ -44,7 +43,7 @@ export function AvatarEditor({ look, onChange }: { look: AvatarLook; onChange: (
   return (
     <section className="avatar-editor">
       <div className="avatar-stage">
-        <Suspense fallback={<SpriteIcon sprite={buildAvatar(look)} size={150} className="avatar-big" />}>
+        <Suspense fallback={<div style={{ width: 170, height: 170 }} />}>
           <AvatarPreview look={look} size={170} />
         </Suspense>
         <div className="avatar-quick">
@@ -53,7 +52,7 @@ export function AvatarEditor({ look, onChange }: { look: AvatarLook; onChange: (
           </button>
           {PRESET_LOOKS.map((p) => (
             <button key={p.id} type="button" className="avatar-preset" onClick={() => onChange(p.look)} aria-label={`${p.name}에서 시작`}>
-              <SpriteIcon sprite={buildAvatar(p.look)} size={34} />
+              <AvatarIcon look={p.look} size={34} />
             </button>
           ))}
         </div>
@@ -82,7 +81,7 @@ export function AvatarEditor({ look, onChange }: { look: AvatarLook; onChange: (
                 className={`part-cell ${on ? 'is-on' : ''}`}
                 onClick={() => set({ [part.shape]: o.id } as Partial<AvatarLook>)}
               >
-                <SpriteIcon sprite={buildAvatar(next)} size={46} />
+                <AvatarIcon look={next} size={46} frame={tab === 'top' || tab === 'bottom' ? 'full' : 'bust'} />
                 <span>{o.name}</span>
               </button>
             )

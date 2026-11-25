@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { AvatarIcon } from './AvatarIcon'
 import type { AppContext } from '../App'
 import { RETURN_KEY } from '../lib/links'
-import { ANON_LOOK, type AvatarLook, buildAvatar, randomLook } from '../art/avatar'
+import { ANON_LOOK, type AvatarLook, randomLook } from '../art/avatar'
 import { charLength, clip, NICK_MAX } from '../lib/rules'
 import { anonName, store } from '../lib/storage'
 import type { Room } from '../lib/types'
-import { Icon, SpriteIcon } from './PixelSprite'
+import { Icon } from './PixelSprite'
 
 export interface Entry {
   name: string
@@ -41,12 +42,12 @@ export function EnterSheet({ ctx, room, onEnter }: { ctx: AppContext; room: Room
       {profile ? (
         <div className="enter-choices" role="radiogroup" aria-label="어떻게 들어갈까요">
           <button role="radio" aria-checked={mode === 'me'} className={`choice ${mode === 'me' ? 'is-on' : ''}`} onClick={() => setMode('me')}>
-            <SpriteIcon sprite={buildAvatar(profile.look)} size={64} />
+            <AvatarIcon look={profile.look} size={64} />
             <b>{profile.nickname}</b>
             <span className="muted">내 닉네임으로</span>
           </button>
           <button role="radio" aria-checked={mode === 'anon'} className={`choice ${mode === 'anon' ? 'is-on' : ''}`} onClick={() => setMode('anon')}>
-            <SpriteIcon sprite={buildAvatar(ANON_LOOK)} size={64} />
+            <AvatarIcon look={ANON_LOOK} size={64} />
             <b>{anon}</b>
             <span className="muted">익명으로 (정체 숨기기)</span>
           </button>
@@ -65,7 +66,7 @@ export function EnterSheet({ ctx, room, onEnter }: { ctx: AppContext; room: Room
           }}
         >
           <div className="enter-look">
-            <SpriteIcon sprite={buildAvatar(look)} size={72} />
+            <AvatarIcon look={look} size={72} />
             <button type="button" className="btn btn-small" onClick={() => setLook(randomLook())}>
               <Icon id="dice" size={14} /> 다른 모습
             </button>

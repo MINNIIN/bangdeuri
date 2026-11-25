@@ -2,6 +2,10 @@
 import * as THREE from 'three'
 import { type AvatarLook, PRESET_LOOKS } from '../src/art/avatar'
 import { buildAvatar3D } from '../src/three/avatar3d'
+import { preloadAvatars } from '../src/three/kenneyAvatar'
+
+// 게임 캐릭터 모델을 먼저 불러와서 앱과 같은 미니미로 그린다 (?old 면 예전 코드 미니미)
+if (!new URLSearchParams(location.search).has('old')) await preloadAvatars()
 
 const base = PRESET_LOOKS[0].look
 const L = (o: Partial<AvatarLook>): AvatarLook => ({ ...base, ...o })
@@ -19,9 +23,20 @@ const ALL: AvatarLook[] = [
 ]
 // ?grid=hats : 머리 5종 × 모자(cap·beanie·bear) 전부
 const HAIRS: AvatarLook['hair'][] = ['bob', 'short', 'long', 'bun', 'curly']
-const HATS: AvatarLook['hat'][] = ['cap', 'beanie', 'bear']
+const HATS: AvatarLook['hat'][] = ['cap', 'beanie', 'bear', 'pin', 'ribbon']
 const GRID = HATS.flatMap((hat) => HAIRS.map((hair) => L({ hair, hat, hatColor: '#f2d16b', bottom: 'pants' })))
-const LOOKS = q.get('grid') === 'hats' ? GRID.filter((_, i) => !q.has('hat') || HATS[Math.floor(i / 5)] === q.get('hat')) : q.has('rows') ? q.get('rows')!.split(',').map((i) => ALL[Number(i)]) : ALL
+// ?grid=eyes : 머리 5종 × 눈 5종 (모자 없이)
+const EYES: AvatarLook['eyes'][] = ['round', 'smile', 'dot', 'wink', 'shades']
+const EYE_GRID = EYES.flatMap((eyes) => HAIRS.map((hair) => L({ hair, eyes, hat: 'none', bottom: 'pants' })))
+// ?grid=clothes : 머리 5종 × (상의 3종 + 하의 4종)
+const CLOTHES: Partial<AvatarLook>[] = [
+  { top: 'tee', bottom: 'pants' },
+  { top: 'hoodie', bottom: 'shorts' },
+  { top: 'stripe', bottom: 'skirt' },
+  { top: 'tee', bottom: 'dress' },
+]
+const CLOTH_GRID = CLOTHES.flatMap((c) => HAIRS.map((hair) => L({ hair, ...c, hat: 'none', topColor: '#6fd6b8', bottomColor: '#6a8cff' })))
+const LOOKS = q.get('grid') === 'clothes' ? CLOTH_GRID.filter((_, i) => !q.has('c') || Math.floor(i / 5) === Number(q.get('c'))) : q.get('grid') === 'eyes' ? EYE_GRID.filter((_, i) => !q.has('eyes') || EYES[Math.floor(i / 5)] === q.get('eyes')) : q.get('grid') === 'hats' ? GRID.filter((_, i) => !q.has('hat') || HATS[Math.floor(i / 5)] === q.get('hat')) : q.has('rows') ? q.get('rows')!.split(',').map((i) => ALL[Number(i)]) : ALL
 // 각도: [이름, 방위각, 높이]
 const ALLV: [string, number, number][] = [
   ['앞', 0, 0.75],
@@ -54,7 +69,7 @@ const walk = q.has('walk')
 
 LOOKS.forEach((look, r) => {
   const a = buildAvatar3D(look)
-  a.animate({ walking: walk, pose: null, t: Number(q.get("t") ?? 1.7) })
+  a.animate({ walking: walk, pose: (q.get("pose") as never) ?? null, t: Number(q.get("t") ?? 1.7) })
   scene.add(a.root)
   // ?nohat : 모자만 숨겨서 그 아래 머리카락이 어떻게 눌려 있는지 본다
   if (q.has('nohat'))
@@ -63,9 +78,9 @@ LOOKS.forEach((look, r) => {
       if (m?.color && '#' + m.color.getHexString() === new THREE.Color(look.hatColor).getHexString().replace(/^/, '#')) o.visible = false
     })
   VIEWS.forEach(([, az, h], c) => {
-    const d = 3.2
-    camera.position.set(Math.sin(az) * d, h + 0.6, Math.cos(az) * d)
-    camera.lookAt(0, 0.6, 0)
+    const d = Number(q.get('d') ?? 3.2)
+    camera.position.set(Math.sin(az) * d, h * d / 3.2 + Number(q.get('ly') ?? 0.6), Math.cos(az) * d)
+    camera.lookAt(0, Number(q.get('ly') ?? 0.6), 0)
     const x = c * CELL
     const y = H - (r + 1) * CELL
     renderer.setViewport(x, y, CELL, CELL)

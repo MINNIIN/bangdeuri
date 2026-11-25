@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { buildAvatar } from '../art/avatar'
+import { AvatarIcon } from './AvatarIcon'
 import type { Peer } from '../lib/realtime'
 import { CHAT_MAX, clip } from '../lib/rules'
 import type { ChatMessage } from '../lib/types'
-import { Icon, SpriteIcon } from './PixelSprite'
+import { Icon } from './PixelSprite'
 
 interface Props {
   messages: ChatMessage[]
@@ -117,7 +117,7 @@ export function RoomChat({ messages, peers, meCid, owner, unread, open, onOpenCh
               className={`peer ${picked === p.cid ? 'is-on' : ''}`}
               onClick={() => setPicked(owner && !p.owner && p.cid !== meCid ? (picked === p.cid ? null : p.cid) : null)}
             >
-              <SpriteIcon sprite={buildAvatar(p.look)} size={30} />
+              <AvatarIcon look={p.look} size={30} />
               <span>
                 {p.owner && <Icon id="crown" size={11} />}
                 {p.name}

@@ -13,6 +13,7 @@ import type { AvatarLook } from '../art/avatar'
 import { OUTFITS } from '../art/poses'
 import type { Pose } from '../lib/interactions'
 import { canvasTexture, cone, cyl, group, mat, part, roundBox, sphere, tint, torus } from './kit'
+import { avatarModelsReady, buildKenneyAvatar } from './kenneyAvatar'
 
 const INK = '#2b2233'
 const HEAD_R = 0.3
@@ -686,6 +687,11 @@ function stripeTexture(base: string) {
 
 /** 겉모습 + 옷장 옷 번호로 3D 미니미를 만든다 */
 export function buildAvatar3D(look: AvatarLook, outfit = 0): Avatar3D {
+  // 게임 캐릭터 모델을 불러왔으면 그걸로 (못 불러왔거나 아직이면 아래 코드 미니미)
+  if (avatarModelsReady()) {
+    const k = buildKenneyAvatar(look, outfit)
+    if (k) return k
+  }
   const swap = OUTFITS[outfit % OUTFITS.length] ?? {}
   const topColor = swap.t ?? look.topColor
   const bottomColor = swap.j ?? look.bottomColor
