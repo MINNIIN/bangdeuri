@@ -43,7 +43,8 @@ const RULES: Record<HairId, Rule[]> = {
     // 몸통의 피부색 칸은 멜빵끈 → 반바지 색으로 (피부색이면 살색 멜빵처럼 보인다)
     ['body', 2, 1, 'bottom', ['torso']],
     ['body', 2, 1, 'skin'],
-    // 반바지와 손목 밴드는 원본에서도 같은 색
+    // 손목 밴드는 원본에선 반바지와 같은 색이지만, 앉으면 손이 바지 옆에 붙어 바지가 튀어나온 것처럼 보인다 → 소매 끝(윗옷 그늘색)
+    ['body', 2, 5, 'topShade', ['arm-left', 'arm-right']],
     ['body', 2, 5, 'bottom'],
     ['body', 2, 9, 'top'],
     ['body', 3, 3, 'bottom', ['torso']],
@@ -96,6 +97,8 @@ const CH = 128
 const LEG_COL = ROLES.length
 /** 반바지 끝 높이 (모델 단위, 발바닥 0 ~ 엉덩이 약 0.18) */
 const SHORTS_Y = 0.105
+/** 몸통 반너비 (모델 단위). 모든 모델의 윗옷 몸판이 ±0.126 */
+const TORSO_HALF = 0.128
 
 interface Template {
   scene: THREE.Object3D
@@ -107,6 +110,8 @@ interface Template {
   back: number
   /** 머리 뼈 기준 머리통 상자 (얼굴 피부, 귀 포함) · 머리카락까지 포함한 머리 꼭대기 (모델 단위) */
   skull: THREE.Box3
+  /** 머리 뼈 위치 (모델 좌표) — 모자 속으로 머리카락을 밀어 넣을 때 기준 */
+  headAt: THREE.Vector3
   hairTop: number
   /** 오른팔 뼈 기준 손 위치 (모델 단위) */
   hand: THREE.Vector3
@@ -354,6 +359,8 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
         const k = Math.min(1, Math.max(0, (legTop - pos.getY(i)) / legTop))
         uv.setXY(i, (LEG_COL * CW + CW / 2) / TEX, (k * CH) / TEX)
       }
+      // 허리띠·조끼 밑단이 몸통보다 옆으로 넓게 튀어나와 있어 내린 팔을 뚫고 손 앞에 보인다 → 몸통 너비 안으로
+      if (bone === 'torso' && Math.abs(pos.getX(i)) > TORSO_HALF) pos.setX(i, Math.sign(pos.getX(i)) * TORSO_HALF)
       if (bone === 'torso') torsoBox.expandByPoint(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
       if (bone === 'torso' || bone === 'leg-left' || bone === 'leg-right') bodyPts.push(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
       // 크기 재기 (묶인 자세 = 모델 좌표)
@@ -392,6 +399,7 @@ function prepare(hair: HairId, gltf: { scene: THREE.Object3D }): Template {
     butt: (hipY - half(legVerts)) * scale,
     back: half(torsoZ) * scale,
     skull: skull.clone().translate(headBone.clone().negate()),
+    headAt: headBone.clone(),
     hairTop: head.max.y - headBone.y,
     hand: new THREE.Vector3((Math.min(...handX) - armBone.x) * 0.82, 0, 0),
     face,
@@ -444,7 +452,13 @@ function kenneyHat(look: AvatarLook, t: Template) {
   const g = new THREE.Group()
   const box = (w: number, h: number, d: number, at: [number, number, number], m: THREE.Material, rot?: [number, number, number]) =>
     g.add(part(roundBox(w, h, d, Math.min(w, h, d) * 0.22), m, at, { rot }))
-  // 모자 윗면은 머리카락 꼭대기까지 덮는다 (똥머리는 머리통 기준 → 두 개가 모자 위로 귀엽게 나온다)
+  /** 머리를 덮는 모자 몸통의 안쪽 (머리 뼈 기준). 이 높이 위 머리카락은 모자 속으로 밀어 넣는다 */
+  let clip: HatClip | null = null
+  const shell = (w: number, d: number, y0: number, y1: number) => {
+    // 모서리가 둥글어서 상자 끝까지 쓰면 모서리로 머리카락이 비친다 → 조금 안쪽까지만
+    clip = { cx, cz, hw: w * 0.42, hd: d * 0.42, y0, y1: y1 - (y1 - y0) * 0.12 }
+  }
+  // 모자 윗면은 머리카락 꼭대기까지 덮는다 (똥머리는 머리통 기준 → 모자가 너무 높아지지 않게, 똥머리는 모자 속으로 밀어 넣는다)
   const cover = look.hair === 'bun' ? top : Math.max(top, t.hairTop)
   switch (look.hat) {
     case 'cap': {
@@ -452,6 +466,7 @@ function kenneyHat(look: AvatarLook, t: Template) {
       const y0 = top - H * 0.26
       const y1 = cover + H * 0.05
       g.add(part(roundBox(W * 1.08, y1 - y0, D * 1.06, (y1 - y0) * 0.45), main, [cx, (y0 + y1) / 2, cz]))
+      shell(W * 1.08, D * 1.06, y0, y1)
       box(W * 0.86, H * 0.05, D * 0.5, [cx, y0 + H * 0.03, front + D * 0.18], dark, [0.1, 0, 0])
       box(W * 0.14, H * 0.05, W * 0.14, [cx, y1, cz], dark)
       break
@@ -461,6 +476,7 @@ function kenneyHat(look: AvatarLook, t: Template) {
       const y0 = top - H * 0.42
       const y1 = cover + H * 0.08
       g.add(part(roundBox(W * 1.1, y1 - y0, D * 1.08, W * 0.18), main, [cx, (y0 + y1) / 2, cz]))
+      shell(W * 1.1, D * 1.08, y0, y1)
       g.add(part(roundBox(W * 0.8, H * 0.12, D * 0.78, H * 0.05), main, [cx, y1 + H * 0.04, cz]))
       g.add(part(roundBox(W * 1.17, H * 0.16, D * 1.15, H * 0.06), dark, [cx, y0 + H * 0.06, cz]))
       // 단에 세로 골 (니트 느낌)
@@ -473,6 +489,7 @@ function kenneyHat(look: AvatarLook, t: Template) {
       const y0 = top - H * 0.34
       const y1 = cover + H * 0.05
       g.add(part(roundBox(W * 1.1, y1 - y0, D * 1.08, (y1 - y0) * 0.4), main, [cx, (y0 + y1) / 2, cz]))
+      shell(W * 1.1, D * 1.08, y0, y1)
       for (const s of [-1, 1]) {
         g.add(part(roundBox(W * 0.32, W * 0.3, D * 0.24, W * 0.1), main, [cx + s * W * 0.38, y1 + W * 0.06, cz]))
         box(W * 0.17, W * 0.15, D * 0.05, [cx + s * W * 0.38, y1 + W * 0.05, cz + D * 0.13], mat('#ffc7d6'))
@@ -495,6 +512,45 @@ function kenneyHat(look: AvatarLook, t: Template) {
       break
     }
   }
+  return { g, clip: clip as HatClip | null }
+}
+
+/** 모자 몸통 안쪽 상자 (머리 뼈 기준 모델 단위): 가운데 · 반너비 · 반깊이 · 아래(챙) · 위 */
+interface HatClip {
+  cx: number
+  cz: number
+  hw: number
+  hd: number
+  y0: number
+  y1: number
+}
+
+const clipped = new Map<string, THREE.BufferGeometry>()
+/**
+ * 모자를 쓰면 모자 챙 위로 올라온 머리 꼭짓점을 모자 안쪽 상자로 밀어 넣은 머리 모양.
+ * (똥머리·긴 머리 옆가닥·단발 뒷머리가 모자를 뚫고 나오던 것) 챙 아래로 내려온 머리카락은 그대로 둔다.
+ */
+function clipHead(geo: THREE.BufferGeometry, key: string, t: Template, c: HatClip) {
+  let g = clipped.get(key)
+  if (g) return g
+  g = geo.clone()
+  const pos = g.attributes.position
+  const h = t.headAt
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i) - h.y
+    if (y <= c.y0) continue
+    const x = pos.getX(i) - h.x
+    const z = pos.getZ(i) - h.z
+    pos.setXYZ(
+      i,
+      h.x + Math.min(c.cx + c.hw, Math.max(c.cx - c.hw, x)),
+      h.y + Math.min(c.y1, y),
+      h.z + Math.min(c.cz + c.hd, Math.max(c.cz - c.hd, z)),
+    )
+  }
+  pos.needsUpdate = true
+  g.computeBoundingSphere()
+  clipped.set(key, g)
   return g
 }
 
@@ -767,7 +823,13 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
   // 모자: Kenney 머리통에 맞춰 각지게 만든 모자 (머리 뼈에 붙어 같이 움직인다)
   let hatH = 0
   if (look.hat !== 'none') {
-    const h = kenneyHat(look, t)
+    const { g: h, clip } = kenneyHat(look, t)
+    if (clip) {
+      model.traverse((n) => {
+        const m = n as THREE.SkinnedMesh
+        if (m.isSkinnedMesh && m.name.includes('head')) m.geometry = clipHead(m.geometry, `${hair}|${look.hat}|${m.name}`, t, clip)
+      })
+    }
     // 머리 뼈에 붙이기 전에 잰다 (모자 좌표 = 머리 뼈 기준 모델 단위). 붙인 뒤 재면 부모 변환이 덜 반영된 값이 나온다
     h.updateMatrixWorld(true)
     const top = new THREE.Box3().setFromObject(h).max.y
@@ -842,8 +904,9 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
       legs[0].rotation.set(-Math.PI / 2 + 0.06, 0, -0.08)
       legs[1].rotation.set(-Math.PI / 2 + 0.06, 0, 0.08)
       // 손은 허벅지 옆 방석 위에 짚는다 (무릎 위로 모으면 커다란 손이 다리·치마에 파묻힌다)
-      armRot[0].set(-0.3, 0, -0.42)
-      armRot[1].set(-0.3, 0, 0.42)
+      // 몸에 붙이면 손이 허벅지·바지에 겹쳐 보여서 조금 벌린다
+      armRot[0].set(-0.12, 0, -0.6)
+      armRot[1].set(-0.12, 0, 0.6)
       if (pose === 'watch') headBone.rotation.x = -0.08
       if (pose === 'bath') {
         armRot[0].set(-0.2, 0, -0.9)
