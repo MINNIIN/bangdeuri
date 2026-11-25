@@ -522,24 +522,27 @@ function frustum(wTop: number, dTop: number, wBot: number, dBot: number, h: numb
  * 상의 장식은 몸통 뼈에, 치마는 뿌리 뼈(엉덩이 높이)에 붙인다. 크기는 모두 원본 몸통 상자에 맞춘다.
  * 치마는 앉으면 짧게 줄이도록 돌려준다.
  */
-function kenneyOutfit(look: AvatarLook, t: Template, top: string, bottom: string, torsoBone: THREE.Bone, rootBone: THREE.Bone) {
+function kenneyOutfit(look: AvatarLook, t: Template, top: string, bottom: string, torsoBone: THREE.Bone, rootBone: THREE.Bone): { skirt: THREE.Group | null; front: THREE.Group } {
   const b = t.torso
   const W = b.max.x - b.min.x
   const D = b.max.z - b.min.z
   const H = b.max.y - b.min.y
   const cx = (b.min.x + b.max.x) / 2
   const g = new THREE.Group()
+  /** 배 앞에 붙은 것 (주머니·끈) → 이불 덮고 누우면 이불 위로 비죽 나오므로 숨긴다 */
+  const front = new THREE.Group()
+  g.add(front)
   if (look.top === 'hoodie') {
     // 등 뒤로 넘긴 모자 + 배 주머니 + 끈 두 가닥
     const shade = mat(tint(top, -0.08), { rough: 0.85 })
     // 모자는 등에 납작하게 붙인다 (뒤로 길게 빼면 어깨 뒤에 판자가 달린 것처럼 보이고, 앉으면 의자 등받이를 뚫는다)
     g.add(part(roundBox(W * 0.66, H * 0.36, D * 0.24, D * 0.1), mat(top, { rough: 0.85 }), [cx, b.max.y - H * 0.2, b.min.z + D * 0.02]))
-    g.add(part(roundBox(W * 0.6, H * 0.22, D * 0.06, H * 0.05), shade, [cx, b.min.y + H * 0.36, b.max.z + D * 0.01], { shadow: false }))
-    for (const s of [-1, 1]) g.add(part(roundBox(W * 0.05, H * 0.2, D * 0.05, W * 0.02), mat('#fbf7ef'), [cx + s * W * 0.14, b.max.y - H * 0.25, b.max.z + D * 0.02], { shadow: false }))
+    front.add(part(roundBox(W * 0.6, H * 0.22, D * 0.06, H * 0.05), shade, [cx, b.min.y + H * 0.36, b.max.z + D * 0.01], { shadow: false }))
+    for (const s of [-1, 1]) front.add(part(roundBox(W * 0.05, H * 0.2, D * 0.05, W * 0.02), mat('#fbf7ef'), [cx + s * W * 0.14, b.max.y - H * 0.25, b.max.z + D * 0.02], { shadow: false }))
   }
   torsoBone.add(g)
 
-  if (look.bottom !== 'skirt' && look.bottom !== 'dress') return null
+  if (look.bottom !== 'skirt' && look.bottom !== 'dress') return { skirt: null, front }
   // 치마: 엉덩이 조금 위에서 시작해 무릎(치마) · 발목 위(긴 치마)까지, 밑단은 조금 진하게
   // 허리 단면(엉덩이 높이 몸통·다리)에 딱 맞춘다
   const y0 = t.hipY + 0.012
@@ -554,7 +557,8 @@ function kenneyOutfit(look: AvatarLook, t: Template, top: string, bottom: string
   const hem = len * 0.16
   skirt.add(part(frustum(w * flare * 1.01, d * flare * 1.01, w * flare * 1.03, d * flare * 1.03, hem), mat(tint(bottom, -0.12), { rough: 0.85 }), [0, -len + hem * 0.95, 0]))
   rootBone.add(skirt)
-  return skirt
+  skirt.userData.flare = flare
+  return { skirt, front }
 }
 
 // ─── 얼굴 (얼굴 앞면 판에 미니미 눈 설정대로 그린 그림) ───
@@ -564,8 +568,8 @@ const faces = new Map<string, THREE.MeshStandardMaterial>()
  * 얼굴 판 재질. 캔버스 좌표를 모델 단위(위가 +y)로 맞춰 두고, 원본 Kenney 눈·입 자리에 그린다.
  * 바탕은 피부 칸과 같은 위아래 명암 → 얼굴 둘레 피부와 이어진다.
  */
-function faceMaterial(look: AvatarLook, t: Template, skin: string) {
-  const key = `${look.eyes}|${skin}|${t.face.x0.toFixed(3)}`
+function faceMaterial(look: AvatarLook, t: Template, skin: string, closed = false) {
+  const key = `${look.eyes}|${skin}|${t.face.x0.toFixed(3)}|${closed}`
   let m = faces.get(key)
   if (m) return m
   const f = t.face
@@ -617,7 +621,13 @@ function faceMaterial(look: AvatarLook, t: Template, skin: string) {
     ctx.ellipse(s * 0.088, 0.432, 0.022, 0.012, 0, 0, Math.PI * 2)
     ctx.fill()
   }
-  switch (look.eyes) {
+  // 감은 눈 (잘 때·깜빡일 때): 아래로 둥근 선. 선글라스는 그대로
+  const sleepEye = (x: number) => stroke(x, eyeY + 0.008, 0.02, Math.PI * 1.15, Math.PI * 1.85, 0.011)
+  switch (closed && look.eyes !== 'shades' ? 'closed' : look.eyes) {
+    case 'closed':
+      sleepEye(-ex)
+      sleepEye(ex)
+      break
     case 'smile':
       happyEye(-ex)
       happyEye(ex)
@@ -722,6 +732,9 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
   }
   const material = paintedMaterial(hair, t, colors, look.bottom !== 'pants', look.top === 'stripe')
   const face = faceMaterial(look, t, colors.skin)
+  const faceShut = faceMaterial(look, t, colors.skin, true)
+  /** 얼굴 판이 있는 몸 (머리 재질 두 번째 칸을 뜬 눈 ↔ 감은 눈으로 바꾼다) */
+  const faced: THREE.SkinnedMesh[] = []
 
   const root = new THREE.Group()
   const model = SkeletonUtils.clone(t.scene)
@@ -734,6 +747,7 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
     if (m.isSkinnedMesh) {
       // 머리는 [팔레트, 얼굴 판 그림] 두 재질 (prepare에서 얼굴 판 삼각형만 두 번째 묶음으로)
       m.material = m.geometry.groups.length ? [material, face] : material
+      if (m.geometry.groups.length) faced.push(m)
       m.castShadow = true
       m.receiveShadow = false
       // 뼈를 움직여 몸이 처음 자리에서 벗어나도 잘리지 않게
@@ -762,7 +776,11 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
   }
 
   // 옷 모양 (후드·줄무늬·치마)
-  const skirt = kenneyOutfit(look, t, top, bottom, bones.torso!, rootBone)
+  const { skirt, front } = kenneyOutfit(look, t, top, bottom, bones.torso!, rootBone)
+  /** 깜빡임 박자 (미니미마다 조금씩 다르게) */
+  const blinkEvery = 3.4 + Math.random() * 1.6
+  const blinkAt = Math.random() * blinkEvery
+  let shut = false
 
   // 오른손: 컵을 쥐여 주는 자리 (팔을 내린 각도만큼 되돌려 컵이 똑바로 선다)
   const grip = new THREE.Group()
@@ -805,8 +823,9 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
       // 반듯이 누워 이불 속으로: 등이 바닥에 닿고 머리는 베개만큼 들린다
       rootBone.rotation.x = -Math.PI / 2
       // 캐릭터가 두툼해서 이불 위로 손이 나오지 않게 조금 더 내리고 팔은 몸 옆 매트리스 쪽으로
-      by = t.back * 0.7 + Math.sin(time * 1.4) * 0.006
-      headBone.rotation.x = 0.15 + Math.sin(time * 0.6) * 0.02
+      // 가슴이 이불 위로 비죽 나오지 않게 몸은 매트리스에 더 파묻고, 머리는 베개 위로 들어 얼굴이 묻히지 않게
+      by = t.back * 0.45 + Math.sin(time * 1.4) * 0.006
+      headBone.rotation.x = 0.32 + Math.sin(time * 0.6) * 0.02
       armRot[0].set(0.35, 0, -0.12)
       armRot[1].set(0.35, 0, 0.12)
     } else {
@@ -822,8 +841,9 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
       rootBone.rotation.set(0, 0, 0)
       legs[0].rotation.set(-Math.PI / 2 + 0.06, 0, -0.08)
       legs[1].rotation.set(-Math.PI / 2 + 0.06, 0, 0.08)
-      armRot[0].set(-0.7, 0, -0.12)
-      armRot[1].set(-0.7, 0, 0.12)
+      // 손은 허벅지 옆 방석 위에 짚는다 (무릎 위로 모으면 커다란 손이 다리·치마에 파묻힌다)
+      armRot[0].set(-0.3, 0, -0.42)
+      armRot[1].set(-0.3, 0, 0.42)
       if (pose === 'watch') headBone.rotation.x = -0.08
       if (pose === 'bath') {
         armRot[0].set(-0.2, 0, -0.9)
@@ -838,8 +858,22 @@ export function buildKenneyAvatar(look: AvatarLook, outfit: number): Avatar3D | 
     if (pose === 'stand') armRot[0].x = armRot[1].x = -0.35
     // 앉으면 치마는 엉덩이 둘레에 짧게 퍼진다 (통째로 앞으로 접으면 다리 위에 상자가 얹힌 것처럼 보인다)
     // 걸을 땐 그대로 두고 다리가 치마 안에서 움직인다
-    // 누우면 치마가 이불 위로 비죽 나오지 않게 납작하게
-    if (skirt) skirt.scale.y = seated || pose === 'lie' ? 0.3 : 1
+    // 앉거나 누우면 퍼진 밑단을 거둬 엉덩이에 붙인다 (그대로 납작하게만 하면 의자 위에 넓은 판이 깔린 것처럼 보인다)
+    if (skirt) {
+      const tuck = seated || pose === 'lie'
+      const w = tuck ? 1 / (skirt.userData.flare as number) : 1
+      skirt.scale.set(w, tuck ? 0.45 : 1, w)
+      // 누우면 이불 속 → 치마 끝단이 이불 위로 검은 줄처럼 비죽 나오므로 숨긴다
+      skirt.visible = pose !== 'lie'
+    }
+    front.visible = pose !== 'lie'
+    // 눈: 누우면 감고, 평소엔 몇 초마다 깜빡
+    // (t=0은 썸네일 한 장 → 깜빡이는 순간이 찍히지 않게)
+    const closed = pose === 'lie' || (time > 0 && (time + blinkAt) % blinkEvery < 0.13)
+    if (closed !== shut) {
+      shut = closed
+      for (const m of faced) (m.material as THREE.Material[])[1] = closed ? faceShut : face
+    }
 
     // 컵을 들고 있으면 오른팔을 앞으로 (hold 0 = 가슴 앞, 1 = 입가로)
     if (hold !== undefined && hold !== null) {
